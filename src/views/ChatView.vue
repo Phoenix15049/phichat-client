@@ -42,14 +42,29 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import UserList from '../components/UserList.vue'
-import { getConversationWith } from '../services/api'
 import {
   connectToChatHub,
   onMessageReceived,
   sendMessage,
-  sendMessageWithFile,
+  sendMessageWithFile
 } from '../services/signalr'
-import { decryptRSA } from '../services/crypto'
+import {
+  generateAESKey,
+  encryptAES,
+  decryptAES,
+  encryptWithPublicKey,
+  decryptWithPrivateKey
+} from '../services/crypto'
+import {
+  saveAESKey,
+  loadAESKey
+} from '../utils/aesKeyStore'
+import {
+  getConversationWith,
+  getChatKey,
+  storeChatKey,
+  getUserById
+} from '../services/api'
 import { parseJwt } from '../utils/jwt'
 
 const router = useRouter()
@@ -71,23 +86,20 @@ onMounted(async () => {
 
   await connectToChatHub(token)
 
-  onMessageReceived((msg: any) => {
+  onMessageReceived(async (msg: any) => {
     if (!selectedUser.value) return
-
-    const isRelevant =
-      msg.senderId === selectedUser.value.id || msg.receiverId === selectedUser.value.id
-
+    const isRelevant = msg.senderId === selectedUser.value.id || msg.receiverId === selectedUser.value.id
     if (!isRelevant) return
 
-    const shouldDecrypt = msg.senderId !== myId
-    const plainText = shouldDecrypt
-      ? decryptRSA(msg.encryptedContent, privateKey)
-      : msg.plainText
+    const aesKey = await loadAESKey(selectedUser.value.id)
+    if (!aesKey) return
+
+    const plainText = await decryptAES(aesKey, msg.encryptedText)
 
     messages.value.push({
       senderId: msg.senderId,
-      plainText: plainText || '[خطا در رمزگشایی]',
-      fileUrl: msg.fileUrl || null,
+      plainText,
+      fileUrl: msg.fileUrl || null
     })
   })
 })
@@ -96,21 +108,34 @@ const handleUserSelect = async (user: { id: string; username: string }) => {
   selectedUser.value = user
   messages.value = []
 
+  let aesKey = await loadAESKey(user.id)
+
+  if (!aesKey) {
+    const encrypted = await getChatKey(user.id)
+    if (!encrypted) {
+      const newKey = await generateAESKey()
+      const exported = await crypto.subtle.exportKey('raw', newKey)
+      const u = await getUserById(user.id)
+      const encryptedKey = await encryptWithPublicKey(u.publicKey, new Uint8Array(exported))
+      await storeChatKey(user.id, encryptedKey)
+      await saveAESKey(user.id, newKey)
+      aesKey = newKey
+    } else {
+      const decrypted = await decryptWithPrivateKey(privateKey, encrypted)
+      aesKey = await crypto.subtle.importKey('raw', decrypted, 'AES-GCM', true, ['encrypt', 'decrypt'])
+      await saveAESKey(user.id, aesKey)
+    }
+  }
+
   const history = await getConversationWith(user.id)
-
-  messages.value = history.map((m: any) => {
-    const isOwnMessage = m.senderId === myId
-
-    const plainText = isOwnMessage
-      ? m.plainText
-      : decryptRSA(m.encryptedContent, privateKey)
-
-    return {
+  for (const m of history) {
+    const plainText = await decryptAES(aesKey, m.encryptedContent)
+    messages.value.push({
       senderId: m.senderId,
       plainText: plainText || '[خطا در رمزگشایی]',
-      fileUrl: m.fileUrl || null,
-    }
-  })
+      fileUrl: m.fileUrl || null
+    })
+  }
 }
 
 const onFileSelected = (e: Event) => {
@@ -123,15 +148,20 @@ const onFileSelected = (e: Event) => {
 const send = async () => {
   if (!selectedUser.value || (!text.value.trim() && !selectedFile.value)) return
 
+  const aesKey = await loadAESKey(selectedUser.value.id)
+  if (!aesKey) return
+
+  const encryptedText = text.value ? await encryptAES(aesKey, text.value) : ''
+
   if (!selectedFile.value) {
-    await sendMessage(selectedUser.value.id, text.value)
+    await sendMessage(selectedUser.value.id, encryptedText)
   } else {
     const arrayBuffer = await selectedFile.value.arrayBuffer()
     const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
 
     await sendMessageWithFile(
       selectedUser.value.id,
-      text.value,
+      encryptedText,
       base64,
       selectedFile.value.name
     )
@@ -140,7 +170,7 @@ const send = async () => {
   messages.value.push({
     senderId: myId,
     plainText: text.value,
-    fileUrl: selectedFile.value ? '[ارسال شد]' : null,
+    fileUrl: selectedFile.value ? '[ارسال شد]' : null
   })
 
   text.value = ''

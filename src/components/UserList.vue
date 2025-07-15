@@ -17,11 +17,11 @@ import { ref, defineEmits, onMounted } from 'vue'
 import { getUserList } from '../services/api'
 import { parseJwt } from '../utils/jwt'
 
-const users = ref<{ id: string; username: string }[]>([])
-const selected = ref<{ id: string; username: string } | null>(null)
+const users = ref<{ id: string; username: string; publicKey: string }[]>([])
+const selected = ref<{ id: string; username: string; publicKey: string } | null>(null)
 const emit = defineEmits(['user-selected'])
 
-const selectUser = (user: { id: string; username: string }) => {
+const selectUser = (user: { id: string; username: string; publicKey: string }) => {
   selected.value = user
   emit('user-selected', user)
 }

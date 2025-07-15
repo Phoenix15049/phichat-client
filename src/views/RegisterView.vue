@@ -46,7 +46,7 @@ const register = async () => {
   error.value = ''
 
   try {
-    const { publicKey, privateKey } = generateKeyPair()
+    const { publicKey, privateKey } = await generateKeyPair()
 
     await axios.post('https://localhost:7146/api/auth/register', {
       username: username.value,

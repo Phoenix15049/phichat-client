@@ -17,19 +17,19 @@ export function onMessageReceived(callback: (message: any) => void) {
   connection?.on('ReceiveMessage', callback)
 }
 
-export function sendMessage(receiverId: string, plainText: string) {
-  return connection?.invoke('SendMessage', receiverId, plainText)
+export function sendMessage(receiverId: string, encryptedText: string) {
+  return connection?.invoke('SendMessage', receiverId, encryptedText)
 }
 
 export function sendMessageWithFile(
   receiverId: string,
-  plainText: string,
+  encryptedText: string,
   fileBase64: string,
   fileName: string
 ) {
   return connection?.invoke('SendMessageWithFile', {
     receiverId,
-    plainText,
+    encryptedText,
     fileBase64,
     fileName,
   })
