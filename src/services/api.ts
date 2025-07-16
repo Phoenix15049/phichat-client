@@ -1,45 +1,60 @@
 import axios from 'axios'
+import { getToken } from '../utils/jwt' // تابعی که توکن رو از localStorage می‌گیره
 
-const API = axios.create({
-  baseURL: 'https://localhost:7146/api',
-  headers: {
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-  },
+export const API = axios.create({
+  baseURL: 'https://localhost:7146/api'
 })
 
+// 🛡 اتصال توکن به هر درخواست
+API.interceptors.request.use(config => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// پیام‌ها
 export async function getConversationWith(userId: string) {
-  const res = await API.get(`/messages/with/${userId}`)
-  return res.data
+  const response = await API.get(`/messages/with/${userId}`)
+  return response.data
 }
 
-export async function getUserList() {
-  const res = await API.get('/users/list')
-  return res.data
+export async function getMyMessages() {
+  const response = await API.get('/messages')
+  return response.data
 }
 
-export async function getPublicKey(userId: string) {
-  const res = await API.get(`/users/id/${userId}/public-key`)
-  return res.data.publicKey
-}
-
-export async function storeChatKey(receiverId: string, encryptedKey: string) {
-  return API.post('/keys', {
-    receiverId,
-    encryptedKeyBase64: encryptedKey
-  });
-}
-
-export async function getChatKey(otherUserId: string): Promise<string | null> {
+// کلید چت
+export async function getChatKey(userId: string): Promise<string | null> {
   try {
-    const res = await API.get(`/keys/${otherUserId}`);
-    return res.data;
-  } catch {
-    return null;
+    const response = await API.get(`/keys/${userId}`)
+    return response.data
+  } catch (error: any) {
+    if (error.response?.status === 404) return null
+    throw error
   }
 }
 
+export async function storeChatKey(data: { receiverId: string; encryptedKey: string }) {
+  console.log('📡 ارسال کلید رمزنگاری شده:', data)
 
-export async function getUserById(userId: string): Promise<{ id: string; username: string; publicKey: string }> {
-  const res = await API.get(`/users/${userId}`);
-  return res.data;
+  return await API.post('/keys', data, {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+}
+
+
+
+// کاربران
+export async function getUserList() {
+  const response = await API.get('/users/list')
+  return response.data
+}
+
+export async function getUserById(userId: string) {
+  const response = await API.get(`/users/${userId}`)
+  return response.data
 }

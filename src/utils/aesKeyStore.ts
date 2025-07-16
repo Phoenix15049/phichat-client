@@ -4,9 +4,11 @@ const STORAGE_KEY_PREFIX = 'aeskey_';
 
 // ذخیره کلید برای یک کاربر خاص
 export async function saveAESKey(userId: string, key: CryptoKey): Promise<void> {
-  const exported = await exportAESKey(key);
-  localStorage.setItem(STORAGE_KEY_PREFIX + userId, exported);
+  const exported = await exportAESKey(key)
+  const base64 = btoa(String.fromCharCode(...exported))
+  localStorage.setItem(STORAGE_KEY_PREFIX + userId, base64)
 }
+
 
 // بازیابی کلید برای یک کاربر خاص
 export async function loadAESKey(userId: string): Promise<CryptoKey | null> {

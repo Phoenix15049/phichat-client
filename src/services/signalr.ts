@@ -18,8 +18,13 @@ export function onMessageReceived(callback: (message: any) => void) {
 }
 
 export function sendMessage(receiverId: string, encryptedText: string) {
-  return connection?.invoke('SendMessage', receiverId, encryptedText)
+  console.log('🔁 invoke SendMessage with', receiverId, encryptedText)
+  return connection?.invoke('SendMessage', {
+    receiverId,
+    encryptedText
+  }).catch(err => console.error('🚫 invoke SendMessage failed', err))
 }
+
 
 export function sendMessageWithFile(
   receiverId: string,

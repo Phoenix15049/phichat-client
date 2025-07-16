@@ -73,7 +73,7 @@ const privateKey = localStorage.getItem('privateKey') || ''
 const decoded = parseJwt(token)
 const myId = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']
 
-const selectedUser = ref<{ id: string; username: string } | null>(null)
+const selectedUser = ref<{ id: string; username: string; publicKey: string } | null>(null)
 const messages = ref<any[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
@@ -87,24 +87,43 @@ onMounted(async () => {
   await connectToChatHub(token)
 
   onMessageReceived(async (msg: any) => {
-    if (!selectedUser.value) return
-    const isRelevant = msg.senderId === selectedUser.value.id || msg.receiverId === selectedUser.value.id
-    if (!isRelevant) return
+  // همیشه لاگ کن پیام
+  console.log('📩 پیام جدید دریافت شد:', msg)
 
-    const aesKey = await loadAESKey(selectedUser.value.id)
-    if (!aesKey) return
+  // اگه فرستنده یا گیرنده match کنن، بارگذاری پیام کن
+  const isMyMessage = msg.senderId === myId
+  const isFromSelected = selectedUser.value && msg.senderId === selectedUser.value.id
 
-    const plainText = await decryptAES(aesKey, msg.encryptedText)
-
-    messages.value.push({
-      senderId: msg.senderId,
-      plainText,
-      fileUrl: msg.fileUrl || null
-    })
+  if (isMyMessage || isFromSelected) {
+    await loadMessages()
+  }
   })
+
+
 })
 
-const handleUserSelect = async (user: { id: string; username: string }) => {
+const loadMessages = async () => {
+  if (!selectedUser.value) return
+
+  const aesKey = await loadAESKey(selectedUser.value.id)
+  if (!aesKey) return
+  console.log('📦 imported key:', aesKey)
+
+  const history = await getConversationWith(selectedUser.value.id)
+  messages.value = []
+
+  for (const m of history) {
+    const plainText = await decryptAES(aesKey, m.encryptedContent)
+    messages.value.push({
+      senderId: m.senderId,
+      plainText: plainText || '[خطا در رمزگشایی]',
+      fileUrl: m.fileUrl || null
+    })
+  }
+  
+}
+
+const handleUserSelect = async (user: { id: string; username: string; publicKey: string }) => {
   selectedUser.value = user
   messages.value = []
 
@@ -117,25 +136,28 @@ const handleUserSelect = async (user: { id: string; username: string }) => {
       const exported = await crypto.subtle.exportKey('raw', newKey)
       const u = await getUserById(user.id)
       const encryptedKey = await encryptWithPublicKey(u.publicKey, new Uint8Array(exported))
-      await storeChatKey(user.id, encryptedKey)
+      await storeChatKey({
+        receiverId: selectedUser.value.id,
+        encryptedKey
+      })
       await saveAESKey(user.id, newKey)
       aesKey = newKey
     } else {
       const decrypted = await decryptWithPrivateKey(privateKey, encrypted)
+      console.log('🔍 Decrypted AES Key (raw):', decrypted)
       aesKey = await crypto.subtle.importKey('raw', decrypted, 'AES-GCM', true, ['encrypt', 'decrypt'])
+      console.log('📦 Imported AES Key:', aesKey)
       await saveAESKey(user.id, aesKey)
     }
   }
 
-  const history = await getConversationWith(user.id)
-  for (const m of history) {
-    const plainText = await decryptAES(aesKey, m.encryptedContent)
-    messages.value.push({
-      senderId: m.senderId,
-      plainText: plainText || '[خطا در رمزگشایی]',
-      fileUrl: m.fileUrl || null
-    })
+  if (!(aesKey instanceof CryptoKey)) {
+    console.error('❌ AES key is invalid, aborting...')
+    return
   }
+
+
+  await loadMessages()
 }
 
 const onFileSelected = (e: Event) => {
@@ -146,36 +168,52 @@ const onFileSelected = (e: Event) => {
 }
 
 const send = async () => {
-  if (!selectedUser.value || (!text.value.trim() && !selectedFile.value)) return
+  console.log('📤 پیام در حال رمزنگاری:', text.value)
 
+  if (!text.value || !text.value.trim()) {
+  console.warn('🚫 پیام خالی یا نامعتبر بود و ارسال نشد')
+  return
+  }
+  if (!selectedUser.value || (!text.value.trim() && !selectedFile.value)) return
   const aesKey = await loadAESKey(selectedUser.value.id)
   if (!aesKey) return
-
-  const encryptedText = text.value ? await encryptAES(aesKey, text.value) : ''
-
-  if (!selectedFile.value) {
-    await sendMessage(selectedUser.value.id, encryptedText)
-  } else {
-    const arrayBuffer = await selectedFile.value.arrayBuffer()
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-
-    await sendMessageWithFile(
-      selectedUser.value.id,
-      encryptedText,
-      base64,
-      selectedFile.value.name
-    )
+  if (!text.value.trim()) {
+  console.warn('❌ پیام خالی ارسال نمی‌شود')
+  return
   }
+  if (!(aesKey instanceof CryptoKey)) {
+    console.error('❌ AES key is invalid')
+    return
+  }
+  const encryptedText = text.value.trim()
+    ? await encryptAES(aesKey, text.value.trim())
+    : ''
 
-  messages.value.push({
-    senderId: myId,
-    plainText: text.value,
-    fileUrl: selectedFile.value ? '[ارسال شد]' : null
-  })
+  try {
+    if (!selectedFile.value) {
+      await sendMessage(selectedUser.value.id, encryptedText)
+    } else {
+      const arrayBuffer = await selectedFile.value.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
 
-  text.value = ''
-  selectedFile.value = null
+      await sendMessageWithFile(
+        selectedUser.value.id,
+        encryptedText,
+        base64,
+        selectedFile.value.name
+      )
+    }
+
+    text.value = ''
+    selectedFile.value = null
+    console.log('✉️ encryptedText:', encryptedText)
+
+    await loadMessages() // بروزرسانی لیست پیام‌ها
+  } catch (error) {
+    console.error('❌ خطا در ارسال پیام:', error)
+  }
 }
+
 
 const downloadFile = (fileUrl: string) => {
   const link = document.createElement('a')
