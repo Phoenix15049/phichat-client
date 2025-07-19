@@ -101,3 +101,72 @@ export async function importAESKey(base64: string): Promise<CryptoKey> {
     ['encrypt', 'decrypt']
   )
 }
+
+
+export async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const enc = new TextEncoder()
+  const keyMaterial = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  )
+  return await window.crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    {
+      name: 'AES-GCM',
+      length: 256
+    },
+    true,
+    ['encrypt', 'decrypt']
+  )
+}
+
+export async function encryptPrivateKeyWithPassword(privateKeyPEM: string, password: string): Promise<string> {
+  const enc = new TextEncoder()
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const key = await deriveKeyFromPassword(password, salt)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    enc.encode(privateKeyPEM)
+  )
+
+  // ترکیب salt + iv + data → base64
+  const result = new Uint8Array(salt.length + iv.length + ciphertext.byteLength)
+  result.set(salt, 0)
+  result.set(iv, salt.length)
+  result.set(new Uint8Array(ciphertext), salt.length + iv.length)
+
+  return btoa(String.fromCharCode(...result))
+}
+
+export async function decryptPrivateKeyWithPassword(encryptedBase64: string, password: string): Promise<string> {
+  try {
+    const data = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0))
+    const salt = data.slice(0, 16)
+    const iv = data.slice(16, 28)
+    const ciphertext = data.slice(28)
+
+    const key = await deriveKeyFromPassword(password, salt)
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    )
+
+    const dec = new TextDecoder()
+    return dec.decode(decrypted)
+  } catch (err) {
+    console.error('❌ Decryption failed:', err)
+    throw err
+  }
+}

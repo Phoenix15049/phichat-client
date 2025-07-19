@@ -70,8 +70,19 @@ import { parseJwt } from '../utils/jwt'
 const router = useRouter()
 const token = localStorage.getItem('token') || ''
 const privateKey = localStorage.getItem('privateKey') || ''
-const decoded = parseJwt(token)
-const myId = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']
+
+
+
+
+let myId = ''
+try {
+  const decoded = parseJwt(token)
+  myId = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']
+} catch (err) {
+  console.error('❌ JWT decode error:', err)
+  router.push('/login')
+}
+
 
 const selectedUser = ref<{ id: string; username: string; publicKey: string } | null>(null)
 const messages = ref<any[]>([])
@@ -84,73 +95,79 @@ onMounted(async () => {
     return
   }
 
-  await connectToChatHub(token)
+  try {
+    await connectToChatHub(token)
 
-  onMessageReceived(async (msg: any) => {
-  // همیشه لاگ کن پیام
-  console.log('📩 پیام جدید دریافت شد:', msg)
-
-  // اگه فرستنده یا گیرنده match کنن، بارگذاری پیام کن
-  const isMyMessage = msg.senderId === myId
-  const isFromSelected = selectedUser.value && msg.senderId === selectedUser.value.id
-
-  if (isMyMessage || isFromSelected) {
-    await loadMessages()
+    onMessageReceived(async (msg: any) => {
+      console.log('📩 پیام جدید دریافت شد:', msg)
+      const isMyMessage = msg.senderId === myId
+      const isFromSelected = selectedUser.value && msg.senderId === selectedUser.value.id
+      if (isMyMessage || isFromSelected) {
+        await loadMessages()
+      }
+    })
+  } catch (err) {
+    console.error('❌ Hub error:', err)
   }
-  })
-
-
 })
+
 
 const loadMessages = async () => {
   if (!selectedUser.value) return
 
-  const aesKey = await loadAESKey(selectedUser.value.id)
-  if (!aesKey) return
-  console.log('📦 imported key:', aesKey)
+  try {
+    const aesKey = await loadAESKey(selectedUser.value.id)
+    if (!aesKey) return
+    console.log('📦 imported key:', aesKey)
 
-  const history = await getConversationWith(selectedUser.value.id)
-  messages.value = []
+    const history = await getConversationWith(selectedUser.value.id)
+    messages.value = []
 
-  for (const m of history) {
-    const plainText = await decryptAES(aesKey, m.encryptedContent)
-    messages.value.push({
-      senderId: m.senderId,
-      plainText: plainText || '[خطا در رمزگشایی]',
-      fileUrl: m.fileUrl || null
-    })
+    for (const m of history) {
+      const plainText = await decryptAES(aesKey, m.encryptedContent)
+      messages.value.push({
+        senderId: m.senderId,
+        plainText: plainText || '[خطا در رمزگشایی]',
+        fileUrl: m.fileUrl || null
+      })
+    }
+  } catch (err) {
+    console.error('❌ error in loadMessages:', err)
   }
-  
 }
+
 
 const handleUserSelect = async (user: { id: string; username: string; publicKey: string }) => {
   selectedUser.value = user
   messages.value = []
 
   let aesKey = await loadAESKey(user.id)
-
-  if (!aesKey) {
-    const encrypted = await getChatKey(user.id)
-    if (!encrypted) {
-      const newKey = await generateAESKey()
-      const exported = await crypto.subtle.exportKey('raw', newKey)
-      const u = await getUserById(user.id)
-      const encryptedKey = await encryptWithPublicKey(u.publicKey, new Uint8Array(exported))
-      await storeChatKey({
-        receiverId: selectedUser.value.id,
-        encryptedKey
-      })
-      await saveAESKey(user.id, newKey)
-      aesKey = newKey
-    } else {
-      const decrypted = await decryptWithPrivateKey(privateKey, encrypted)
-      console.log('🔍 Decrypted AES Key (raw):', decrypted)
-      aesKey = await crypto.subtle.importKey('raw', decrypted, 'AES-GCM', true, ['encrypt', 'decrypt'])
-      console.log('📦 Imported AES Key:', aesKey)
-      await saveAESKey(user.id, aesKey)
+  try {
+    if (!aesKey) {
+      const encrypted = await getChatKey(user.id)
+      if (!encrypted) {
+        const newKey = await generateAESKey()
+        const exported = await crypto.subtle.exportKey('raw', newKey)
+        const u = await getUserById(user.id)
+        const encryptedKey = await encryptWithPublicKey(u.publicKey, new Uint8Array(exported))
+        await storeChatKey({
+          receiverId: selectedUser.value.id,
+          encryptedKey
+        })
+        await saveAESKey(user.id, newKey)
+        aesKey = newKey
+      } else {
+        const decrypted = await decryptWithPrivateKey(privateKey, encrypted)
+        console.log('🔍 Decrypted AES Key (raw):', decrypted)
+        aesKey = await crypto.subtle.importKey('raw', decrypted, 'AES-GCM', true, ['encrypt', 'decrypt'])
+        console.log('📦 Imported AES Key:', aesKey)
+        await saveAESKey(user.id, aesKey)
+      }
     }
-  }
 
+  } catch (err) {
+  console.error('❌ error in handleUserSelect:', err)
+  }
   if (!(aesKey instanceof CryptoKey)) {
     console.error('❌ AES key is invalid, aborting...')
     return

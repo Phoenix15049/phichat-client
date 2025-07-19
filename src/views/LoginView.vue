@@ -35,7 +35,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-
+import {decryptPrivateKeyWithPassword} from '../services/crypto'
 
 const username = ref('')
 const password = ref('')
@@ -48,26 +48,44 @@ const router = useRouter()
 
 const login = async () => {
   error.value = ''
+  console.log('🚀 Start login')
 
   try {
-    const response = await axios.post('https://localhost:7146/api/auth/login', {
+    const res = await axios.post('https://localhost:7146/api/auth/login', {
       username: username.value,
-      password: password.value,
+      password: password.value
     })
 
-    localStorage.setItem('token', response.data.token)
-    localStorage.setItem('username', response.data.username)
+    const token = res.data.token
+    console.log('✅ Token received:', token)
+    localStorage.setItem('token', token)
 
-    const privateKey = localStorage.getItem('privateKey')
-    if (!privateKey) {
-      error.value = 'کلید خصوصی شما یافت نشد! لطفاً دوباره ثبت‌نام کنید.'
-      return
-    }
+    const keyRes = await axios.get('https://localhost:7146/api/auth/private-key', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
 
-    router.push('/chat')
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'ورود ناموفق بود'
+    const encryptedPrivateKey = keyRes.data
+    console.log('🔐 EncryptedPrivateKey:', encryptedPrivateKey)
+
+    const privateKey = await decryptPrivateKeyWithPassword(encryptedPrivateKey, password.value)
+    console.log('🔓 Decrypted PrivateKey:', privateKey)
+
+    localStorage.setItem('privateKey', privateKey)
+    console.log('💾 Saved to localStorage')
+
+    await router.push('/chat').catch((e) => {
+      console.error('❌ Navigation error:', e)
+    })
+    console.log('➡️ Redirected to /');
+
+  } catch (err) {
+    console.error('❌ Login error:', err)
+    error.value = 'ورود ناموفق بود یا رمزگشایی شکست خورد.'
   }
 }
+
+
 
 </script>

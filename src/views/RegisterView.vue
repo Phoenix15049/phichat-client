@@ -35,7 +35,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { generateKeyPair } from '../services/crypto'
+import { generateKeyPair,encryptPrivateKeyWithPassword } from '../services/crypto'
 
 const username = ref('')
 const password = ref('')
@@ -46,12 +46,15 @@ const register = async () => {
   error.value = ''
 
   try {
-    const { publicKey, privateKey } = await generateKeyPair()
+    const { publicKey, privateKey } = generateKeyPair()
+
+    const encryptedPrivateKey = await encryptPrivateKeyWithPassword(privateKey, password.value)
 
     await axios.post('https://localhost:7146/api/auth/register', {
       username: username.value,
       password: password.value,
-      publicKey
+      publicKey,
+      encryptedPrivateKey
     })
 
     localStorage.setItem('privateKey', privateKey)
@@ -60,4 +63,5 @@ const register = async () => {
     error.value = err.response?.data?.message || 'ثبت‌نام ناموفق بود'
   }
 }
+
 </script>
