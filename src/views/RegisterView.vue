@@ -1,67 +1,44 @@
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-gray-100">
-    <div class="bg-white p-6 rounded shadow-md w-full max-w-sm">
-      <h2 class="text-xl font-semibold mb-4 text-center">ثبت‌نام</h2>
+  <div class="flex items-center justify-center h-screen bg-gray-100">
+    <form @submit.prevent="handleRegister" class="bg-white p-8 rounded shadow-md w-full max-w-sm space-y-4">
+      <h1 class="text-xl font-bold text-center">ثبت‌نام در PhiChat</h1>
 
-      <form @submit.prevent="register">
-        <input
-          v-model="username"
-          type="text"
-          placeholder="نام کاربری"
-          class="w-full mb-3 px-3 py-2 border rounded"
-        />
+      <input v-model="username" type="text" placeholder="نام کاربری" class="border rounded w-full px-3 py-2" />
+      <input v-model="password" type="password" placeholder="رمز عبور" class="border rounded w-full px-3 py-2" />
 
-        <input
-          v-model="password"
-          type="password"
-          placeholder="رمز عبور"
-          class="w-full mb-3 px-3 py-2 border rounded"
-        />
+      <button class="bg-green-600 text-white px-4 py-2 rounded w-full">ثبت‌نام</button>
 
-        <button
-          type="submit"
-          class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded"
-        >
-          ثبت‌نام
-        </button>
-      </form>
-
-      <p class="text-sm text-red-500 mt-3" v-if="error">{{ error }}</p>
-    </div>
+      <p class="text-sm text-center">
+        حساب دارید؟
+        <router-link to="/login" class="text-blue-600 underline">ورود</router-link>
+      </p>
+    </form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
-import { generateKeyPair,encryptPrivateKeyWithPassword } from '../services/crypto'
+import { API } from '../services/api'
 
 const username = ref('')
 const password = ref('')
-const error = ref('')
 const router = useRouter()
 
-const register = async () => {
-  error.value = ''
-
+async function handleRegister() {
   try {
-    const { publicKey, privateKey } = generateKeyPair()
-
-    const encryptedPrivateKey = await encryptPrivateKeyWithPassword(privateKey, password.value)
-
-    await axios.post('https://localhost:7146/api/auth/register', {
+    const res = await API.post('/auth/register', {
       username: username.value,
-      password: password.value,
-      publicKey,
-      encryptedPrivateKey
+      password: password.value
     })
 
-    localStorage.setItem('privateKey', privateKey)
-    router.push('/login')
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'ثبت‌نام ناموفق بود'
+    const token = res.data.token
+    localStorage.setItem('token', token)
+
+    router.push('/chat')
+  } catch (err) {
+    console.error('❌ Register failed:', err)
+    alert('ثبت‌نام ناموفق. لطفاً اطلاعات را بررسی کنید.')
   }
 }
-
 </script>

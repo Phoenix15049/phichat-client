@@ -19,19 +19,13 @@
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200',
             ]"
           >
-            <div>{{ msg.plainText }}</div>
-            <div v-if="msg.fileUrl">
-              <button @click="downloadFile(msg.fileUrl)" class="text-sm underline text-blue-300">
-                دانلود فایل
-              </button>
-            </div>
+            <div>{{ msg.plainText || '[رمزگشایی نشد]' }}</div>
           </div>
         </div>
       </div>
 
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
         <input v-model="text" placeholder="پیام..." class="flex-1 border rounded px-3 py-2" />
-        <input type="file" @change="onFileSelected" />
         <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
       </form>
     </div>
@@ -45,20 +39,24 @@ import UserList from '../components/UserList.vue'
 import {
   connectToChatHub,
   onMessageReceived,
-  sendMessage,
-  sendMessageWithFile
+  sendMessage
 } from '../services/signalr'
 import {
   generateAESKey,
   encryptAES,
   decryptAES,
+  exportAESKey,
   importAESKey
 } from '../services/crypto'
 import {
   getConversationWith,
   getChatKey,
-  getUserById
+  storeChatKey
 } from '../services/api'
+import {
+  saveAESKey,
+  loadAESKey
+} from '../utils/aesKeyStore'
 import { parseJwt } from '../utils/jwt'
 
 const router = useRouter()
@@ -85,15 +83,31 @@ onMounted(async () => {
   }
 
   await connectToChatHub(token)
+
   onMessageReceived(async (message) => {
     if (!selectedUser.value || message.senderId !== selectedUser.value.id) return
 
-    const chatKeyBase64 = await getChatKey(message.senderId)
-    if (!chatKeyBase64) return
+    // اگر فیلد encryptedText نبود، از encryptedContent بگیر
+    message.encryptedText = message.encryptedText || message.encryptedContent
 
-    const aesKey = await importAESKey(chatKeyBase64)
-    const plainText = await decryptAES(aesKey, message.encryptedText)
-    messages.value.push({ ...message, plainText })
+    let aesKey = await loadAESKey(message.senderId)
+    if (!aesKey) {
+      const keyBase64 = await getChatKey(message.senderId)
+      if (!keyBase64) return
+      aesKey = await importAESKey(keyBase64)
+      await saveAESKey(message.senderId, aesKey)
+    }
+
+    let decrypted = '[رمزگشایی نشد]'
+    if (message.encryptedText && typeof message.encryptedText === 'string') {
+      try {
+        decrypted = await decryptAES(aesKey, message.encryptedText) || '[رمزگشایی نشد]'
+      } catch (e) {
+        console.error('❌ رمزگشایی ناموفق:', e)
+      }
+    }
+
+    messages.value.push({ ...message, plainText: decrypted })
   })
 })
 
@@ -101,14 +115,36 @@ async function handleUserSelect(user: { id: string; username: string }) {
   selectedUser.value = user
   messages.value = []
 
-  const chatKeyBase64 = await getChatKey(user.id)
-  if (!chatKeyBase64) return
+  let aesKey = await loadAESKey(user.id)
 
-  const aesKey = await importAESKey(chatKeyBase64)
+  if (!aesKey) {
+    const keyBase64 = await getChatKey(user.id)
+    if (!keyBase64) {
+      console.warn('⛔ کلید چت یافت نشد.')
+      return
+    }
+
+    aesKey = await importAESKey(keyBase64)
+    await saveAESKey(user.id, aesKey)
+  }
+
   const history = await getConversationWith(user.id)
 
   for (const msg of history) {
-    msg.plainText = await decryptAES(aesKey, msg.encryptedText)
+    msg.encryptedText = msg.encryptedText || msg.encryptedContent
+
+    if (!msg.encryptedText || typeof msg.encryptedText !== 'string') {
+      console.warn('⛔ پیام مشکل‌دار:', msg)
+      msg.plainText = '[رمزگشایی نشد]'
+      continue
+    }
+
+    try {
+      msg.plainText = await decryptAES(aesKey, msg.encryptedText) || '[رمزگشایی نشد]'
+    } catch (err) {
+      console.error('❌ رمزگشایی ناموفق پیام قدیمی:', msg)
+      msg.plainText = '[رمزگشایی نشد]'
+    }
   }
 
   messages.value = history
@@ -117,23 +153,29 @@ async function handleUserSelect(user: { id: string; username: string }) {
 async function send() {
   if (!selectedUser.value || !text.value) return
 
-  const chatKeyBase64 = await getChatKey(selectedUser.value.id)
-  if (!chatKeyBase64) return
+  let keyBase64 = await getChatKey(selectedUser.value.id)
+  let aesKey: CryptoKey
 
-  const aesKey = await importAESKey(chatKeyBase64)
+  if (!keyBase64) {
+    const newKey = await generateAESKey()
+    const exported = await exportAESKey(newKey)
+    const base64Key = btoa(String.fromCharCode(...exported))
+
+    await storeChatKey({
+      receiverId: selectedUser.value.id,
+      key: base64Key
+    })
+
+    aesKey = newKey
+    await saveAESKey(selectedUser.value.id, aesKey)
+  } else {
+    aesKey = await importAESKey(keyBase64)
+    await saveAESKey(selectedUser.value.id, aesKey)
+  }
+
   const encrypted = await encryptAES(aesKey, text.value)
-
   await sendMessage(selectedUser.value.id, encrypted)
   messages.value.push({ senderId: myId, plainText: text.value })
   text.value = ''
-}
-
-function onFileSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  selectedFile.value = input.files?.[0] || null
-}
-
-async function downloadFile(url: string) {
-  window.open(url, '_blank')
 }
 </script>

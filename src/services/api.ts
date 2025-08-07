@@ -7,47 +7,46 @@ export const API = axios.create({
 
 API.interceptors.request.use(config => {
   const token = getToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
+// پیام‌ها
 export async function getConversationWith(userId: string) {
-  const response = await API.get(`/messages/with/${userId}`)
-  return response.data
+  const res = await API.get(`/messages/with/${userId}`)
+  return res.data
 }
 
 export async function getMyMessages() {
-  const response = await API.get('/messages')
-  return response.data
+  const res = await API.get('/messages')
+  return res.data
 }
 
+// کلید چت
 export async function getChatKey(userId: string): Promise<string | null> {
   try {
-    const response = await API.get(`/keys/${userId}`)
-    return response.data
-  } catch (error: any) {
-    if (error.response?.status === 404) return null
-    throw error
+    const res = await API.get(`/keys/${userId}`)
+    return res.data
+  } catch (err: any) {
+    if (err.response?.status === 404) return null
+    throw err
   }
 }
 
 export async function storeChatKey(data: { receiverId: string; key: string }) {
-  return await API.post('/keys', data, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
+  return await API.post('/keys', {
+    receiverId: data.receiverId,
+    encryptedKey: data.key // سرور هنوز اسم پارامتر رو encryptedKey می‌خواد
   })
 }
 
+// کاربران
 export async function getUserList() {
-  const response = await API.get('/users/list')
-  return response.data
+  const res = await API.get('/users/list')
+  return res.data
 }
 
 export async function getUserById(userId: string) {
-  const response = await API.get(`/users/${userId}`)
-  return response.data
+  const res = await API.get(`/users/${userId}`)
+  return res.data
 }
-

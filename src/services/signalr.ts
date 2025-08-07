@@ -1,41 +1,27 @@
 import * as signalR from '@microsoft/signalr'
 
-let connection: signalR.HubConnection | null = null
+let connection: signalR.HubConnection
 
-export function connectToChatHub(token: string): Promise<void> {
+export async function connectToChatHub(token: string) {
   connection = new signalR.HubConnectionBuilder()
     .withUrl('https://localhost:7146/chat', {
-      accessTokenFactory: () => token,
+      accessTokenFactory: () => token
     })
     .withAutomaticReconnect()
     .build()
 
-  return connection.start()
+  connection.onclose(() => console.warn('🔌 SignalR connection closed'))
+  await connection.start()
+  console.log('✅ Connected to SignalR')
 }
 
 export function onMessageReceived(callback: (message: any) => void) {
-  connection?.on('ReceiveMessage', callback)
+  connection.on('ReceiveMessage', callback)
 }
 
-export function sendMessage(receiverId: string, encryptedText: string) {
-  console.log('🔁 invoke SendMessage with', receiverId, encryptedText)
-  return connection?.invoke('SendMessage', {
+export async function sendMessage(receiverId: string, encryptedText: string) {
+  await connection.invoke('SendMessage', {
     receiverId,
     encryptedText
-  }).catch(err => console.error('🚫 invoke SendMessage failed', err))
-}
-
-
-export function sendMessageWithFile(
-  receiverId: string,
-  encryptedText: string,
-  fileBase64: string,
-  fileName: string
-) {
-  return connection?.invoke('SendMessageWithFile', {
-    receiverId,
-    encryptedText,
-    fileBase64,
-    fileName,
   })
 }
