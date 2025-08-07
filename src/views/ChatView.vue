@@ -52,27 +52,17 @@ import {
   generateAESKey,
   encryptAES,
   decryptAES,
-  encryptWithPublicKey,
-  decryptWithPrivateKey
+  importAESKey
 } from '../services/crypto'
-import {
-  saveAESKey,
-  loadAESKey
-} from '../utils/aesKeyStore'
 import {
   getConversationWith,
   getChatKey,
-  storeChatKey,
   getUserById
 } from '../services/api'
 import { parseJwt } from '../utils/jwt'
 
 const router = useRouter()
 const token = localStorage.getItem('token') || ''
-const privateKey = localStorage.getItem('privateKey') || ''
-
-
-
 
 let myId = ''
 try {
@@ -83,163 +73,67 @@ try {
   router.push('/login')
 }
 
-
-const selectedUser = ref<{ id: string; username: string; publicKey: string } | null>(null)
+const selectedUser = ref<{ id: string; username: string } | null>(null)
 const messages = ref<any[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
 
 onMounted(async () => {
-  if (!token || !privateKey) {
+  if (!token) {
     router.push('/login')
     return
   }
 
-  try {
-    await connectToChatHub(token)
+  await connectToChatHub(token)
+  onMessageReceived(async (message) => {
+    if (!selectedUser.value || message.senderId !== selectedUser.value.id) return
 
-    onMessageReceived(async (msg: any) => {
-      console.log('📩 پیام جدید دریافت شد:', msg)
-      const isMyMessage = msg.senderId === myId
-      const isFromSelected = selectedUser.value && msg.senderId === selectedUser.value.id
-      if (isMyMessage || isFromSelected) {
-        await loadMessages()
-      }
-    })
-  } catch (err) {
-    console.error('❌ Hub error:', err)
-  }
+    const chatKeyBase64 = await getChatKey(message.senderId)
+    if (!chatKeyBase64) return
+
+    const aesKey = await importAESKey(chatKeyBase64)
+    const plainText = await decryptAES(aesKey, message.encryptedText)
+    messages.value.push({ ...message, plainText })
+  })
 })
 
-
-const loadMessages = async () => {
-  if (!selectedUser.value) return
-
-  try {
-    const aesKey = await loadAESKey(selectedUser.value.id)
-    if (!aesKey) return
-    console.log('📦 imported key:', aesKey)
-
-    const history = await getConversationWith(selectedUser.value.id)
-    messages.value = []
-
-    for (const m of history) {
-      const plainText = await decryptAES(aesKey, m.encryptedContent)
-      messages.value.push({
-        senderId: m.senderId,
-        plainText: plainText || '[خطا در رمزگشایی]',
-        fileUrl: m.fileUrl || null
-      })
-    }
-  } catch (err) {
-    console.error('❌ error in loadMessages:', err)
-  }
-}
-
-
-const handleUserSelect = async (user: { id: string; username: string; publicKey: string }) => {
+async function handleUserSelect(user: { id: string; username: string }) {
   selectedUser.value = user
   messages.value = []
 
-  let aesKey = await loadAESKey(user.id)
-  try {
-    if (!aesKey) {
-      const encrypted = await getChatKey(user.id)
-      if (!encrypted) {
-        const newKey = await generateAESKey()
-        const exported = await crypto.subtle.exportKey('raw', newKey)
-        const u = await getUserById(user.id)
-        const encryptedKey = await encryptWithPublicKey(u.publicKey, new Uint8Array(exported))
-        await storeChatKey({
-          receiverId: selectedUser.value.id,
-          encryptedKey
-        })
-        await saveAESKey(user.id, newKey)
-        aesKey = newKey
-      } else {
-        const decrypted = await decryptWithPrivateKey(privateKey, encrypted)
-        console.log('🔍 Decrypted AES Key (raw):', decrypted)
-        aesKey = await crypto.subtle.importKey('raw', decrypted, 'AES-GCM', true, ['encrypt', 'decrypt'])
-        console.log('📦 Imported AES Key:', aesKey)
-        await saveAESKey(user.id, aesKey)
-      }
-    }
+  const chatKeyBase64 = await getChatKey(user.id)
+  if (!chatKeyBase64) return
 
-  } catch (err) {
-  console.error('❌ error in handleUserSelect:', err)
-  }
-  if (!(aesKey instanceof CryptoKey)) {
-    console.error('❌ AES key is invalid, aborting...')
-    return
+  const aesKey = await importAESKey(chatKeyBase64)
+  const history = await getConversationWith(user.id)
+
+  for (const msg of history) {
+    msg.plainText = await decryptAES(aesKey, msg.encryptedText)
   }
 
-
-  await loadMessages()
+  messages.value = history
 }
 
-const onFileSelected = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    selectedFile.value = target.files[0]
-  }
+async function send() {
+  if (!selectedUser.value || !text.value) return
+
+  const chatKeyBase64 = await getChatKey(selectedUser.value.id)
+  if (!chatKeyBase64) return
+
+  const aesKey = await importAESKey(chatKeyBase64)
+  const encrypted = await encryptAES(aesKey, text.value)
+
+  await sendMessage(selectedUser.value.id, encrypted)
+  messages.value.push({ senderId: myId, plainText: text.value })
+  text.value = ''
 }
 
-const send = async () => {
-  console.log('📤 پیام در حال رمزنگاری:', text.value)
-
-  if (!text.value || !text.value.trim()) {
-  console.warn('🚫 پیام خالی یا نامعتبر بود و ارسال نشد')
-  return
-  }
-  if (!selectedUser.value || (!text.value.trim() && !selectedFile.value)) return
-  const aesKey = await loadAESKey(selectedUser.value.id)
-  if (!aesKey) return
-  if (!text.value.trim()) {
-  console.warn('❌ پیام خالی ارسال نمی‌شود')
-  return
-  }
-  if (!(aesKey instanceof CryptoKey)) {
-    console.error('❌ AES key is invalid')
-    return
-  }
-  const encryptedText = text.value.trim()
-    ? await encryptAES(aesKey, text.value.trim())
-    : ''
-
-  try {
-    if (!selectedFile.value) {
-      await sendMessage(selectedUser.value.id, encryptedText)
-    } else {
-      const arrayBuffer = await selectedFile.value.arrayBuffer()
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-
-      await sendMessageWithFile(
-        selectedUser.value.id,
-        encryptedText,
-        base64,
-        selectedFile.value.name
-      )
-    }
-
-    text.value = ''
-    selectedFile.value = null
-    console.log('✉️ encryptedText:', encryptedText)
-
-    await loadMessages() // بروزرسانی لیست پیام‌ها
-  } catch (error) {
-    console.error('❌ خطا در ارسال پیام:', error)
-  }
+function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  selectedFile.value = input.files?.[0] || null
 }
 
-
-const downloadFile = (fileUrl: string) => {
-  const link = document.createElement('a')
-  link.href = `https://localhost:7146${fileUrl}`
-  link.target = '_blank'
-  link.rel = 'noopener noreferrer'
-  link.download = 'file'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+async function downloadFile(url: string) {
+  window.open(url, '_blank')
 }
 </script>

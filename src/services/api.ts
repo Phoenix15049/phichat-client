@@ -1,11 +1,10 @@
 import axios from 'axios'
-import { getToken } from '../utils/jwt' // تابعی که توکن رو از localStorage می‌گیره
+import { getToken } from '../utils/jwt'
 
 export const API = axios.create({
   baseURL: 'https://localhost:7146/api'
 })
 
-// 🛡 اتصال توکن به هر درخواست
 API.interceptors.request.use(config => {
   const token = getToken()
   if (token) {
@@ -14,7 +13,6 @@ API.interceptors.request.use(config => {
   return config
 })
 
-// پیام‌ها
 export async function getConversationWith(userId: string) {
   const response = await API.get(`/messages/with/${userId}`)
   return response.data
@@ -25,7 +23,6 @@ export async function getMyMessages() {
   return response.data
 }
 
-// کلید چت
 export async function getChatKey(userId: string): Promise<string | null> {
   try {
     const response = await API.get(`/keys/${userId}`)
@@ -36,9 +33,7 @@ export async function getChatKey(userId: string): Promise<string | null> {
   }
 }
 
-export async function storeChatKey(data: { receiverId: string; encryptedKey: string }) {
-  console.log('📡 ارسال کلید رمزنگاری شده:', data)
-
+export async function storeChatKey(data: { receiverId: string; key: string }) {
   return await API.post('/keys', data, {
     headers: {
       'Content-Type': 'application/json'
@@ -46,9 +41,6 @@ export async function storeChatKey(data: { receiverId: string; encryptedKey: str
   })
 }
 
-
-
-// کاربران
 export async function getUserList() {
   const response = await API.get('/users/list')
   return response.data
@@ -58,3 +50,4 @@ export async function getUserById(userId: string) {
   const response = await API.get(`/users/${userId}`)
   return response.data
 }
+
