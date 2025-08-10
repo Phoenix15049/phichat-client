@@ -15,13 +15,36 @@
         >
           <div
             :class="[
-              'inline-block px-3 py-2 rounded',
-              msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200',
+              'inline-block px-3 py-2 rounded max-w-[80%]',
+              msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
             ]"
           >
-            <div>{{ msg.plainText || '' }}</div>
-            <div v-if="msg.fileUrl">
-              <a :href="msg.fileUrl" target="_blank" class="text-xs text-blue-300 underline">دانلود فایل</a>
+            <!-- متن + تیک وضعیت -->
+            <div class="flex items-center gap-2">
+              <span>{{ msg.plainText || '' }}</span>
+              <span
+                v-if="msg.senderId === myId"
+                class="text-xs"
+                :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
+              >
+                <template v-if="msg.status === 'sending'">⌛</template>
+                <template v-else-if="msg.status === 'delivered'">✓</template>
+                <template v-else-if="msg.status === 'read'">✓✓</template>
+              </span>
+            </div>
+
+            <!-- لینک فایل -->
+            <div v-if="msg.fileUrl" class="mt-1">
+              <a
+                :href="msg.fileUrl"
+                target="_blank"
+                :class="[
+                  'text-xs',
+                  msg.senderId === myId ? 'text-white underline' : 'text-blue-600 underline'
+                ]"
+              >
+                دانلود فایل
+              </a>
             </div>
           </div>
         </div>
@@ -43,7 +66,10 @@ import UserList from '../components/UserList.vue'
 import {
   connectToChatHub,
   onMessageReceived,
-  sendMessage
+  sendMessage,
+  onDelivered,
+  onMessageRead,
+  markAsRead
 } from '../services/signalr'
 import {
   generateAESKey,
@@ -62,70 +88,45 @@ import {
   saveAESKey,
   loadAESKey
 } from '../utils/aesKeyStore'
-import { parseJwt } from '../utils/jwt'
-const EMPTY_MSG_MARKER = '\u200B'
-function toAbsoluteFileUrl(url: string | null): string | null {
-  if (!url) return null
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  // force backend origin
-  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+import { getToken, parseJwt } from '../utils/jwt'
+type UiMessage = {
+  id?: string
+  clientId?: string
+  senderId: string
+  plainText: string
+  fileUrl: string | null
+  status?: 'sending' | 'delivered' | 'read'
 }
 
+const EMPTY_MSG_MARKER = '\u200B' // zero-width space
 
-
-const router = useRouter()
-const token = localStorage.getItem('token') || ''
-
-let myId = ''
-try {
-  const decoded = parseJwt(token)
-  myId = decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']
-} catch (err) {
-  console.error('❌ JWT decode error:', err)
-  router.push('/login')
-}
-
+const myId = ref<string>('')
 const selectedUser = ref<{ id: string; username: string } | null>(null)
-const messages = ref<any[]>([])
+const messages = ref<UiMessage[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
 
 onMounted(async () => {
-  if (!token) {
-    router.push('/login')
-    return
+  // myId from JWT
+  const token = getToken()
+  if (token) {
+    const payload = parseJwt(token)
+    myId.value = payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? ''
+    await connectToChatHub(token)
+    wireSignalR()
   }
+})
 
-  await connectToChatHub(token)
-
-  onMessageReceived(async (message) => {
+function wireSignalR() {
+  onMessageReceived(async (message: any) => {
+    // unify fields
     const raw = (message.encryptedText || message.encryptedContent || '') as string
-    const hasText = raw.trim().length > 0
+    const hasCipher = raw.trim().length > 0
 
-    console.log('📩 پیام دریافتی از SignalR:', message)
-
-    if (!selectedUser.value) {
-      console.warn('⚠ پیام دریافت شد ولی هیچ مخاطبی انتخاب نشده:', message)
-      return
-    }
-
-    if (message.senderId !== selectedUser.value.id) {
-      console.warn('⚠ پیام برای کاربر دیگری بود. پیام نادیده گرفته شد:', message)
-      return
-    }
-
-    message.encryptedText = message.encryptedText || message.encryptedContent;
-
-    let aesKey = await loadAESKey(message.senderId);
-    if (!aesKey) {
-      const keyBase64 = await getChatKey(message.senderId);
-      if (!keyBase64) return;
-      aesKey = await importAESKey(keyBase64);
-      await saveAESKey(message.senderId, aesKey);
-    }
-
+    // ensure AES key
+    let aesKey = await getOrLoadKey(message.senderId)
     let decrypted = ''
-    if (raw && raw.trim().length > 0) {
+    if (hasCipher) {
       try {
         decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
       } catch {
@@ -133,112 +134,147 @@ onMounted(async () => {
       }
     }
 
-    
-    if (message.encryptedText && typeof message.encryptedText === 'string') {
-      try {
-        decrypted = await decryptAES(aesKey, message.encryptedText) || '[رمزگشایی نشد]';
-      } catch (e) {
-        console.error('❌ رمزگشایی ناموفق:', e);
-      }
+    const ui: UiMessage = {
+      id: message.messageId,
+      senderId: message.senderId,
+      plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
+      fileUrl: toAbsoluteFileUrl(message.fileUrl || null)
     }
+    messages.value.push(ui)
 
-      messages.value.push({
-        senderId: message.senderId,
-        plainText: decrypted,
-        fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
-        hasText
-      });
-  });
+    // mark as read for incoming message
+    if (message.messageId) {
+      try { await markAsRead(message.messageId) } catch {}
+    }
+  })
 
-})
+  onDelivered((info: any) => {
+    // match by clientId
+    const m = messages.value.find(x => x.clientId === info.clientId)
+    if (m) {
+      m.status = 'delivered'
+      m.id = info.messageId
+    }
+  })
+
+  onMessageRead((info: any) => {
+    const m = messages.value.find(x => x.id === info.messageId)
+    if (m) m.status = 'read'
+  })
+}
 
 async function handleUserSelect(user: { id: string; username: string }) {
   selectedUser.value = user
   messages.value = []
 
-  let aesKey = await loadAESKey(user.id)
-
-  if (!aesKey) {
-    const keyBase64 = await getChatKey(user.id)
-    if (!keyBase64) {
-      console.warn('⛔ کلید چت یافت نشد.')
-      return
-    }
-
-    aesKey = await importAESKey(keyBase64)
-    await saveAESKey(user.id, aesKey)
-  }
-
   const history = await getConversationWith(user.id)
 
-  for (const msg of history) {
-    msg.encryptedText = msg.encryptedText || msg.encryptedContent
+  // 1) کلید رو یک بار بگیر
+  const aesKey = await getOrLoadKey(user.id)
 
+  // 2) رمزگشایی همه پیام‌ها به صورت موازی
+  const prepared = await Promise.all(history.map(async (msg: any) => {
     const raw = (msg.encryptedContent || '') as string
+    const hasCipher = raw.trim().length > 0
+
     let decrypted = ''
-    if (raw.trim().length > 0) {
+    if (hasCipher) {
       try {
         decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
       } catch {
         decrypted = '[رمزگشایی نشد]'
       }
     }
-    const hasText = (decrypted && decrypted !== EMPTY_MSG_MARKER)
 
-    messages.value.push({
+    const isMine = msg.senderId === myId.value
+    const status: 'delivered' | 'read' | undefined = isMine
+      ? (msg.isRead ? 'read' : 'delivered') // اگه isRead داری
+      : undefined
+
+    return {
+      id: msg.messageId,
       senderId: msg.senderId,
-      plainText: hasText ? decrypted : '',
+      plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
       fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
-      hasText
-    })
-  }
+      status
+    } as UiMessage
+  }))
+
+  // 3) به جای push تکی، یکجا ست کن
+  messages.value = prepared
+
+  // 4) markAsRead ها رو موازی و بدون انتظار سراسری بفرست
+  const unreadIds: string[] = history
+    .filter((m: any) => m.senderId === user.id && (m.isRead === false || m.isRead === undefined))
+    .map((m: any) => m.messageId)
+    .filter(Boolean)
+
+  // موازی:
+  Promise.allSettled(unreadIds.map(id => markAsRead(id))).catch(() => {})
+}
+
+
+function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  selectedFile.value = input.files && input.files[0] ? input.files[0] : null
 }
 
 async function send() {
-  if (!selectedUser.value || (!text.value && !selectedFile.value)) return
+  if (!selectedUser.value) return
 
-  let keyBase64 = await getChatKey(selectedUser.value.id)
-  let aesKey: CryptoKey
+  // ensure AES key
+  const aesKey = await getOrLoadKey(selectedUser.value.id)
 
-  if (!keyBase64) {
-    const newKey = await generateAESKey()
-    const exported = await exportAESKey(newKey)
-    const base64Key = btoa(String.fromCharCode(...exported))
-
-    await storeChatKey({
-      receiverId: selectedUser.value.id,
-      key: base64Key
-    })
-
-    aesKey = newKey
-    await saveAESKey(selectedUser.value.id, aesKey)
-  } else {
-    aesKey = await importAESKey(keyBase64)
-    await saveAESKey(selectedUser.value.id, aesKey)
-  }
-
+  // file upload (optional)
   let fileUrl: string | null = null
-
   if (selectedFile.value) {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    fileUrl = await uploadEncryptedFile(formData)
-    selectedFile.value = null
+    const fd = new FormData()
+    fd.append('file', selectedFile.value)
+    const uploadedUrl = await uploadEncryptedFile(fd) // returns absolute url
+    fileUrl = toAbsoluteFileUrl(uploadedUrl)
   }
 
-  const toEncrypt = (text.value && text.value.trim().length > 0)
-    ? text.value
-    : EMPTY_MSG_MARKER // if file-only, send invisible marker
+  // message text (or marker)
+  const toEncrypt = (text.value && text.value.trim().length > 0) ? text.value : EMPTY_MSG_MARKER
   const encrypted = await encryptAES(aesKey, toEncrypt)
 
-  
-  await sendMessage(selectedUser.value.id, encrypted, fileUrl || undefined)
-  messages.value.push({ senderId: myId, plainText: text.value, fileUrl })
+  // optimistic UI add
+  const clientId = crypto.randomUUID()
+  const mine: UiMessage = {
+    clientId,
+    senderId: myId.value,
+    plainText: (toEncrypt === EMPTY_MSG_MARKER) ? '' : text.value,
+    fileUrl: fileUrl,
+    status: 'sending'
+  }
+  messages.value.push(mine)
+
+  // send via SignalR (clientId echoed back in Delivered)
+  await sendMessage(selectedUser.value.id, encrypted, fileUrl || undefined, clientId)
+
+  // reset inputs
   text.value = ''
+  selectedFile.value = null
 }
 
-function onFileSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  selectedFile.value = input.files?.[0] || null
+async function getOrLoadKey(partnerId: string) {
+  let key = await loadAESKey(partnerId)
+  if (!key) {
+    const base64 = await getChatKey(partnerId)
+    if (!base64) throw new Error('no chat key')
+    key = await importAESKey(base64)
+    await saveAESKey(partnerId, key)
+  }
+  return key
+}
+
+function toAbsoluteFileUrl(url: string | null): string | null {
+  if (!url) return null
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
 }
 </script>
+
+<style scoped>
+/* minimal */
+</style>
