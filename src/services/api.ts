@@ -1,3 +1,4 @@
+// src/services/api.ts
 import axios from 'axios'
 import { getToken } from '../utils/jwt'
 
@@ -11,7 +12,6 @@ API.interceptors.request.use(config => {
   return config
 })
 
-// پیام‌ها
 export async function getConversationWith(userId: string) {
   const res = await API.get(`/messages/with/${userId}`)
   return res.data
@@ -22,11 +22,10 @@ export async function getMyMessages() {
   return res.data
 }
 
-// کلید چت
 export async function getChatKey(userId: string): Promise<string | null> {
   try {
     const res = await API.get(`/keys/${userId}`)
-    return res.data
+    return res.data // base64 string
   } catch (err: any) {
     if (err.response?.status === 404) return null
     throw err
@@ -34,13 +33,14 @@ export async function getChatKey(userId: string): Promise<string | null> {
 }
 
 export async function storeChatKey(data: { receiverId: string; key: string }) {
-  return await API.post('/keys', {
+  const res = await API.post('/keys', {
     receiverId: data.receiverId,
-    encryptedKey: data.key // سرور هنوز اسم پارامتر رو encryptedKey می‌خواد
+    encryptedKey: data.key
   })
+  return res.data
 }
 
-// کاربران
+
 export async function getUserList() {
   const res = await API.get('/users/list')
   return res.data
@@ -50,3 +50,10 @@ export async function getUserById(userId: string) {
   const res = await API.get(`/users/${userId}`)
   return res.data
 }
+
+export async function uploadEncryptedFile(formData: FormData): Promise<string> {
+  const res = await API.post('/messages/upload', formData)
+  const url: string = res.data.url
+  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+}
+

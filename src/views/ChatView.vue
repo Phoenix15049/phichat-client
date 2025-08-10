@@ -19,13 +19,17 @@
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200',
             ]"
           >
-            <div>{{ msg.plainText || '[رمزگشایی نشد]' }}</div>
+            <div>{{ msg.plainText || '' }}</div>
+            <div v-if="msg.fileUrl">
+              <a :href="msg.fileUrl" target="_blank" class="text-xs text-blue-300 underline">دانلود فایل</a>
+            </div>
           </div>
         </div>
       </div>
 
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
         <input v-model="text" placeholder="پیام..." class="flex-1 border rounded px-3 py-2" />
+        <input type="file" @change="onFileSelected" />
         <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
       </form>
     </div>
@@ -51,13 +55,23 @@ import {
 import {
   getConversationWith,
   getChatKey,
-  storeChatKey
+  storeChatKey,
+  uploadEncryptedFile
 } from '../services/api'
 import {
   saveAESKey,
   loadAESKey
 } from '../utils/aesKeyStore'
 import { parseJwt } from '../utils/jwt'
+const EMPTY_MSG_MARKER = '\u200B'
+function toAbsoluteFileUrl(url: string | null): string | null {
+  if (!url) return null
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  // force backend origin
+  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+}
+
+
 
 const router = useRouter()
 const token = localStorage.getItem('token') || ''
@@ -85,30 +99,57 @@ onMounted(async () => {
   await connectToChatHub(token)
 
   onMessageReceived(async (message) => {
-    if (!selectedUser.value || message.senderId !== selectedUser.value.id) return
+    const raw = (message.encryptedText || message.encryptedContent || '') as string
+    const hasText = raw.trim().length > 0
 
-    // اگر فیلد encryptedText نبود، از encryptedContent بگیر
-    message.encryptedText = message.encryptedText || message.encryptedContent
+    console.log('📩 پیام دریافتی از SignalR:', message)
 
-    let aesKey = await loadAESKey(message.senderId)
-    if (!aesKey) {
-      const keyBase64 = await getChatKey(message.senderId)
-      if (!keyBase64) return
-      aesKey = await importAESKey(keyBase64)
-      await saveAESKey(message.senderId, aesKey)
+    if (!selectedUser.value) {
+      console.warn('⚠ پیام دریافت شد ولی هیچ مخاطبی انتخاب نشده:', message)
+      return
     }
 
-    let decrypted = '[رمزگشایی نشد]'
-    if (message.encryptedText && typeof message.encryptedText === 'string') {
+    if (message.senderId !== selectedUser.value.id) {
+      console.warn('⚠ پیام برای کاربر دیگری بود. پیام نادیده گرفته شد:', message)
+      return
+    }
+
+    message.encryptedText = message.encryptedText || message.encryptedContent;
+
+    let aesKey = await loadAESKey(message.senderId);
+    if (!aesKey) {
+      const keyBase64 = await getChatKey(message.senderId);
+      if (!keyBase64) return;
+      aesKey = await importAESKey(keyBase64);
+      await saveAESKey(message.senderId, aesKey);
+    }
+
+    let decrypted = ''
+    if (raw && raw.trim().length > 0) {
       try {
-        decrypted = await decryptAES(aesKey, message.encryptedText) || '[رمزگشایی نشد]'
-      } catch (e) {
-        console.error('❌ رمزگشایی ناموفق:', e)
+        decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
+      } catch {
+        decrypted = '[رمزگشایی نشد]'
       }
     }
 
-    messages.value.push({ ...message, plainText: decrypted })
-  })
+    
+    if (message.encryptedText && typeof message.encryptedText === 'string') {
+      try {
+        decrypted = await decryptAES(aesKey, message.encryptedText) || '[رمزگشایی نشد]';
+      } catch (e) {
+        console.error('❌ رمزگشایی ناموفق:', e);
+      }
+    }
+
+      messages.value.push({
+        senderId: message.senderId,
+        plainText: decrypted,
+        fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
+        hasText
+      });
+  });
+
 })
 
 async function handleUserSelect(user: { id: string; username: string }) {
@@ -133,25 +174,28 @@ async function handleUserSelect(user: { id: string; username: string }) {
   for (const msg of history) {
     msg.encryptedText = msg.encryptedText || msg.encryptedContent
 
-    if (!msg.encryptedText || typeof msg.encryptedText !== 'string') {
-      console.warn('⛔ پیام مشکل‌دار:', msg)
-      msg.plainText = '[رمزگشایی نشد]'
-      continue
+    const raw = (msg.encryptedContent || '') as string
+    let decrypted = ''
+    if (raw.trim().length > 0) {
+      try {
+        decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
+      } catch {
+        decrypted = '[رمزگشایی نشد]'
+      }
     }
+    const hasText = (decrypted && decrypted !== EMPTY_MSG_MARKER)
 
-    try {
-      msg.plainText = await decryptAES(aesKey, msg.encryptedText) || '[رمزگشایی نشد]'
-    } catch (err) {
-      console.error('❌ رمزگشایی ناموفق پیام قدیمی:', msg)
-      msg.plainText = '[رمزگشایی نشد]'
-    }
+    messages.value.push({
+      senderId: msg.senderId,
+      plainText: hasText ? decrypted : '',
+      fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
+      hasText
+    })
   }
-
-  messages.value = history
 }
 
 async function send() {
-  if (!selectedUser.value || !text.value) return
+  if (!selectedUser.value || (!text.value && !selectedFile.value)) return
 
   let keyBase64 = await getChatKey(selectedUser.value.id)
   let aesKey: CryptoKey
@@ -173,9 +217,28 @@ async function send() {
     await saveAESKey(selectedUser.value.id, aesKey)
   }
 
-  const encrypted = await encryptAES(aesKey, text.value)
-  await sendMessage(selectedUser.value.id, encrypted)
-  messages.value.push({ senderId: myId, plainText: text.value })
+  let fileUrl: string | null = null
+
+  if (selectedFile.value) {
+    const formData = new FormData()
+    formData.append('file', selectedFile.value)
+    fileUrl = await uploadEncryptedFile(formData)
+    selectedFile.value = null
+  }
+
+  const toEncrypt = (text.value && text.value.trim().length > 0)
+    ? text.value
+    : EMPTY_MSG_MARKER // if file-only, send invisible marker
+  const encrypted = await encryptAES(aesKey, toEncrypt)
+
+  
+  await sendMessage(selectedUser.value.id, encrypted, fileUrl || undefined)
+  messages.value.push({ senderId: myId, plainText: text.value, fileUrl })
   text.value = ''
+}
+
+function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  selectedFile.value = input.files?.[0] || null
 }
 </script>
