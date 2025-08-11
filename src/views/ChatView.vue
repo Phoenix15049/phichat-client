@@ -1,12 +1,21 @@
 <template>
   <div class="flex h-screen">
-    <UserList @user-selected="handleUserSelect" />
+    <UserList :unread="unread" @user-selected="handleUserSelect" />
 
     <div class="flex-1 flex flex-col">
-      <div class="bg-blue-600 text-white p-4 text-lg">
-        {{ selectedUser?.username || 'یک مخاطب را انتخاب کنید' }}
-      </div>
-
+        <div class="bg-blue-600 text-white p-4 text-lg">
+          <template v-if="selectedUser">
+            <router-link
+              :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
+              class="underline hover:opacity-90"
+            >
+              @{{ selectedUser.username.replace(/^@/, '') }}
+            </router-link>
+          </template>
+          <template v-else>
+            یک مخاطب را انتخاب کنید
+          </template>
+        </div>
       <div class="flex-1 overflow-y-auto p-4 space-y-2">
         <div
           v-for="(msg, index) in messages"
@@ -61,7 +70,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import UserList from '../components/UserList.vue'
 import {
   connectToChatHub,
@@ -72,17 +80,18 @@ import {
   markAsRead
 } from '../services/signalr'
 import {
-  generateAESKey,
   encryptAES,
   decryptAES,
-  exportAESKey,
-  importAESKey
+  importAESKey,
+  generateAESKey,
+  exportAESKey
 } from '../services/crypto'
 import {
   getConversationWith,
   getChatKey,
-  storeChatKey,
-  uploadEncryptedFile
+  uploadEncryptedFile,
+  getUserByUsername,
+  storeChatKey
 } from '../services/api'
 import {
   saveAESKey,
@@ -97,6 +106,9 @@ type UiMessage = {
   fileUrl: string | null
   status?: 'sending' | 'delivered' | 'read'
 }
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
 
 const EMPTY_MSG_MARKER = '\u200B' // zero-width space
 
@@ -105,6 +117,9 @@ const selectedUser = ref<{ id: string; username: string } | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
+
+const unread = ref<Record<string, number>>({})
+
 
 onMounted(async () => {
   // myId from JWT
@@ -115,14 +130,33 @@ onMounted(async () => {
     await connectToChatHub(token)
     wireSignalR()
   }
+  const username = route.params.username as string | undefined
+  if (username && !selectedUser.value) {
+    try {
+      const u = await getUserByUsername(username.replace(/^@/, ''))
+      await handleUserSelect({ id: u.id, username: u.username })
+    } catch (e) {
+      console.error('username not found', e)
+    }
+  }
+
 })
 
 function wireSignalR() {
   onMessageReceived(async (message: any) => {
     // unify fields
+    const isFromOtherPeer = selectedUser.value && message.senderId !== selectedUser.value.id
+    const isMyEcho = message.senderId === myId.value
+
+    if (!selectedUser.value || isFromOtherPeer || isMyEcho) {
+      if (!isMyEcho) {
+        const sid = String(message.senderId)
+        unread.value[sid] = (unread.value[sid] ?? 0) + 1
+      }
+      return
+    }
     const raw = (message.encryptedText || message.encryptedContent || '') as string
     const hasCipher = raw.trim().length > 0
-
     // ensure AES key
     let aesKey = await getOrLoadKey(message.senderId)
     let decrypted = ''
@@ -186,10 +220,17 @@ async function handleUserSelect(user: { id: string; username: string }) {
       }
     }
 
+    if (unread.value[user.id]) {
+      unread.value[user.id] = 0
+    }
+
+
     const isMine = msg.senderId === myId.value
     const status: 'delivered' | 'read' | undefined = isMine
       ? (msg.isRead ? 'read' : 'delivered') // اگه isRead داری
       : undefined
+
+
 
     return {
       id: msg.messageId,
@@ -258,14 +299,30 @@ async function send() {
 }
 
 async function getOrLoadKey(partnerId: string) {
+  // 1) try local cache
   let key = await loadAESKey(partnerId)
-  if (!key) {
-    const base64 = await getChatKey(partnerId)
-    if (!base64) throw new Error('no chat key')
+  if (key) return key
+
+  // 2) try server
+  const base64 = await getChatKey(partnerId) // returns string | null
+  if (base64) {
     key = await importAESKey(base64)
     await saveAESKey(partnerId, key)
+    return key
   }
-  return key
+
+  // 3) 404 → create new AES key and store on server (both directions)
+  const newKey = await generateAESKey()
+  const raw = await exportAESKey(newKey) // Uint8Array
+  const base64Key = btoa(String.fromCharCode(...raw)) 
+
+  await storeChatKey({
+    receiverId: partnerId,
+    encryptedKey: base64Key, // plain base64 of AES key (مطابق ساختار فعلی KeysController/Service)
+  })
+
+  await saveAESKey(partnerId, newKey)
+  return newKey
 }
 
 function toAbsoluteFileUrl(url: string | null): string | null {

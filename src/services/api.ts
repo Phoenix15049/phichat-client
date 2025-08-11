@@ -32,14 +32,13 @@ export async function getChatKey(userId: string): Promise<string | null> {
   }
 }
 
-export async function storeChatKey(data: { receiverId: string; key: string }) {
-  const res = await API.post('/keys', {
-    receiverId: data.receiverId,
-    encryptedKey: data.key
-  })
-  return res.data
-}
+export type StoreChatKeyPayload = { receiverId: string; encryptedKey: string }
 
+export async function storeChatKey(payload: StoreChatKeyPayload) {
+  return API.post('/keys', payload, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
 
 export async function getUserList() {
   const res = await API.get('/users/list')
@@ -57,3 +56,16 @@ export async function uploadEncryptedFile(formData: FormData): Promise<string> {
   return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
 }
 
+export async function getUserByUsername(username: string) {
+  const { data } = await API.get(`/users/by-username/${encodeURIComponent(username)}`)
+  return data
+}
+
+export async function getMeProfile() {
+  const { data } = await API.get('/users/me')
+  return data
+}
+
+export async function updateMyProfile(payload: { displayName?: string; avatarUrl?: string; bio?: string }) {
+  await API.put('/users/profile', payload)
+}

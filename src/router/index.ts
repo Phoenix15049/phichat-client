@@ -2,12 +2,14 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import ChatView from '../views/ChatView.vue'
-
+import SettingsView from '../views/SettingsView.vue'
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
   { path: '/register', component: RegisterView },
-  { path: '/chat', component: ChatView }
+  { path: '/chat', component: ChatView },
+  { path: '/settings', component: SettingsView },
+  { path: '/u/:username', component: ChatView, props: true }
 ]
 
 const router = createRouter({
