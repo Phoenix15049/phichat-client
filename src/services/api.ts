@@ -69,3 +69,17 @@ export async function getMeProfile() {
 export async function updateMyProfile(payload: { displayName?: string; avatarUrl?: string; bio?: string }) {
   await API.put('/users/profile', payload)
 }
+
+
+export async function getMyContacts() {
+  const { data } = await API.get('/contacts')
+  return data as Array<{ contactId: string; username: string; displayName?: string; avatarUrl?: string }>
+}
+
+export async function addContact(contactId: string) {
+  await API.post(`/contacts/${contactId}`)
+}
+
+export async function removeContact(contactId: string) {
+  await API.delete(`/contacts/${contactId}`)
+}
