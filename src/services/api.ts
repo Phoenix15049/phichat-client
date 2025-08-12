@@ -83,3 +83,19 @@ export async function addContact(contactId: string) {
 export async function removeContact(contactId: string) {
   await API.delete(`/contacts/${contactId}`)
 }
+
+
+export async function getConversations() {
+  const { data } = await API.get('/messages/conversations')
+
+  return data as Array<{
+    peerId: string
+    peerUsername: string
+    peerDisplayName?: string
+    peerAvatarUrl?: string
+    lastEncryptedContent?: string
+    lastFileUrl?: string
+    lastSentAt: string
+    unreadCount: number
+  }>
+}
