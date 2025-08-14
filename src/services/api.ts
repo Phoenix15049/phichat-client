@@ -25,7 +25,7 @@ export async function getMyMessages() {
 export async function getChatKey(userId: string): Promise<string | null> {
   try {
     const res = await API.get(`/keys/${userId}`)
-    return res.data // base64 string
+    return res.data 
   } catch (err: any) {
     if (err.response?.status === 404) return null
     throw err

@@ -3,19 +3,25 @@
     <UserList :unread="unread" @user-selected="handleUserSelect" />
 
     <div class="flex-1 flex flex-col">
-        <div class="bg-blue-600 text-white p-4 text-lg">
-          <template v-if="selectedUser">
-            <router-link
-              :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
-              class="underline hover:opacity-90"
-            >
-              @{{ selectedUser.username.replace(/^@/, '') }}
-            </router-link>
-          </template>
-          <template v-else>
-            یک مخاطب را انتخاب کنید
-          </template>
-        </div>
+      <div class="bg-blue-600 text-white p-4 text-lg">
+        <template v-if="selectedUser">
+          <router-link
+            :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
+            class="underline hover:opacity-90"
+          >
+            @{{ selectedUser.username.replace(/^@/, '') }}
+          </router-link>
+        </template>
+        <template v-else>
+          یک مخاطب را انتخاب کنید
+        </template>
+      </div>
+
+      <!-- typing indicator -->
+      <div class="text-xs text-gray-500 h-5 px-4">
+        <span v-if="isPeerTyping">در حال تایپ…</span>
+      </div>
+
       <div class="flex-1 overflow-y-auto p-4 space-y-2">
         <div
           v-for="(msg, index) in messages"
@@ -60,7 +66,13 @@
       </div>
 
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
-        <input v-model="text" placeholder="پیام..." class="flex-1 border rounded px-3 py-2" />
+        <input
+          v-model="text"
+          @input="onInputChanged"
+          @blur="onBlurInput"
+          placeholder="پیام..."
+          class="flex-1 border rounded px-3 py-2"
+        />
         <input type="file" @change="onFileSelected" />
         <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
       </form>
@@ -77,7 +89,14 @@ import {
   sendMessage,
   onDelivered,
   onMessageRead,
-  markAsRead
+  markAsRead,
+  // 👇 تایپینگ (طبق سیگنالر کنونی‌ات)
+  startTyping,
+  stopTyping,
+  onTyping,
+  onTypingStopped,
+  onUserOnline,
+  onUserOffline
 } from '../services/signalr'
 import {
   encryptAES,
@@ -98,6 +117,8 @@ import {
   loadAESKey
 } from '../utils/aesKeyStore'
 import { getToken, parseJwt } from '../utils/jwt'
+import { useRoute } from 'vue-router'
+
 type UiMessage = {
   id?: string
   clientId?: string
@@ -106,10 +127,8 @@ type UiMessage = {
   fileUrl: string | null
   status?: 'sending' | 'delivered' | 'read'
 }
-import { useRoute } from 'vue-router'
 
 const route = useRoute()
-
 const EMPTY_MSG_MARKER = '\u200B' // zero-width space
 
 const myId = ref<string>('')
@@ -117,9 +136,15 @@ const selectedUser = ref<{ id: string; username: string } | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
-
 const unread = ref<Record<string, number>>({})
-
+const online = new Set<string>()
+const typing = new Set<string>()
+// --- typing state (کم‌تغییر) ---
+const isPeerTyping = ref(false)
+let typingTimer: number | null = null
+const TYPING_IDLE_MS = 4000
+let lastTypingSend = 0
+const TYPING_THROTTLE_MS = 1200
 
 onMounted(async () => {
   // myId from JWT
@@ -130,6 +155,7 @@ onMounted(async () => {
     await connectToChatHub(token)
     wireSignalR()
   }
+
   const username = route.params.username as string | undefined
   if (username && !selectedUser.value) {
     try {
@@ -140,6 +166,16 @@ onMounted(async () => {
     }
   }
 
+  const handleOnline = (userId: string /*, at: string */) => online.add(userId)
+  const handleOffline = (userId: string /*, at: string */) => online.delete(userId)
+
+  const handleTyping = (p: { SenderId: string }) => typing.add(p.SenderId)
+  const handleTypingStopped = (p: { SenderId: string }) => typing.delete(p.SenderId)
+
+  onUserOnline(handleOnline)
+  onUserOffline(handleOffline)
+  onTyping(handleTyping)
+  onTypingStopped(handleTypingStopped)
 })
 
 function wireSignalR() {
@@ -155,8 +191,10 @@ function wireSignalR() {
       }
       return
     }
+
     const raw = (message.encryptedText || message.encryptedContent || '') as string
     const hasCipher = raw.trim().length > 0
+
     // ensure AES key
     let aesKey = await getOrLoadKey(message.senderId)
     let decrypted = ''
@@ -180,6 +218,19 @@ function wireSignalR() {
     if (message.messageId) {
       try { await markAsRead(message.messageId) } catch {}
     }
+
+      onTyping((p: { SenderId: string }) => {
+      if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+      isPeerTyping.value = true
+      if (typingTimer) window.clearTimeout(typingTimer)
+      typingTimer = window.setTimeout(() => { isPeerTyping.value = false }, TYPING_IDLE_MS)
+    })
+
+    onTypingStopped((p: { SenderId: string }) => {
+      if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+      isPeerTyping.value = false
+      if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
+    })
   })
 
   onDelivered((info: any) => {
@@ -194,6 +245,20 @@ function wireSignalR() {
   onMessageRead((info: any) => {
     const m = messages.value.find(x => x.id === info.messageId)
     if (m) m.status = 'read'
+  })
+
+  // --- typing رویدادها ---
+  onTyping((p: { SenderId: string }) => {
+    if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+    isPeerTyping.value = true
+    if (typingTimer) window.clearTimeout(typingTimer)
+    typingTimer = window.setTimeout(() => { isPeerTyping.value = false }, TYPING_IDLE_MS)
+  })
+
+  onTypingStopped((p: { SenderId: string }) => {
+    if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+    isPeerTyping.value = false
+    if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
   })
 }
 
@@ -224,13 +289,10 @@ async function handleUserSelect(user: { id: string; username: string }) {
       unread.value[user.id] = 0
     }
 
-
     const isMine = msg.senderId === myId.value
     const status: 'delivered' | 'read' | undefined = isMine
-      ? (msg.isRead ? 'read' : 'delivered') // اگه isRead داری
+      ? (msg.isRead ? 'read' : 'delivered')
       : undefined
-
-
 
     return {
       id: msg.messageId,
@@ -241,7 +303,7 @@ async function handleUserSelect(user: { id: string; username: string }) {
     } as UiMessage
   }))
 
-  // 3) به جای push تکی، یکجا ست کن
+  // 3) یکجا ست کن
   messages.value = prepared
 
   // 4) markAsRead ها رو موازی و بدون انتظار سراسری بفرست
@@ -250,10 +312,8 @@ async function handleUserSelect(user: { id: string; username: string }) {
     .map((m: any) => m.messageId)
     .filter(Boolean)
 
-  // موازی:
   Promise.allSettled(unreadIds.map(id => markAsRead(id))).catch(() => {})
 }
-
 
 function onFileSelected(e: Event) {
   const input = e.target as HTMLInputElement
@@ -271,7 +331,7 @@ async function send() {
   if (selectedFile.value) {
     const fd = new FormData()
     fd.append('file', selectedFile.value)
-    const uploadedUrl = await uploadEncryptedFile(fd) // returns absolute url
+    const uploadedUrl = await uploadEncryptedFile(fd) // returns absolute url or /uploads/...
     fileUrl = toAbsoluteFileUrl(uploadedUrl)
   }
 
@@ -289,13 +349,28 @@ async function send() {
     status: 'sending'
   }
   messages.value.push(mine)
-
-  // send via SignalR (clientId echoed back in Delivered)
+  
   await sendMessage(selectedUser.value.id, encrypted, fileUrl || undefined, clientId)
-
+  if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
   // reset inputs
   text.value = ''
   selectedFile.value = null
+}
+
+
+function onInputChanged() {
+  if (!selectedUser.value) return
+  const now = Date.now()
+  const last = (onInputChanged as any)._last || 0
+  if (now - last > 900) {
+    startTyping(selectedUser.value.id).catch(()=>{})
+    ;(onInputChanged as any)._last = now
+  }
+  if (!text.value.trim()) stopTyping(selectedUser.value.id).catch(()=>{})
+}
+
+function onBlurInput() {
+  if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
 }
 
 async function getOrLoadKey(partnerId: string) {
@@ -311,16 +386,14 @@ async function getOrLoadKey(partnerId: string) {
     return key
   }
 
-  // 3) 404 → create new AES key and store on server (both directions)
+  // 3) create & store
   const newKey = await generateAESKey()
-  const raw = await exportAESKey(newKey) // Uint8Array
-  const base64Key = btoa(String.fromCharCode(...raw)) 
-
+  const raw = await exportAESKey(newKey)
+  const base64Key = btoa(String.fromCharCode(...raw))
   await storeChatKey({
     receiverId: partnerId,
-    encryptedKey: base64Key, // plain base64 of AES key (مطابق ساختار فعلی KeysController/Service)
+    encryptedKey: base64Key,
   })
-
   await saveAESKey(partnerId, newKey)
   return newKey
 }
@@ -333,5 +406,4 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 </script>
 
 <style scoped>
-/* minimal */
 </style>
