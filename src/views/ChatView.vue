@@ -143,8 +143,7 @@ const typing = new Set<string>()
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
 const TYPING_IDLE_MS = 4000
-let lastTypingSend = 0
-const TYPING_THROTTLE_MS = 1200
+let prevSelectedUserId: string | null = null
 
 onMounted(async () => {
   // myId from JWT
@@ -219,44 +218,35 @@ function wireSignalR() {
       try { await markAsRead(message.messageId) } catch {}
     }
 
-      onTyping((p: { SenderId: string }) => {
-      if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
-      isPeerTyping.value = true
-      if (typingTimer) window.clearTimeout(typingTimer)
-      typingTimer = window.setTimeout(() => { isPeerTyping.value = false }, TYPING_IDLE_MS)
-    })
-
-    onTypingStopped((p: { SenderId: string }) => {
-      if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
-      isPeerTyping.value = false
-      if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
-    })
+    
   })
-
   onDelivered((info: any) => {
-    // match by clientId
-    const m = messages.value.find(x => x.clientId === info.clientId)
-    if (m) {
-      m.status = 'delivered'
-      m.id = info.messageId
-    }
-  })
+      const m = messages.value.find(x => x.clientId === info.clientId)
+      if (m) {
+        m.status = 'delivered'
+        m.id = info.messageId
+      }
+    })
 
   onMessageRead((info: any) => {
     const m = messages.value.find(x => x.id === info.messageId)
     if (m) m.status = 'read'
   })
 
-  // --- typing رویدادها ---
-  onTyping((p: { SenderId: string }) => {
-    if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+
+  onTyping((p) => {
+    const selId = selectedUser.value?.id
+    console.log('onTyping payload=', p, 'selectedUser=', selId)
+    if (!selId || String(p.SenderId) !== String(selId)) return
     isPeerTyping.value = true
     if (typingTimer) window.clearTimeout(typingTimer)
     typingTimer = window.setTimeout(() => { isPeerTyping.value = false }, TYPING_IDLE_MS)
   })
 
-  onTypingStopped((p: { SenderId: string }) => {
-    if (!selectedUser.value || p.SenderId !== selectedUser.value.id) return
+  onTypingStopped((p) => {
+    const selId = selectedUser.value?.id
+    console.log('onTypingStopped payload=', p, 'selectedUser=', selId)
+    if (!selId || String(p.SenderId) !== String(selId)) return
     isPeerTyping.value = false
     if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
   })
@@ -293,6 +283,15 @@ async function handleUserSelect(user: { id: string; username: string }) {
     const status: 'delivered' | 'read' | undefined = isMine
       ? (msg.isRead ? 'read' : 'delivered')
       : undefined
+
+
+    if (prevSelectedUserId) {
+    stopTyping(prevSelectedUserId).catch(() => {})
+    }
+    prevSelectedUserId = user.id
+
+    selectedUser.value = user
+    isPeerTyping.value = false
 
     return {
       id: msg.messageId,
@@ -355,6 +354,12 @@ async function send() {
   // reset inputs
   text.value = ''
   selectedFile.value = null
+
+
+  
+  stopTyping(selectedUser.value.id).catch(() => {})
+  text.value = ''
+  selectedFile.value = null
 }
 
 
@@ -363,13 +368,18 @@ function onInputChanged() {
   const now = Date.now()
   const last = (onInputChanged as any)._last || 0
   if (now - last > 900) {
+    console.log('➡️ startTyping()', selectedUser.value.id)
     startTyping(selectedUser.value.id).catch(()=>{})
     ;(onInputChanged as any)._last = now
   }
-  if (!text.value.trim()) stopTyping(selectedUser.value.id).catch(()=>{})
+  if (!text.value.trim()) {
+    console.log('➡️ stopTyping() (empty text)')
+    stopTyping(selectedUser.value.id).catch((e)=>console.warn('stopTyping error', e))
+  }
 }
 
 function onBlurInput() {
+  console.log('➡️ stopTyping() (blur)')
   if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
 }
 

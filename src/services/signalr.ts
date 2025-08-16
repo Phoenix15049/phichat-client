@@ -7,6 +7,11 @@ let started = false
 // Handlers registered before connection starts are queued here
 const pendingSubs: Array<(c: HubConnection) => void> = []
 
+function normTyping(p: any): { SenderId: string; At?: string } {
+  const sid = p?.SenderId ?? p?.senderId ?? p?.userId ?? p?.UserId
+  return { SenderId: String(sid ?? ''), At: p?.At ?? p?.at }
+}
+
 function flushPending() {
   if (!connection) return
   for (const sub of pendingSubs) sub(connection)
@@ -32,7 +37,10 @@ export async function connectToChatHub(token: string) {
 
   await connection.start()
   started = true
+  
   console.log('✅ Connected to SignalR')
+  connection.on('UserTyping',  (raw: any) => console.debug('🌐 core UserTyping', normTyping(raw)))
+  connection.on('UserStoppedTyping', (raw: any) => console.debug('🌐 core UserStoppedTyping', normTyping(raw)))
   flushPending()
 }
 
@@ -131,27 +139,22 @@ export function offUserOffline(cb: (userId: string, at: string) => void) {
 /* ---------------- Typing ---------------- */
 
 // UserTyping({ SenderId, At })
-export function onTyping(cb: (payload: { SenderId: string; At: string }) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('UserTyping', (p: any) => {
-      // console.debug('🔔 UserTyping', p)
-      cb(p)
-    })
+export function onTyping(cb: (p: { SenderId: string; At?: string }) => void) {
+  const sub = (c: HubConnection) => c.on('UserTyping', (raw: any) => cb(normTyping(raw)))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
+
 export function offTyping(cb: (payload: { SenderId: string; At: string }) => void) {
   connection?.off('UserTyping', cb as any)
 }
 
 // UserStoppedTyping({ SenderId, At })
-export function onTypingStopped(cb: (payload: { SenderId: string; At: string }) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('UserStoppedTyping', (p: any) => {
-      // console.debug('🔔 UserStoppedTyping', p)
-      cb(p)
-    })
+export function onTypingStopped(cb: (p: { SenderId: string; At?: string }) => void) {
+  const sub = (c: HubConnection) => c.on('UserStoppedTyping', (raw: any) => cb(normTyping(raw)))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
+
+
 export function offTypingStopped(cb: (payload: { SenderId: string; At: string }) => void) {
   connection?.off('UserStoppedTyping', cb as any)
 }
