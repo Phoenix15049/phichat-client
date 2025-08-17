@@ -85,15 +85,17 @@ export function onMessageRead(cb: (info: any) => void) {
 export async function sendMessage(
   receiverId: string,
   encryptedText: string,
-  fileUrl?: string,
-  clientId?: string
+  fileUrl?: string | null,
+  clientId?: string | null,
+  replyToMessageId?: string | null // ← NEW
 ) {
   if (!connection) throw new Error('SignalR not connected')
   await connection.invoke('SendMessage', {
     receiverId,
     encryptedText,
     fileUrl: fileUrl ?? null,
-    clientId: clientId ?? null
+    clientId: clientId ?? null,
+    replyToMessageId: replyToMessageId ?? null, // ← use param, not replyingTo
   })
 }
 

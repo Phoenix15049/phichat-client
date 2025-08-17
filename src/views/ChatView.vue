@@ -38,7 +38,6 @@
       </div>
     </div>
 
-
     <div class="flex-1 flex flex-col">
       <div class="bg-blue-600 text-white p-4 text-lg">
         <template v-if="selectedUser">
@@ -54,18 +53,26 @@
         </template>
       </div>
 
-      <!-- typing indicator -->
       <div class="text-xs text-gray-500 h-5 px-4">
         <span v-if="isPeerTyping">در حال تایپ…</span>
       </div>
 
       <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 space-y-2" @scroll="onScrollLoadMore">
+        <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
+          <div class="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur px-3 py-1 shadow">
+            <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" class="opacity-25"/>
+              <path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            <span class="text-xs text-gray-600">در حال بارگذاری…</span>
+          </div>
+        </div>
+
         <div
           v-for="(msg, index) in messages"
           :key="index"
           :class="msg.senderId === myId ? 'text-right' : 'text-left'"
         >
-
           <div v-if="showDayHeader(index)" class="flex justify-center my-2">
             <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
               {{ dayLabel(messages[index].sentAt) }}
@@ -76,40 +83,60 @@
             :class="[
               'inline-block px-3 py-2 rounded max-w-[80%]',
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
-            ]":title="tooltipForMessage(msg)"
+            ]"
+            :title="tooltipForMessage(msg)"
+            @dblclick="replyingTo = msg"
+            :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
           >
-            <!-- متن -->
-          <div class="whitespace-pre-wrap break-words">
-            {{ msg.plainText || '' }}
-          </div>
-
-          <!-- لینک فایل -->
-          <div v-if="msg.fileUrl" class="mt-1">
-            <a
-              :href="msg.fileUrl"
-              target="_blank"
-              :class="[
-                'text-xs',
-                msg.senderId === myId ? 'text-white underline' : 'text-blue-600 underline'
-              ]"
+            <div
+              v-if="msg.replyToMessageId"
+              class="mb-1 border-l-2 pl-2 text-xs opacity-80 cursor-pointer hover:underline"
+              @click="jumpToReplied(msg.replyToMessageId)"
             >
-              دانلود فایل
-            </a>
-          </div>
+              <div class="truncate">
+                {{ resolveReplyPreview(msg.replyToMessageId) }}
+              </div>
+            </div>
 
-          <!-- نوار وضعیت: ساعت کوچک + تیک‌ها -->
-          <div
-            class="mt-1 flex items-center gap-1 text-[11px]"
-            :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
-          >
-            <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
-            <span v-if="msg.senderId === myId">
-              <template v-if="msg.status === 'read'">✓✓</template>
-              <template v-else-if="msg.status === 'delivered'">✓</template>
-              <template v-else>…</template>
-            </span>
+
+            <div class="whitespace-pre-wrap break-words">
+              {{ msg.plainText || '' }}
+            </div>
+
+            <div v-if="msg.fileUrl" class="mt-1">
+              <a
+                :href="msg.fileUrl"
+                target="_blank"
+                :class="[
+                  'text-xs',
+                  msg.senderId === myId ? 'text-white underline' : 'text-blue-600 underline'
+                ]"
+              >
+                دانلود فایل
+              </a>
+            </div>
+
+            <div
+              class="mt-1 flex items-center gap-1 text-[11px]"
+              :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
+            >
+              <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
+              <span v-if="msg.senderId === myId">
+                <template v-if="msg.status === 'read'">✓✓</template>
+                <template v-else-if="msg.status === 'delivered'">✓</template>
+                <template v-else>…</template>
+              </span>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <div v-if="replyingTo" class="px-4 pt-2">
+        <div class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded">
+          <div class="truncate">
+            در پاسخ به: {{ resolveReplyPreview(replyingTo.id) }}
           </div>
+          <button type="button" class="text-gray-500 hover:text-red-600" @click="replyingTo = null">✕</button>
         </div>
       </div>
 
@@ -118,7 +145,7 @@
           v-model="text"
           @input="onInputChanged"
           @blur="onBlurInput"
-          placeholder="پیام..."
+          placeholder="پیام."
           class="flex-1 border rounded px-3 py-2"
         />
         <input type="file" @change="onFileSelected" />
@@ -128,9 +155,10 @@
   </div>
 </template>
 
+
 <script setup lang="ts">
 import { ref, onMounted,nextTick } from 'vue'
-import UserList from '../components/UserList.vue'
+
 import {
   connectToChatHub,
   onMessageReceived,
@@ -154,7 +182,6 @@ import {
   exportAESKey
 } from '../services/crypto'
 import {
-  getConversationWith,
   getChatKey,
   uploadEncryptedFile,
   getUserByUsername,
@@ -182,6 +209,7 @@ type UiMessage = {
   sentAt?: string
   deliveredAtUtc?: string | null
   readAtUtc?: string | null
+  replyToMessageId?: string | null
 }
 
 type UiConversation = {
@@ -195,6 +223,16 @@ type UiConversation = {
   lastPreview?: string | null
 }
 
+function resolveReplyPreview(id?: string | null): string {
+  if (!id) return ''
+  const m = messages.value.find((x: any) => x.id === id)
+  if (!m) return 'پیام'
+  if (m.plainText && m.plainText.trim()) {
+    return m.plainText.length > 60 ? m.plainText.slice(0, 60) + '…' : m.plainText
+  }
+  if (m.fileUrl) return '[مدیا]'
+  return 'پیام'
+}
 
 
 
@@ -224,13 +262,142 @@ const scrollBox = ref<HTMLElement | null>(null)
 const loadingOlder = ref(false)
 const hasMore = ref(true)
 const oldestId = ref<string | null>(null)
+const replyingTo = ref<UiMessage | null>(null)
 
 
 
 const conversations = ref<UiConversation[]>([])
 
 
+const msgElMap = new Map<string, HTMLElement>();
 
+const ACTIVE_UID_KEY = 'phi.activeUserId';
+
+
+
+
+
+
+
+
+
+
+
+function loadAESKeyScoped(partnerId: string) {
+  try {
+    const uid = localStorage.getItem(ACTIVE_UID_KEY);
+    if (!uid || uid !== myId.value) return null;
+  } catch {}
+  return loadAESKey(partnerId); 
+}
+
+async function saveAESKeyScoped(partnerId: string, key: CryptoKey) {
+  try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
+  return await saveAESKey(partnerId, key);
+}
+
+
+
+async function jumpToReplied(targetId?: string | null) {
+  if (!targetId || !selectedUser.value) return;
+  await jumpToMessage(targetId);
+}
+
+async function jumpToMessage(targetId: string) {
+  // 1) اگر پیام همین حالا توی لیست هست، مستقیم اسکرول و هایلایت
+  let el = msgElMap.get(targetId);
+  if (!el) {
+    // 2) اگر نیست، صفحه‌های قبلی را prepend کن تا برسیم به پیام (تا 10 نوبت یا تا تمام‌شدن)
+    let tries = 0;
+    while (!el && hasMore.value && tries < 10) {
+      const loaded = await loadOlderOnce(); // یک صفحهٔ قبلی بارگذاری می‌کند
+      if (!loaded) break;
+      await nextTick();
+      el = msgElMap.get(targetId);
+      tries++;
+    }
+  }
+  if (el && scrollBox.value) {
+    
+    const container = scrollBox.value;
+    const top = el.offsetTop - 100; // کمی حاشیه بالا
+    container.scrollTo({ top, behavior: "smooth" });
+
+    // هایلایت کوتاه (حاشیه زرد)
+    el.classList.add("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
+    setTimeout(() => {
+      el.classList.remove("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
+    }, 1200);
+  }
+}
+
+// یک بار لودِ صفحهٔ قبلی (همانی که در onScrollLoadMore انجام می‌دهی، ولی برنامه‌ای)
+async function loadOlderOnce(): Promise<boolean> {
+  if (!selectedUser.value || !hasMore.value || loadingOlder.value) return false;
+  const el = scrollBox.value;
+  const prevHeight = el?.scrollHeight ?? 0;
+
+  loadingOlder.value = true;
+  try {
+    const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
+    const items: any[] = page.items ?? page.Items ?? [];
+    hasMore.value = !!(page.hasMore ?? page.HasMore);
+    oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
+
+    if (!items.length) return false;
+
+    // همان مپ/دیکریپتی که در onScrollLoadMore داری — حتماً مثل آن پیاده کن
+    const aesKey = await getOrLoadKey(selectedUser.value.id);
+    const older = await Promise.all(items.map(async (msg: any) => {
+      const raw = (msg.encryptedContent || "") as string;
+      let decrypted = "";
+      if (raw && raw.trim()) {
+        try { decrypted = (await decryptAES(aesKey, raw)) || "[رمزگشایی نشد]"; }
+        catch { decrypted = "[رمزگشایی نشد]"; }
+      }
+      const isMine = msg.senderId === myId.value;
+      const status: "delivered" | "read" | undefined = isMine
+        ? (msg.isRead ? "read" : "delivered")
+        : undefined;
+
+      return {
+        id: msg.messageId,
+        senderId: msg.senderId,
+        plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : "",
+        fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
+        status,
+        sentAt: msg.sentAt,
+        deliveredAtUtc: msg.deliveredAtUtc || null,
+        readAtUtc: msg.readAtUtc || null,
+        replyToMessageId: msg.replyToMessageId || null
+      } as UiMessage;
+    }));
+
+    messages.value = [...older, ...messages.value];
+
+    await nextTick();
+    if (el) {
+      const newHeight = el.scrollHeight;
+      el.scrollTop = newHeight - prevHeight + el.scrollTop;
+    }
+    return true;
+  } finally {
+    loadingOlder.value = false;
+  }
+}
+
+
+
+
+
+
+
+
+function setMessageEl(id?: string, el?: Element | null) {
+  if (!id) return;
+  if (el) msgElMap.set(id, el as HTMLElement);
+  else msgElMap.delete(id);
+}
 
 function fmtHHmmLocal(iso?: string | null): string {
   const d = toDateSafe(iso);
@@ -330,7 +497,8 @@ async function onScrollLoadMore(e: Event) {
           status,
           sentAt: msg.sentAt,
           deliveredAtUtc: msg.deliveredAtUtc || null,
-          readAtUtc: msg.readAtUtc || null
+          readAtUtc: msg.readAtUtc || null,
+          replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null
         } as UiMessage;
       }));
 
@@ -354,6 +522,7 @@ onMounted(async () => {
   if (token) {
     const payload = parseJwt(token)
     myId.value = payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? ''
+    try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
     await connectToChatHub(token)
     wireSignalR()
   }
@@ -449,12 +618,12 @@ function wireSignalR() {
 
     // ensure AES key
     let aesKey = await getOrLoadKey(message.senderId)
-    let decrypted = ''
-    if (hasCipher) {
-      try {
-        decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
-      } catch {
-        decrypted = '[رمزگشایی نشد]'
+    let decrypted = await decryptAES(aesKey, raw);
+
+    if (!decrypted) {
+      const retryKey = await getOrLoadKey(message.senderId);
+      if (retryKey !== aesKey) {
+        decrypted = await decryptAES(retryKey, raw);
       }
     }
 
@@ -465,7 +634,8 @@ function wireSignalR() {
       fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
       sentAt: message.sentAt || new Date().toISOString(),
       deliveredAtUtc: message.deliveredAtUtc || null,
-      readAtUtc: message.readAtUtc || null
+      readAtUtc: message.readAtUtc || null,
+      replyToMessageId: message.replyToMessageId || message.ReplyToMessageId || null
     }
     messages.value.push(ui)
     await nextTick()
@@ -570,7 +740,8 @@ async function handleUserSelect(user: { id: string; username: string }) {
       status,
       sentAt: msg.sentAt,
       deliveredAtUtc: msg.deliveredAtUtc || null,
-      readAtUtc: msg.readAtUtc || null
+      readAtUtc: msg.readAtUtc || null,
+      replyToMessageId: msg.replyToMessageId || null
     } as UiMessage
   }))
 
@@ -618,7 +789,8 @@ async function send() {
     plainText: (toEncrypt === EMPTY_MSG_MARKER) ? '' : text.value,
     fileUrl: fileUrl,
     status: 'sending',
-    sentAt: new Date().toISOString()
+    sentAt: new Date().toISOString(),
+    replyToMessageId: replyingTo.value?.id || null
   }
   messages.value.push(mine)
 
@@ -651,7 +823,15 @@ async function send() {
 
 
 
-  await sendMessage(selectedUser.value.id, encrypted, fileUrl || undefined, clientId)
+  await sendMessage(
+    selectedUser.value.id,
+    encrypted,
+    fileUrl || null,
+    clientId,
+    replyingTo.value?.id ?? null // ← NEW
+  )
+  replyingTo.value = null
+  
   if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
   // reset inputs
   text.value = ''
@@ -685,29 +865,34 @@ function onBlurInput() {
   if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
 }
 
-async function getOrLoadKey(partnerId: string) {
-  // 1) try local cache
-  let key = await loadAESKey(partnerId)
-  if (key) return key
 
-  // 2) try server
-  const base64 = await getChatKey(partnerId) // returns string | null
+function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+
+async function getOrLoadKey(partnerId: string) {
+  // 1) کش لوکال اما فقط اگر برای همین اکانت بوده
+  let key = await loadAESKeyScoped(partnerId);
+  if (key) return key;
+
+  // 2) از سرور بگیر (یک retry کوتاه برای ریس)
+  let base64 = await getChatKey(partnerId);
+  if (!base64) {
+    await delay(250);
+    base64 = await getChatKey(partnerId);
+  }
   if (base64) {
-    key = await importAESKey(base64)
-    await saveAESKey(partnerId, key)
-    return key
+    key = await importAESKey(base64);
+    await saveAESKeyScoped(partnerId, key);
+    return key;
   }
 
-  // 3) create & store
-  const newKey = await generateAESKey()
-  const raw = await exportAESKey(newKey)
-  const base64Key = btoa(String.fromCharCode(...raw))
-  await storeChatKey({
-    receiverId: partnerId,
-    encryptedKey: base64Key,
-  })
-  await saveAESKey(partnerId, newKey)
-  return newKey
+  // 3) اولین شروع‌کننده: کلید بساز و ذخیره کن
+  const newKey = await generateAESKey();
+  const raw = await exportAESKey(newKey);
+  const base64Key = btoa(String.fromCharCode(...raw));
+  await storeChatKey({ receiverId: partnerId, encryptedKey: base64Key });
+  await saveAESKeyScoped(partnerId, newKey);
+  return newKey;
 }
 
 function toAbsoluteFileUrl(url: string | null): string | null {
