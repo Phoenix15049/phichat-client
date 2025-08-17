@@ -145,3 +145,10 @@ export function storeTokenFromAuthResponse(data: any) {
   if (!token) throw new Error("Token not found in response.");
   localStorage.setItem("token", token);
 }
+
+export async function getConversationPaged(userId: string, beforeId?: string, pageSize = 50) {
+  const params: any = { pageSize };
+  if (beforeId) params.beforeId = beforeId;
+  const { data } = await API.get(`/messages/with-paged/${userId}`, { params });
+  return data; // { items: ReceivedMessageResponse[], hasMore: boolean, oldestId?: string }
+}
