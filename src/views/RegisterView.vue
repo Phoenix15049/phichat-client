@@ -11,7 +11,7 @@
         </div>
         <div>
           <label class="block text-sm mb-1">شماره موبایل (E.164)</label>
-          <input v-model.trim="phoneNumber" type="tel" class="w-full input" placeholder="+98912xxxxxxx" required />
+          <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" label="شماره تلفن" />
           <p class="text-xs text-gray-500 mt-1">مثال: +98912… (شماره به‌صورت یکتا ذخیره می‌شود)</p>
         </div>
         <div>
@@ -38,10 +38,13 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { registerWithPhone, storeTokenFromAuthResponse } from "../services/api";
-
+import PhoneInput from '../components/PhoneInput.vue'
 const username = ref("");
 const phoneNumber = ref("");
 const password = ref("");
+
+const phoneE164 = ref<string | null>(null)
+
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -65,7 +68,7 @@ async function handleRegister() {
     const data = await registerWithPhone({
       username: username.value,
       password: password.value,
-      phoneNumber: phoneNumber.value,
+      phoneNumber: phoneE164.value as string,
     });
     storeTokenFromAuthResponse(data);
     router.push("/chat");

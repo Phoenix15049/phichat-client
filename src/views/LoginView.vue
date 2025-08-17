@@ -42,8 +42,9 @@
       <form v-else @submit.prevent="handleSmsLogin" class="space-y-4">
         <div>
           <label class="block text-sm mb-1">شماره موبایل (E.164)</label>
-          <input v-model.trim="phoneNumber" type="tel" class="w-full input" placeholder="+98912xxxxxxx" required />
-          <p class="text-xs text-gray-500 mt-1">فرمت پیشنهادی: +98912…</p>
+          <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" label="شماره تلفن" />
+          <p class="text-xs text-gray-500 mt-1">شماره به‌صورت E.164 (مثال: +98912…)</p>
+
         </div>
 
         <div class="flex items-center gap-2">
@@ -82,6 +83,7 @@ import { ref, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { loginWithSms, requestSmsCode, storeTokenFromAuthResponse } from "../services/api";
 import {API} from "../services/api"; // assuming default export is the axios instance or existing helpers
+import PhoneInput from '../components/PhoneInput.vue'
 
 // ui state
 const mode = ref<"password" | "sms">("password");
@@ -98,6 +100,8 @@ const smsCode = ref("");
 const smsSending = ref(false);
 const cooldown = ref(0);
 let timer: number | null = null;
+
+const phoneE164 = ref<string | null>(null); 
 
 const router = useRouter();
 
@@ -122,6 +126,7 @@ onBeforeUnmount(() => {
 async function handlePasswordLogin() {
   error.value = null;
   loading.value = true;
+  
   try {
     // existing login API in your project:
     const { data } = await API.post("/auth/login", {
@@ -138,11 +143,14 @@ async function handlePasswordLogin() {
 }
 
 async function sendCode() {
-  if (!phoneNumber.value) return;
+  if (!phoneE164.value) {
+    error.value = "شماره معتبر نیست.";
+    return;
+  }
   error.value = null;
   smsSending.value = true;
   try {
-    await requestSmsCode({ phoneNumber: phoneNumber.value });
+    await requestSmsCode({ phoneNumber: phoneE164.value as string }); // E.164
     startCooldown(60);
   } catch (e: any) {
     error.value = e?.response?.data ?? e?.message ?? "ارسال کُد ناموفق بود";
@@ -152,11 +160,17 @@ async function sendCode() {
 }
 
 async function handleSmsLogin() {
+
+  if (!phoneE164.value) {
+    error.value = "شماره معتبر نیست.";
+    return;
+  }
+  
   error.value = null;
   loading.value = true;
   try {
     const data = await loginWithSms({
-      phoneNumber: phoneNumber.value,
+      phoneNumber: phoneE164.value as string,
       code: smsCode.value,
     });
     storeTokenFromAuthResponse(data);
