@@ -99,3 +99,49 @@ export async function getConversations() {
     unreadCount: number
   }>
 }
+
+
+
+
+
+// --- ADD below existing imports ---
+export interface RegisterWithPhoneRequest {
+  username: string;
+  password: string;
+  phoneNumber: string;
+}
+export interface RequestSmsCodeRequest {
+  phoneNumber: string;
+}
+export interface LoginWithSmsRequest {
+  phoneNumber: string;
+  code: string;
+}
+
+
+// helper to read token in both cases (camelCase/PascalCase)
+function extractToken(data: any): string | undefined {
+  return data?.token ?? data?.Token;
+}
+
+// --- ADD these API functions near other auth functions ---
+export async function registerWithPhone(payload: RegisterWithPhoneRequest) {
+  const { data } = await API.post("/auth/register-phone", payload);
+  return data;
+}
+
+export async function requestSmsCode(payload: RequestSmsCodeRequest) {
+  await API.post("/auth/request-sms-code", payload);
+}
+
+export async function loginWithSms(payload: LoginWithSmsRequest) {
+  const { data } = await API.post("/auth/login-sms", payload);
+  return data;
+}
+
+// (Optional) small helper if you want one place to store token
+export function storeTokenFromAuthResponse(data: any) {
+  const token = extractToken(data);
+  if (!token) throw new Error("Token not found in response.");
+  localStorage.setItem("token", token);
+}
