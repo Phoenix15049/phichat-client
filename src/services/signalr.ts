@@ -4,6 +4,9 @@ import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@micros
 let connection: HubConnection | null = null
 let started = false
 
+let deliveredHandler: ((p: DeliveredPayload) => void) | null = null;
+let readHandler: ((p: MessageReadPayload) => void) | null = null;
+
 // Handlers registered before connection starts are queued here
 const pendingSubs: Array<(c: HubConnection) => void> = []
 
@@ -69,7 +72,6 @@ export function onDelivered(cb: (info: any) => void) {
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
 
-// MessageRead({ messageId, readerId })
 export function onMessageRead(cb: (info: any) => void) {
   const sub = (c: HubConnection) =>
     c.on('MessageRead', (i: any) => {
@@ -172,3 +174,8 @@ export function onUserLastSeen(cb: (userId: string, isoUtc: string) => void) {
     c.on('UserLastSeen', (uid: string, when: string) => cb(uid, when))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
+
+
+export type DeliveredPayload = { messageId: string; deliveredAtUtc: string };
+export type MessageReadPayload = { messageId: string; readAtUtc: string };
+

@@ -32,23 +32,13 @@
             :class="[
               'inline-block px-3 py-2 rounded max-w-[80%]',
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
-            ]"
+            ]":title="tooltipForMessage(msg)"
           >
             <!-- متن + تیک وضعیت -->
-            <div class="flex items-center gap-2">
-              <span>{{ msg.plainText || '' }}</span>
-              <span
-                v-if="msg.senderId === myId"
-                class="text-xs"
-                :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
-              >
-                <template v-if="msg.status === 'sending'">⌛</template>
-                <template v-else-if="msg.status === 'delivered'">✓</template>
-                <template v-else-if="msg.status === 'read'">✓✓</template>
-              </span>
+            <div class="whitespace-pre-wrap break-words">
+              {{ msg.plainText || '' }}
             </div>
 
-            <!-- لینک فایل -->
             <div v-if="msg.fileUrl" class="mt-1">
               <a
                 :href="msg.fileUrl"
@@ -60,6 +50,18 @@
               >
                 دانلود فایل
               </a>
+            </div>
+
+            <div
+              class="mt-1 flex items-center gap-1 text-[11px]"
+              :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
+            >
+              <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
+              <span v-if="msg.senderId === myId">
+                <template v-if="msg.status === 'read'">✓✓</template>
+                <template v-else-if="msg.status === 'delivered'">✓</template>
+                <template v-else>…</template>
+              </span>
             </div>
           </div>
         </div>
@@ -118,7 +120,7 @@ import {
 } from '../utils/aesKeyStore'
 import { getToken, parseJwt } from '../utils/jwt'
 import { useRoute } from 'vue-router'
-
+import {toDateSafe, formatAbsoluteFa} from "../utils/time";
 type UiMessage = {
   id?: string
   clientId?: string
@@ -126,7 +128,11 @@ type UiMessage = {
   plainText: string
   fileUrl: string | null
   status?: 'sending' | 'delivered' | 'read'
+  sentAt?: string
+  deliveredAtUtc?: string | null
+  readAtUtc?: string | null
 }
+
 
 const route = useRoute()
 const EMPTY_MSG_MARKER = '\u200B' // zero-width space
@@ -144,6 +150,37 @@ const isPeerTyping = ref(false)
 let typingTimer: number | null = null
 const TYPING_IDLE_MS = 4000
 let prevSelectedUserId: string | null = null
+
+
+
+function fmtHHmmLocal(iso?: string | null): string {
+  const d = toDateSafe(iso);
+  if (!d) return "";
+  return d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function tooltipForMessage(msg: any): string {
+  const sent = formatAbsoluteFa(msg.sentAt); 
+  const delivered = msg.deliveredAtUtc ? formatAbsoluteFa(msg.deliveredAtUtc) : null;
+  const read = msg.readAtUtc ? formatAbsoluteFa(msg.readAtUtc) : null;
+
+  if (read) return `ارسال: ${sent}\nخوانده‌شدن: ${read}`;
+  if (delivered) return `ارسال: ${sent}\nتحویل: ${delivered}`;
+  return `ارسال: ${sent}`;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 onMounted(async () => {
   // myId from JWT
@@ -209,7 +246,10 @@ function wireSignalR() {
       id: message.messageId,
       senderId: message.senderId,
       plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
-      fileUrl: toAbsoluteFileUrl(message.fileUrl || null)
+      fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
+      sentAt: message.sentAt || new Date().toISOString(),
+      deliveredAtUtc: message.deliveredAtUtc || null,
+      readAtUtc: message.readAtUtc || null
     }
     messages.value.push(ui)
 
@@ -221,16 +261,21 @@ function wireSignalR() {
     
   })
   onDelivered((info: any) => {
-      const m = messages.value.find(x => x.clientId === info.clientId)
-      if (m) {
-        m.status = 'delivered'
-        m.id = info.messageId
-      }
-    })
+    const m = messages.value.find(x => x.clientId === info.clientId)
+    if (m) {
+      m.status = 'delivered'
+      m.id = info.messageId
+      if (info.deliveredAtUtc) m.deliveredAtUtc = info.deliveredAtUtc
+      if (!m.sentAt) m.sentAt = info.sentAt || new Date().toISOString()
+    }
+  })
 
   onMessageRead((info: any) => {
     const m = messages.value.find(x => x.id === info.messageId)
-    if (m) m.status = 'read'
+    if (m) {
+      m.status = 'read'
+      if (info.readAtUtc) m.readAtUtc = info.readAtUtc
+    }
   })
 
 
@@ -258,10 +303,8 @@ async function handleUserSelect(user: { id: string; username: string }) {
 
   const history = await getConversationWith(user.id)
 
-  // 1) کلید رو یک بار بگیر
   const aesKey = await getOrLoadKey(user.id)
 
-  // 2) رمزگشایی همه پیام‌ها به صورت موازی
   const prepared = await Promise.all(history.map(async (msg: any) => {
     const raw = (msg.encryptedContent || '') as string
     const hasCipher = raw.trim().length > 0
@@ -298,7 +341,10 @@ async function handleUserSelect(user: { id: string; username: string }) {
       senderId: msg.senderId,
       plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
       fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
-      status
+      status,
+      sentAt: msg.sentAt,
+      deliveredAtUtc: msg.deliveredAtUtc || null,
+      readAtUtc: msg.readAtUtc || null
     } as UiMessage
   }))
 
@@ -322,10 +368,8 @@ function onFileSelected(e: Event) {
 async function send() {
   if (!selectedUser.value) return
 
-  // ensure AES key
   const aesKey = await getOrLoadKey(selectedUser.value.id)
 
-  // file upload (optional)
   let fileUrl: string | null = null
   if (selectedFile.value) {
     const fd = new FormData()
@@ -334,18 +378,17 @@ async function send() {
     fileUrl = toAbsoluteFileUrl(uploadedUrl)
   }
 
-  // message text (or marker)
   const toEncrypt = (text.value && text.value.trim().length > 0) ? text.value : EMPTY_MSG_MARKER
   const encrypted = await encryptAES(aesKey, toEncrypt)
 
-  // optimistic UI add
   const clientId = crypto.randomUUID()
   const mine: UiMessage = {
     clientId,
     senderId: myId.value,
     plainText: (toEncrypt === EMPTY_MSG_MARKER) ? '' : text.value,
     fileUrl: fileUrl,
-    status: 'sending'
+    status: 'sending',
+    sentAt: new Date().toISOString()
   }
   messages.value.push(mine)
   
