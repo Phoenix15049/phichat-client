@@ -181,3 +181,12 @@ export function onUserLastSeen(cb: (userId: string, isoUtc: string) => void) {
 export type DeliveredPayload = { messageId: string; deliveredAtUtc: string };
 export type MessageReadPayload = { messageId: string; readAtUtc: string };
 
+export function onMessageEdited(cb: (p: { messageId: string; encryptedContent: string; updatedAtUtc?: string }) => void) {
+  const sub = (c: HubConnection) => c.on('MessageEdited', (p: any) => cb(p));
+  if (connection) sub(connection); else pendingSubs.push(sub);
+}
+
+export function onMessageDeleted(cb: (p: { messageId: string; scope: 'me'|'all' }) => void) {
+  const sub = (c: HubConnection) => c.on('MessageDeleted', (p: any) => cb(p));
+  if (connection) sub(connection); else pendingSubs.push(sub);
+}

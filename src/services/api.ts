@@ -152,3 +152,12 @@ export async function getConversationPaged(userId: string, beforeId?: string, pa
   const { data } = await API.get(`/messages/with-paged/${userId}`, { params });
   return data; // { items: ReceivedMessageResponse[], hasMore: boolean, oldestId?: string }
 }
+
+export async function editMessage(id: string, encryptedText: string) {
+  const { data } = await API.put(`/messages/${id}`, { encryptedText });
+  return data;
+}
+
+export async function deleteMessage(id: string, scope: 'me'|'all'='me') {
+  await API.delete(`/messages/${id}`, { params: { scope } });
+}

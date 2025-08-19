@@ -86,8 +86,10 @@
             ]"
             :title="tooltipForMessage(msg)"
             @dblclick="replyingTo = msg"
+            @contextmenu.prevent="openMenu($event, msg)"
             :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
           >
+            <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
             <div
               v-if="msg.replyToMessageId"
               class="mb-1 border-l-2 pl-2 text-xs opacity-80 cursor-pointer hover:underline"
@@ -98,12 +100,18 @@
               </div>
             </div>
 
+            <!-- پیام حذف‌شده -->
+            <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">
+              پیام حذف شد
+            </div>
 
-            <div class="whitespace-pre-wrap break-words">
+            <!-- متن -->
+            <div v-if="!msg.isDeleted" class="whitespace-pre-wrap break-words">
               {{ msg.plainText || '' }}
             </div>
 
-            <div v-if="msg.fileUrl" class="mt-1">
+            <!-- فایل -->
+            <div v-if="!msg.isDeleted && msg.fileUrl" class="mt-1">
               <a
                 :href="msg.fileUrl"
                 target="_blank"
@@ -116,11 +124,13 @@
               </a>
             </div>
 
+            <!-- زمان + وضعیت + برچسب ویرایش‌شده -->
             <div
               class="mt-1 flex items-center gap-1 text-[11px]"
               :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
             >
               <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
+              <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(ویرایش‌شده)</span>
               <span v-if="msg.senderId === myId">
                 <template v-if="msg.status === 'read'">✓✓</template>
                 <template v-else-if="msg.status === 'delivered'">✓</template>
@@ -131,6 +141,7 @@
         </div>
       </div>
 
+      <!-- بنر ریپلای -->
       <div v-if="replyingTo" class="px-4 pt-2">
         <div class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded">
           <div class="truncate">
@@ -140,6 +151,15 @@
         </div>
       </div>
 
+      <!-- بنر ویرایش -->
+      <div v-if="editingMessage" class="px-4 pt-2">
+        <div class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded">
+          <div class="truncate">در حال ویرایش پیام</div>
+          <button type="button" class="text-gray-500 hover:text-red-600" @click="editingMessage = null">✕</button>
+        </div>
+      </div>
+
+      <!-- فرم ارسال -->
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
         <input
           v-model="text"
@@ -151,9 +171,24 @@
         <input type="file" @change="onFileSelected" />
         <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
       </form>
+
+      <!-- منوی راست‌کلیک -->
+      <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu">
+        <div
+          class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px]"
+          :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+          @click.stop
+        >
+          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
+          <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
+          <button class="w-full text-right px-3 py-2 hover:bg-gray-50 text-amber-700" @click="doDeleteMe">حذف برای من</button>
+          <button v-if="isMine(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50 text-red-600" @click="doDeleteAll">حذف برای همه</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
 
 
 <script setup lang="ts">
@@ -166,13 +201,14 @@ import {
   onDelivered,
   onMessageRead,
   markAsRead,
-  // 👇 تایپینگ (طبق سیگنالر کنونی‌ات)
   startTyping,
   stopTyping,
   onTyping,
   onTypingStopped,
   onUserOnline,
-  onUserOffline
+  onUserOffline,
+  onMessageEdited,
+  onMessageDeleted
 } from '../services/signalr'
 import {
   encryptAES,
@@ -187,7 +223,9 @@ import {
   getUserByUsername,
   storeChatKey,
   getConversationPaged,
-  getConversations 
+  getConversations,
+  editMessage,
+  deleteMessage
 } from '../services/api'
 import {
   saveAESKey,
@@ -210,6 +248,8 @@ type UiMessage = {
   deliveredAtUtc?: string | null
   readAtUtc?: string | null
   replyToMessageId?: string | null
+  isDeleted?: boolean
+  updatedAtUtc?: string | null
 }
 
 type UiConversation = {
@@ -273,14 +313,49 @@ const msgElMap = new Map<string, HTMLElement>();
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
 
+const contextMenu = ref<{ visible:boolean, x:number, y:number, msg:UiMessage|null }>({ visible:false, x:0, y:0, msg:null })
+const editingMessage = ref<UiMessage | null>(null)
 
 
 
+function openMenu(e: MouseEvent, m: UiMessage) {
+  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, msg: m }
+}
+function closeMenu() {
+  contextMenu.value.visible = false
+  contextMenu.value.msg = null
+}
+function doReply() {
+  if (contextMenu.value.msg) replyingTo.value = contextMenu.value.msg
+  closeMenu()
+}
+function doEdit() {
+  if (!contextMenu.value.msg) return
+  editingMessage.value = contextMenu.value.msg
+  text.value = editingMessage.value.plainText
+  closeMenu()
+}
+async function doDeleteMe() {
+  const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
+  try {
+    await deleteMessage(m.id, 'me')
+    const i = messages.value.findIndex(x => x.id === m.id)
+    if (i >= 0) messages.value.splice(i, 1)
+  } catch(e) { console.warn('delete me failed', e) }
+}
+async function doDeleteAll() {
+  const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
+  try {
+    await deleteMessage(m.id, 'all')
+    const t = messages.value.find(x => x.id === m.id)
+    if (t) { t.isDeleted = true; t.plainText = ''; t.fileUrl = null; t.updatedAtUtc = new Date().toISOString() }
+  } catch(e) { console.warn('delete all failed', e) }
+}
 
 
 
-
-
+function isMine(m?: UiMessage|null) { return !!m && m.senderId === myId.value }
+function canEdit(m?: UiMessage|null) { return isMine(m) && !m?.fileUrl && !m?.isDeleted }
 
 
 function loadAESKeyScoped(partnerId: string) {
@@ -369,7 +444,10 @@ async function loadOlderOnce(): Promise<boolean> {
         sentAt: msg.sentAt,
         deliveredAtUtc: msg.deliveredAtUtc || null,
         readAtUtc: msg.readAtUtc || null,
-        replyToMessageId: msg.replyToMessageId || null
+        replyToMessageId: msg.replyToMessageId || null,
+        isDeleted: !!msg.isDeleted,
+        updatedAtUtc: msg.updatedAtUtc || null,
+
       } as UiMessage;
     }));
 
@@ -498,7 +576,10 @@ async function onScrollLoadMore(e: Event) {
           sentAt: msg.sentAt,
           deliveredAtUtc: msg.deliveredAtUtc || null,
           readAtUtc: msg.readAtUtc || null,
-          replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null
+          replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null,
+          isDeleted: !!msg.isDeleted,
+          updatedAtUtc: msg.updatedAtUtc || null,
+
         } as UiMessage;
       }));
 
@@ -635,7 +716,8 @@ function wireSignalR() {
       sentAt: message.sentAt || new Date().toISOString(),
       deliveredAtUtc: message.deliveredAtUtc || null,
       readAtUtc: message.readAtUtc || null,
-      replyToMessageId: message.replyToMessageId || message.ReplyToMessageId || null
+      replyToMessageId: message.replyToMessageId || message.ReplyToMessageId || null,
+      
     }
     messages.value.push(ui)
     await nextTick()
@@ -687,6 +769,42 @@ function wireSignalR() {
     isPeerTyping.value = false
     if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
   })
+
+  onMessageEdited(async (p) => {
+    const m = messages.value.find(x => x.id === p.messageId)
+    if (!m) return
+    try {
+      const partnerId = selectedUser.value?.id || m.senderId
+      const aesKey = await getOrLoadKey(partnerId)
+      const decrypted = await decryptAES(aesKey, p.encryptedContent)
+      m.plainText = decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : ''
+      m.updatedAtUtc = p.updatedAtUtc || new Date().toISOString()
+    } catch (e) {
+      console.warn('decrypt edited failed', e)
+    }
+  })
+
+onMessageDeleted((p) => {
+  const i = messages.value.findIndex(x => x.id === p.messageId)
+  if (i < 0) return
+  if (p.scope === 'all') {
+    const m = messages.value[i]
+    m.isDeleted = true
+    m.plainText = ''
+    m.fileUrl = null
+    m.updatedAtUtc = new Date().toISOString()
+  } else {
+    messages.value.splice(i, 1)
+  }
+})
+
+
+
+
+
+
+
+
 }
 
 async function handleUserSelect(user: { id: string; username: string }) {
@@ -741,7 +859,10 @@ async function handleUserSelect(user: { id: string; username: string }) {
       sentAt: msg.sentAt,
       deliveredAtUtc: msg.deliveredAtUtc || null,
       readAtUtc: msg.readAtUtc || null,
-      replyToMessageId: msg.replyToMessageId || null
+      replyToMessageId: msg.replyToMessageId || null,
+      isDeleted: !!msg.isDeleted,
+      updatedAtUtc: msg.updatedAtUtc || null
+
     } as UiMessage
   }))
 
@@ -769,7 +890,13 @@ function onFileSelected(e: Event) {
 async function send() {
   if (!selectedUser.value) return
 
+
+
   const aesKey = await getOrLoadKey(selectedUser.value.id)
+
+
+
+
 
   let fileUrl: string | null = null
   if (selectedFile.value) {
@@ -778,6 +905,26 @@ async function send() {
     const uploadedUrl = await uploadEncryptedFile(fd) // returns absolute url or /uploads/...
     fileUrl = toAbsoluteFileUrl(uploadedUrl)
   }
+
+
+
+  // edit-mode
+  if (editingMessage.value && editingMessage.value.id) {
+    const aesKey = await getOrLoadKey(selectedUser.value.id)
+    const encrypted = await encryptAES(aesKey, text.value.trim() || EMPTY_MSG_MARKER)
+    try {
+      await editMessage(editingMessage.value.id, encrypted)
+      editingMessage.value.plainText = text.value.trim()
+      editingMessage.value.updatedAtUtc = new Date().toISOString()
+      editingMessage.value = null
+      text.value = ''
+    } catch(e) {
+      console.warn('edit failed', e)
+    }
+    return
+  }
+
+
 
   const toEncrypt = (text.value && text.value.trim().length > 0) ? text.value : EMPTY_MSG_MARKER
   const encrypted = await encryptAES(aesKey, toEncrypt)
@@ -790,7 +937,8 @@ async function send() {
     fileUrl: fileUrl,
     status: 'sending',
     sentAt: new Date().toISOString(),
-    replyToMessageId: replyingTo.value?.id || null
+    replyToMessageId: replyingTo.value?.id || null,
+
   }
   messages.value.push(mine)
 
