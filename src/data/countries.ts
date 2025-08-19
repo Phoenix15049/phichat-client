@@ -1,4 +1,3 @@
-// src/data/countries.ts
 export type Country = { iso2: string; name: string; dial: string; flag: string }
 
 export const COUNTRIES: Country[] = [

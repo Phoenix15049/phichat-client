@@ -52,16 +52,15 @@ const error = ref<string | null>(null);
 const router = useRouter();
 
 function validPhone(p: string) {
-  // basic E.164 check
   return /^\+?[1-9]\d{7,14}$/.test(p);
 }
 
 async function handleRegister() {
-  error.value = null;
-  if (!validPhone(phoneNumber.value)) {
-    error.value = "فرمت شماره موبایل معتبر نیست.";
-    return;
-  }
+  if (!phoneE164.value || !validPhone(phoneE164.value)) {
+  error.value = "فرمت شماره موبایل معتبر نیست.";
+  return;
+}
+
 
   loading.value = true;
   try {
