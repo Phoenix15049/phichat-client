@@ -347,9 +347,13 @@ async function doDeleteAll() {
   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
   try {
     await deleteMessage(m.id, 'all')
-    const t = messages.value.find(x => x.id === m.id)
-    if (t) { t.isDeleted = true; t.plainText = ''; t.fileUrl = null; t.updatedAtUtc = new Date().toISOString() }
-  } catch(e) { console.warn('delete all failed', e) }
+    // قبلاً: m.isDeleted = true ...
+    // الان: کلاً حذف از لیست
+    const idx = messages.value.findIndex(x => x.id === m.id)
+    if (idx >= 0) messages.value.splice(idx, 1)
+  } catch(e) {
+    console.warn('delete all failed', e)
+  }
 }
 
 
@@ -415,7 +419,7 @@ async function loadOlderOnce(): Promise<boolean> {
   loadingOlder.value = true;
   try {
     const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
-    const items: any[] = page.items ?? page.Items ?? [];
+    const items: any[] = (page.items ?? page.Items ?? []).filter(m => !m.isDeleted)
     hasMore.value = !!(page.hasMore ?? page.HasMore);
     oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
 
@@ -549,7 +553,7 @@ async function onScrollLoadMore(e: Event) {
 
   try {
     const page = await getConversationPaged(selectedUser.value.id, before, 50);
-    const items: any[] = page.items ?? page.Items ?? [];
+    const items: any[] = (page.items ?? page.Items ?? []).filter(m => !m.isDeleted)
     hasMore.value = !!(page.hasMore ?? page.HasMore);
     oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
 
@@ -787,15 +791,16 @@ function wireSignalR() {
 onMessageDeleted((p) => {
   const i = messages.value.findIndex(x => x.id === p.messageId)
   if (i < 0) return
-  if (p.scope === 'all') {
-    const m = messages.value[i]
-    m.isDeleted = true
-    m.plainText = ''
-    m.fileUrl = null
-    m.updatedAtUtc = new Date().toISOString()
-  } else {
-    messages.value.splice(i, 1)
-  }
+  // if (p.scope === 'all') {
+  //   const m = messages.value[i]
+  //   m.isDeleted = true
+  //   m.plainText = ''
+  //   m.fileUrl = null
+  //   m.updatedAtUtc = new Date().toISOString()
+  // } else {
+  //   messages.value.splice(i, 1)
+  // }
+  messages.value.splice(i, 1)
 })
 
 
