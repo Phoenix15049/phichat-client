@@ -72,6 +72,7 @@
           v-for="(msg, index) in messages"
           :key="index"
           :class="msg.senderId === myId ? 'text-right' : 'text-left'"
+          @contextmenu.prevent.stop="openMenu($event, msg)"
         >
           <div v-if="showDayHeader(index)" class="flex justify-center my-2">
             <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
@@ -86,7 +87,7 @@
             ]"
             :title="tooltipForMessage(msg)"
             @dblclick="replyingTo = msg"
-            @contextmenu.prevent="openMenu($event, msg)"
+            @contextmenu.prevent.stop="openMenu($event, msg)"
             :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
           >
             <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
@@ -172,9 +173,10 @@
         <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
       </form>
 
-      <!-- منوی راست‌کلیک -->
-      <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu">
+        <!-- منوی راست‌کلیک -->
+      <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu" @contextmenu.prevent="closeMenu">
         <div
+          ref="menuEl"                                
           class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px]"
           :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
           @click.stop
@@ -185,6 +187,7 @@
           <button v-if="isMine(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50 text-red-600" @click="doDeleteAll">حذف برای همه</button>
         </div>
       </div>
+
     </div>
   </div>
 </template>
@@ -192,7 +195,7 @@
 
 
 <script setup lang="ts">
-import { ref, onMounted,nextTick } from 'vue'
+import { ref, onMounted,nextTick,onBeforeUnmount  } from 'vue'
 
 import {
   connectToChatHub,
@@ -275,10 +278,6 @@ function resolveReplyPreview(id?: string | null): string {
 }
 
 
-
-
-
-
 const route = useRoute()
 const EMPTY_MSG_MARKER = '\u200B' // zero-width space
 
@@ -316,11 +315,64 @@ const ACTIVE_UID_KEY = 'phi.activeUserId';
 const contextMenu = ref<{ visible:boolean, x:number, y:number, msg:UiMessage|null }>({ visible:false, x:0, y:0, msg:null })
 const editingMessage = ref<UiMessage | null>(null)
 
+const menuEl = ref<HTMLElement | null>(null)
+
+
+
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeMenu()
+}
+function onWindowScroll() {
+  // مثل تلگرام، با اسکرول منو بسته شود
+  closeMenu()
+}
+function onWindowResize() {
+  if (contextMenu.value.visible) nextTick(() => clampMenuPosition())
+}
+
+function clampMenuPosition() {
+  const el = menuEl.value
+  if (!el) return
+  const pad = 8
+  const vpW = window.innerWidth
+  const vpH = window.innerHeight
+  const rect = el.getBoundingClientRect()
+
+  let x = contextMenu.value.x
+  let y = contextMenu.value.y
+
+  // راست/چپ
+  if (x + rect.width + pad > vpW) x = Math.max(pad, vpW - rect.width - pad)
+  else x = Math.max(pad, x)
+
+  // پایین/بالا
+  if (y + rect.height + pad > vpH) y = Math.max(pad, vpH - rect.height - pad)
+  else y = Math.max(pad, y)
+
+  contextMenu.value.x = x
+  contextMenu.value.y = y
+}
+
+
+
 
 
 function openMenu(e: MouseEvent, m: UiMessage) {
-  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, msg: m }
+  // اگر منو باز است: با راست‌کلیک فقط ببند و تمام (مثل تلگرام)
+  if (contextMenu.value.visible) {
+    closeMenu()
+    return
+  }
+  // در غیر این صورت، باز کن و موقعیت را داخل ویوپورت clamp کن
+  contextMenu.value.msg = m
+  contextMenu.value.visible = true
+  contextMenu.value.x = e.clientX
+  contextMenu.value.y = e.clientY
+  nextTick(() => clampMenuPosition())
 }
+
+
 function closeMenu() {
   contextMenu.value.visible = false
   contextMenu.value.msg = null
@@ -601,6 +653,13 @@ async function onScrollLoadMore(e: Event) {
 }
 
 
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('scroll', onWindowScroll, true)
+  window.removeEventListener('resize', onWindowResize)
+})
+
+
 onMounted(async () => {
   // myId from JWT
   const token = getToken()
@@ -658,6 +717,12 @@ onMounted(async () => {
   onUserOffline(handleOffline)
   onTyping(handleTyping)
   onTypingStopped(handleTypingStopped)
+
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('scroll', onWindowScroll, true) // capture روی همهٔ اسکرول‌ها
+  window.addEventListener('resize', onWindowResize)
+
+
 })
 
 function wireSignalR() {
