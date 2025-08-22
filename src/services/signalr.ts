@@ -190,3 +190,9 @@ export function onMessageDeleted(cb: (p: { messageId: string; scope: 'me'|'all' 
   const sub = (c: HubConnection) => c.on('MessageDeleted', (p: any) => cb(p));
   if (connection) sub(connection); else pendingSubs.push(sub);
 }
+
+
+export function onReactionUpdated(cb: (p: { messageId:string; emoji:string; count:number; userId:string; action:'added'|'removed' }) => void) {
+  const sub = (c: HubConnection) => c.on('ReactionUpdated', (p:any) => cb(p));
+  if (connection) sub(connection); else pendingSubs.push(sub);
+}

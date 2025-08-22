@@ -161,3 +161,11 @@ export async function editMessage(id: string, encryptedText: string) {
 export async function deleteMessage(id: string, scope: 'me'|'all'='me') {
   await API.delete(`/messages/${id}`, { params: { scope } });
 }
+
+
+export async function addReaction(messageId: string, emoji: string) {
+  await API.post(`/messages/${messageId}/reactions`, { emoji });
+}
+export async function removeReaction(messageId: string, emoji: string) {
+  await API.delete(`/messages/${messageId}/reactions`, { params: { emoji } });
+}

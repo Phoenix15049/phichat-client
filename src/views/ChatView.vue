@@ -138,6 +138,36 @@
                 <template v-else>…</template>
               </span>
             </div>
+            
+                        <!-- Reactions -->
+            <div v-if="(msg.reactions && msg.reactions.length) || selectedUser" class="mt-1 flex flex-wrap gap-1">
+              <button
+                v-for="r in (msg.reactions || [])"
+                :key="r.emoji"
+                class="text-[11px] px-2 py-[2px] rounded-full border flex items-center gap-1"
+                :class="r.mine ? (msg.senderId === myId ? 'bg-white/20 border-white/40' : 'bg-blue-50 border-blue-200') : 'bg-white/80 border-gray-200'"
+                @click="toggleReaction(msg, r.emoji)"
+                :title="r.count.toString()"
+              >
+                <span>{{ r.emoji }}</span>
+                <span>{{ r.count }}</span>
+              </button>
+
+              <!-- Add (+) -->
+              <button
+                class="text-[11px] px-2 py-[2px] rounded-full border bg-white/80 border-gray-200"
+                @click="openReactionPicker(msg)"
+                title="واکنش"
+              >➕</button>
+            </div>
+
+            <!-- Picker ساده‌ی inline -->
+            <div v-if="reactionPickerFor && reactionPickerFor === (msg.id || msg.clientId)" class="mt-1 flex gap-1">
+              <button v-for="e in quickEmojis" :key="e" class="px-2 py-[2px] text-[13px] rounded hover:bg-gray-100"
+                      @click="applyReaction(msg, e)">{{ e }}</button>
+              <button class="px-2 py-[2px] text-[11px] text-gray-500" @click="reactionPickerFor = null">بستن</button>
+            </div>
+
           </div>
         </div>
       </div>
@@ -211,7 +241,8 @@ import {
   onUserOnline,
   onUserOffline,
   onMessageEdited,
-  onMessageDeleted
+  onMessageDeleted,
+  onReactionUpdated
 } from '../services/signalr'
 import {
   encryptAES,
@@ -228,7 +259,8 @@ import {
   getConversationPaged,
   getConversations,
   editMessage,
-  deleteMessage
+  deleteMessage,
+  addReaction, removeReaction
 } from '../services/api'
 import {
   saveAESKey,
@@ -238,7 +270,7 @@ import { getToken, parseJwt } from '../utils/jwt'
 import { useRoute } from 'vue-router'
 import {toDateSafe, formatAbsoluteFa,formatRelativeFa} from "../utils/time";
 
-
+type UiReaction = { emoji: string; count: number; mine?: boolean }
 
 type UiMessage = {
   id?: string
@@ -253,6 +285,7 @@ type UiMessage = {
   replyToMessageId?: string | null
   isDeleted?: boolean
   updatedAtUtc?: string | null
+  reactions?: UiReaction[]
 }
 
 type UiConversation = {
@@ -317,7 +350,53 @@ const editingMessage = ref<UiMessage | null>(null)
 
 const menuEl = ref<HTMLElement | null>(null)
 
+const quickEmojis = ['👍','❤️','😂','😮','😢','🔥']
+const reactionPickerFor = ref<string | null>(null)
 
+
+
+function draftKey(peerId: string) {
+  const uid = myId.value || 'me'
+  return `phi.draft.${uid}.${peerId}`
+}
+function loadDraft(peerId: string): string {
+  try { return localStorage.getItem(draftKey(peerId)) || '' } catch { return '' }
+}
+function saveDraft(peerId: string, text: string) {
+  try { localStorage.setItem(draftKey(peerId), text) } catch {}
+}
+function clearDraft(peerId: string) {
+  try { localStorage.removeItem(draftKey(peerId)) } catch {}
+}
+
+function openReactionPicker(m: UiMessage) {
+  reactionPickerFor.value = m.id || m.clientId || null
+}
+
+async function applyReaction(m: UiMessage, emoji: string) {
+  reactionPickerFor.value = null
+  await toggleReaction(m, emoji)
+}
+async function toggleReaction(m: UiMessage, emoji: string) {
+  if (!m.id) return;
+  const list = m.reactions || (m.reactions = []);
+  // یکتاسازی قبل از هر تغییری
+  m.reactions = dedupeReactions(list);
+
+  const cur = m.reactions.find(r => r.emoji === emoji);
+
+  if (cur?.mine) {
+    cur.mine = false;
+    cur.count = Math.max(0, cur.count - 1);
+    if (cur.count === 0) m.reactions = m.reactions.filter(r => r !== cur);
+    try { await removeReaction(m.id, emoji); } catch { /* می‌تونی rollback کنی */ }
+  } else {
+    if (cur) { cur.mine = true; cur.count += 1; }
+    else m.reactions.push({ emoji, count: 1, mine: true });
+    m.reactions = dedupeReactions(m.reactions);
+    try { await addReaction(m.id, emoji); } catch { /* rollback در صورت نیاز */ }
+  }
+}
 
 
 function onKeydown(e: KeyboardEvent) {
@@ -467,7 +546,7 @@ async function loadOlderOnce(): Promise<boolean> {
   if (!selectedUser.value || !hasMore.value || loadingOlder.value) return false;
   const el = scrollBox.value;
   const prevHeight = el?.scrollHeight ?? 0;
-
+  
   loadingOlder.value = true;
   try {
     const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
@@ -476,7 +555,7 @@ async function loadOlderOnce(): Promise<boolean> {
     oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
 
     if (!items.length) return false;
-
+    
     // همان مپ/دیکریپتی که در onScrollLoadMore داری — حتماً مثل آن پیاده کن
     const aesKey = await getOrLoadKey(selectedUser.value.id);
     const older = await Promise.all(items.map(async (msg: any) => {
@@ -486,6 +565,16 @@ async function loadOlderOnce(): Promise<boolean> {
         try { decrypted = (await decryptAES(aesKey, raw)) || "[رمزگشایی نشد]"; }
         catch { decrypted = "[رمزگشایی نشد]"; }
       }
+      
+      
+      const srvReacts = msg.reactions || msg.Reactions || []
+      let reactions: UiReaction[] = srvReacts.map((r:any) => ({
+        emoji: r.emoji || r.Emoji,
+        count: r.count ?? r.Count ?? 0,
+        mine: !!(r.mine ?? r.Mine)
+      }))
+      reactions = dedupeReactions(reactions);
+
       const isMine = msg.senderId === myId.value;
       const status: "delivered" | "read" | undefined = isMine
         ? (msg.isRead ? "read" : "delivered")
@@ -503,6 +592,7 @@ async function loadOlderOnce(): Promise<boolean> {
         replyToMessageId: msg.replyToMessageId || null,
         isDeleted: !!msg.isDeleted,
         updatedAtUtc: msg.updatedAtUtc || null,
+        reactions
 
       } as UiMessage;
     }));
@@ -522,6 +612,19 @@ async function loadOlderOnce(): Promise<boolean> {
 
 
 
+function dedupeReactions(list: {emoji:string; count:number; mine?:boolean}[]) {
+  const map = new Map<string, {emoji:string; count:number; mine?:boolean}>();
+  for (const r of list) {
+    const key = r.emoji;
+    const ex = map.get(key);
+    if (!ex) map.set(key, { ...r });
+    else {
+      ex.count = r.count;                  
+      ex.mine = ex.mine || r.mine || false;
+    }
+  }
+  return Array.from(map.values()).filter(r => r.count > 0);
+}
 
 
 
@@ -618,6 +721,14 @@ async function onScrollLoadMore(e: Event) {
           try { decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'; }
           catch { decrypted = '[رمزگشایی نشد]'; }
         }
+
+        const srvReacts = msg.reactions || msg.Reactions || []
+        let reactions: UiReaction[] = srvReacts.map((r:any) => ({
+          emoji: r.emoji || r.Emoji,
+          count: r.count ?? r.Count ?? 0,
+          mine: !!(r.mine ?? r.Mine)
+        }))
+        reactions = dedupeReactions(reactions);
         const isMine = msg.senderId === myId.value;
         const status: 'delivered' | 'read' | undefined = isMine
           ? (msg.isRead ? 'read' : 'delivered')
@@ -635,6 +746,7 @@ async function onScrollLoadMore(e: Event) {
           replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null,
           isDeleted: !!msg.isDeleted,
           updatedAtUtc: msg.updatedAtUtc || null,
+          reactions
 
         } as UiMessage;
       }));
@@ -853,20 +965,41 @@ function wireSignalR() {
     }
   })
 
-onMessageDeleted((p) => {
-  const i = messages.value.findIndex(x => x.id === p.messageId)
-  if (i < 0) return
-  // if (p.scope === 'all') {
-  //   const m = messages.value[i]
-  //   m.isDeleted = true
-  //   m.plainText = ''
-  //   m.fileUrl = null
-  //   m.updatedAtUtc = new Date().toISOString()
-  // } else {
-  //   messages.value.splice(i, 1)
-  // }
-  messages.value.splice(i, 1)
+  onMessageDeleted((p) => {
+    const i = messages.value.findIndex(x => x.id === p.messageId)
+    if (i < 0) return
+    // if (p.scope === 'all') {
+    //   const m = messages.value[i]
+    //   m.isDeleted = true
+    //   m.plainText = ''
+    //   m.fileUrl = null
+    //   m.updatedAtUtc = new Date().toISOString()
+    // } else {
+    //   messages.value.splice(i, 1)
+    // }
+    messages.value.splice(i, 1)
 })
+
+onReactionUpdated((p) => {
+  const m = messages.value.find(x => x.id === p.messageId);
+  if (!m) return;
+
+  const list = m.reactions || (m.reactions = []);
+  // همهٔ آیتم‌های این ایموجی را پیدا کن
+  const idxs = list.map((r, i) => r.emoji === p.emoji ? i : -1).filter(i => i >= 0);
+
+  if (idxs.length === 0) {
+    list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' });
+  } else {
+    // اولی را نگه‌دار، بقیه را حذف کن
+    const first = list[idxs[0]];
+    first.count = p.count;
+    if (p.userId === myId.value) first.mine = (p.action === 'added');
+    for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1);
+  }
+
+  m.reactions = dedupeReactions(list);
+});
 
 
 
@@ -880,6 +1013,7 @@ onMessageDeleted((p) => {
 async function handleUserSelect(user: { id: string; username: string }) {
   selectedUser.value = user
   messages.value = []
+  text.value = loadDraft(user.id)
   const idx = conversations.value.findIndex(c => c.peerId === user.id)
   if (idx >= 0) conversations.value[idx].unreadCount = 0
   const page1 = await getConversationPaged(user.id, undefined, 50)
@@ -906,6 +1040,15 @@ async function handleUserSelect(user: { id: string; username: string }) {
       unread.value[user.id] = 0
     }
 
+
+    const srvReacts = msg.reactions || msg.Reactions || []
+    let reactions: UiReaction[] = srvReacts.map((r:any) => ({
+      emoji: r.emoji || r.Emoji,
+      count: r.count ?? r.Count ?? 0,
+      mine: !!(r.mine ?? r.Mine)
+    }))
+    reactions = dedupeReactions(reactions);
+
     const isMine = msg.senderId === myId.value
     const status: 'delivered' | 'read' | undefined = isMine
       ? (msg.isRead ? 'read' : 'delivered')
@@ -931,7 +1074,8 @@ async function handleUserSelect(user: { id: string; username: string }) {
       readAtUtc: msg.readAtUtc || null,
       replyToMessageId: msg.replyToMessageId || null,
       isDeleted: !!msg.isDeleted,
-      updatedAtUtc: msg.updatedAtUtc || null
+      updatedAtUtc: msg.updatedAtUtc || null,
+      reactions
 
     } as UiMessage
   }))
@@ -960,12 +1104,7 @@ function onFileSelected(e: Event) {
 async function send() {
   if (!selectedUser.value) return
 
-
-
   const aesKey = await getOrLoadKey(selectedUser.value.id)
-
-
-
 
 
   let fileUrl: string | null = null
@@ -988,6 +1127,7 @@ async function send() {
       editingMessage.value.updatedAtUtc = new Date().toISOString()
       editingMessage.value = null
       text.value = ''
+      
     } catch(e) {
       console.warn('edit failed', e)
     }
@@ -1050,6 +1190,8 @@ async function send() {
   )
   replyingTo.value = null
   
+  if (selectedUser.value) clearDraft(selectedUser.value.id)
+
   if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
   // reset inputs
   text.value = ''
@@ -1076,6 +1218,7 @@ function onInputChanged() {
     console.log('➡️ stopTyping() (empty text)')
     stopTyping(selectedUser.value.id).catch((e)=>console.warn('stopTyping error', e))
   }
+  if (selectedUser.value) saveDraft(selectedUser.value.id, text.value)
 }
 
 function onBlurInput() {
