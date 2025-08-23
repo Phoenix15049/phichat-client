@@ -39,19 +39,45 @@
     </div>
 
     <div class="flex-1 flex flex-col">
-      <div class="bg-blue-600 text-white p-4 text-lg">
-        <template v-if="selectedUser">
-          <router-link
-            :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
-            class="underline hover:opacity-90"
-          >
-            @{{ selectedUser.username.replace(/^@/, '') }}
-          </router-link>
+      <div class="bg-blue-600 text-white p-3">
+        <template v-if="selectionMode">
+          <div class="flex items-center gap-3">
+            <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">انصراف</button>
+            <div class="font-medium">انتخاب‌شده: {{ selectedCount }}</div>
+            <div class="flex-1"></div>
+            <button
+              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
+              :disabled="!selectedCount"
+              @click="copySelectedText"
+            >کپی متن</button>
+            <button
+              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
+              :disabled="!selectedCount"
+              @click="copySelectedLinks"
+            >کپی لینک‌ها</button>
+            <button
+              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
+              :disabled="!selectedCount"
+              @click="deleteSelectedForMe"
+              title="حذف برای من"
+            >حذف</button>
+          </div>
         </template>
         <template v-else>
-          یک مخاطب را انتخاب کنید
+          <template v-if="selectedUser">
+            <router-link
+              :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
+              class="underline hover:opacity-90 text-lg"
+            >
+              @{{ selectedUser.username.replace(/^@/, '') }}
+            </router-link>
+          </template>
+          <template v-else>
+            یک مخاطب را انتخاب کنید
+          </template>
         </template>
       </div>
+
 
       <div class="text-xs text-gray-500 h-5 px-4">
         <span v-if="isPeerTyping">در حال تایپ…</span>
@@ -71,8 +97,14 @@
         <div
           v-for="(msg, index) in messages"
           :key="index"
-          :class="msg.senderId === myId ? 'text-right' : 'text-left'"
-          @contextmenu.prevent.stop="openMenu($event, msg)"
+          :class="[
+            'relative',
+            msg.senderId === myId ? 'text-right' : 'text-left'
+          ]"
+          @click.stop="selectionMode ? toggleSelect(msg) : null"
+          @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
+          @mousedown.left="startDragSelect(msg, $event)"
+          @mouseenter="onRowMouseEnter(msg)"
         >
           <div v-if="showDayHeader(index)" class="flex justify-center my-2">
             <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
@@ -82,14 +114,17 @@
 
           <div
             :class="[
-              'inline-block px-3 py-2 rounded max-w-[80%]',
+              'inline-block px-3 py-2 rounded max-w-[80%] select-text', 
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
+              selectionMode && isSelected(msg) ? 'ring-2 ring-offset-2 ring-blue-400 ring-offset-transparent' : ''
             ]"
             :title="tooltipForMessage(msg)"
-            @dblclick="replyingTo = msg"
-            @contextmenu.prevent.stop="openMenu($event, msg)"
+            @dblclick="!selectionMode ? (replyingTo = msg) : null"
+            @contextmenu.prevent="selectionMode ? null : openMenu($event, msg)" 
+            @click.stop="selectionMode ? toggleSelect(msg) : null"
             :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
           >
+
             <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
             <div
               v-if="msg.replyToMessageId"
@@ -106,7 +141,7 @@
               پیام حذف شد
             </div>
 
-                        <!-- برچسب فروارد -->
+            <!-- برچسب فروارد -->
             <div
               v-if="msg.forwardedFromSenderId"
               class="mb-1 text-xs opacity-80 border-l-2 pl-2"
@@ -187,8 +222,31 @@
                       @click="applyReaction(msg, e)">{{ e }}</button>
               <button class="px-2 py-[2px] text-[11px] text-gray-500" @click="reactionPickerFor = null">بستن</button>
             </div>
+            
+            <!-- Check indicator (only in selection mode) -->
+              <button
+                v-if="selectionMode"
+                class="absolute top-1"
+                :class="msg.senderId === myId ? 'left-1' : 'right-1'"
+                @click.stop="toggleSelect(msg)"
+                :title="isSelected(msg) ? 'برداشتن از انتخاب' : 'انتخاب پیام'"
+              >
+                <span
+                  :class="[
+                    'w-5 h-5 inline-flex items-center justify-center rounded-full border text-[11px]',
+                    isSelected(msg)
+                      ? (msg.senderId === myId ? 'bg-white text-blue-600 border-white' : 'bg-blue-600 text-white border-blue-600')
+                      : 'bg-white/80 text-gray-400 border-gray-300'
+                  ]"
+                >
+                  {{ isSelected(msg) ? '✓' : '' }}
+                </span>
+              </button>
+
 
           </div>
+
+
         </div>
       </div>
 
@@ -231,11 +289,15 @@
           :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
           @click.stop
         >
+          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">انتخاب پیام</button>
           <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">فوروارد…</button>
           <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
           <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
-          <button class="w-full text-right px-3 py-2 hover:bg-gray-50 text-amber-700" @click="doDeleteMe">حذف برای من</button>
-          <button v-if="isMine(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50 text-red-600" @click="doDeleteAll">حذف برای همه</button>
+          <button
+            class="w-full text-right px-3 py-2 hover:bg-gray-50"
+            @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">حذف…</button>
+
+            
         </div>
       </div>
 
@@ -260,14 +322,52 @@
         </div>
       </div>
 
+      <!-- Delete confirm dialog -->
+      <div v-if="confirmDel.visible" class="fixed inset-0 z-50 bg-black/30" @click.self="cancelDelete">
+        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-4 w-[360px]">
+          <div class="font-medium mb-2">حذف پیام‌ها</div>
+          <p class="text-sm text-gray-700 mb-3">
+            آیا از حذف {{ confirmDel.count }} پیام مطمئن هستید؟
+          </p>
+
+          <label class="flex items-center gap-2 text-sm mb-3">
+            <input
+              type="checkbox"
+              class="accent-red-600"
+              v-model="confirmDel.forAll"
+              :disabled="!confirmDel.canAll"
+            />
+            <span :class="confirmDel.canAll ? '' : 'text-gray-400'">
+              حذف برای همه
+            </span>
+          </label>
+
+          <div class="flex items-center justify-end gap-2">
+            <button class="px-3 py-1.5 rounded border" @click="cancelDelete">انصراف</button>
+            <button class="px-3 py-1.5 rounded bg-red-600 text-white" @click="confirmDelete">حذف</button>
+          </div>
+        </div>
+      </div>
+
+
     </div>
+  <!-- Toast -->
+  <div
+    v-if="toast.show"
+    class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-black/80 text-white text-sm px-3 py-2 rounded-full shadow"
+  >
+    {{ toast.text }}
   </div>
+  </div>
+  
+  
+
 </template>
 
 
 
 <script setup lang="ts">
-import { ref, onMounted,nextTick,onBeforeUnmount,reactive  } from 'vue'
+import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
 
 import {
   connectToChatHub,
@@ -399,6 +499,242 @@ const forwardPickerFor = ref<{ msg: UiMessage | null, visible: boolean }>({ msg:
 
 const forwardNames = reactive<Record<string, string>>({})
 
+
+const selectionMode = ref(false)
+const selected = reactive(new Set<string>())
+
+
+const toast = reactive({ show: false, text: '' })
+
+const confirmDel = reactive<{
+  visible: boolean
+  mode: 'single' | 'multi'
+  msg: UiMessage | null
+  count: number
+  canAll: boolean
+  forAll: boolean
+}>({
+  visible: false,
+  mode: 'single',
+  msg: null,
+  count: 0,
+  canAll: false,
+  forAll: false
+})
+
+const isDragSelecting = ref(false)
+const dragMode = ref<'add' | 'remove'>('add')
+const dragVisited = reactive(new Set<string>())
+const lastMouseY = ref(0)
+let autoScrollTimer: number | null = null
+
+
+
+
+
+
+
+
+
+function applyDragOn(m: UiMessage) {
+  const k = getMsgKey(m)
+  if (dragVisited.has(k)) return
+  dragVisited.add(k)
+  if (dragMode.value === 'add') selected.add(k)
+  else selected.delete(k)
+}
+
+function startDragSelect(m: UiMessage, ev: MouseEvent) {
+  if (ev.button !== 0) return // فقط کلیک چپ
+  if (!selectedUser.value) return
+  ev.preventDefault()
+  ev.stopPropagation()
+
+  if (!selectionMode.value) selectionMode.value = true
+
+  const k = getMsgKey(m)
+  const already = selected.has(k)
+  dragMode.value = already ? 'remove' : 'add'
+  dragVisited.clear()
+  applyDragOn(m)
+
+  isDragSelecting.value = true
+  lastMouseY.value = ev.clientY
+  startAutoScroll()
+
+  window.addEventListener('mouseup', endDragSelect)
+  window.addEventListener('mousemove', onDragMouseMove, { passive: true })
+}
+
+function onRowMouseEnter(m: UiMessage) {
+  if (!isDragSelecting.value) return
+  applyDragOn(m)
+}
+
+function onDragMouseMove(ev: MouseEvent) {
+  lastMouseY.value = ev.clientY
+  // انتخاب پیام‌ها روی mouseenter انجام می‌شود؛ اینجا فقط برای اسکرول خودکار مختصات را می‌گیریم
+}
+
+function endDragSelect() {
+  isDragSelecting.value = false
+  dragVisited.clear()
+  stopAutoScroll()
+  window.removeEventListener('mouseup', endDragSelect)
+  window.removeEventListener('mousemove', onDragMouseMove)
+}
+
+function startAutoScroll() {
+  const el = scrollBox.value as HTMLElement | null
+  if (!el) return
+  stopAutoScroll()
+  autoScrollTimer = window.setInterval(() => {
+    if (!isDragSelecting.value) return
+    const rect = el.getBoundingClientRect()
+    const margin = 32   // ناحیه حساس بالا/پایین
+    const speed = 12    // سرعت اسکرول هر تیک
+    if (lastMouseY.value < rect.top + margin) el.scrollTop -= speed
+    else if (lastMouseY.value > rect.bottom - margin) el.scrollTop += speed
+  }, 30)
+}
+function stopAutoScroll() {
+  if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null }
+}
+
+function openDeleteConfirmSingle(msg: UiMessage, scopeDefault?: 'me'|'all') {
+  confirmDel.visible = true
+  confirmDel.mode = 'single'
+  confirmDel.msg = msg
+  confirmDel.count = 1
+  confirmDel.canAll = isMine(msg)
+  confirmDel.forAll = scopeDefault === 'all' && confirmDel.canAll
+}
+
+function openDeleteConfirmMulti() {
+  confirmDel.visible = true
+  confirmDel.mode = 'multi'
+  confirmDel.msg = null
+  confirmDel.count = selectedCount.value
+  confirmDel.canAll = allSelectedAreMine.value
+  confirmDel.forAll = false
+}
+
+function cancelDelete() {
+  confirmDel.visible = false
+}
+
+async function confirmDelete() {
+  try {
+    if (confirmDel.mode === 'single' && confirmDel.msg?.id) {
+      const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
+      await deleteMessage(confirmDel.msg.id, scope)
+      // از UI حذف کن (همان رفتاری که تا الان داشتی)
+      const i = messages.value.findIndex(x => x.id === confirmDel.msg!.id)
+      if (i >= 0) messages.value.splice(i, 1)
+    } else if (confirmDel.mode === 'multi') {
+      const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
+      const ids = selectedMessages.value.map(m => m.id!).filter(Boolean)
+      await Promise.all(ids.map(id => deleteMessage(id, scope).catch(()=>{})))
+      // از UI حذف کن
+      for (const id of ids) {
+        const i = messages.value.findIndex(x => x.id === id)
+        if (i >= 0) messages.value.splice(i, 1)
+      }
+      clearSelection()
+    }
+    showToast('حذف شد')
+  } catch (e) {
+    console.warn('confirmDelete failed', e)
+  } finally {
+    confirmDel.visible = false
+  }
+}
+
+function showToast(t: string) {
+  toast.text = t
+  toast.show = true
+  setTimeout(() => { toast.show = false }, 1400)
+}
+
+
+type UiMsgKey = string
+function getMsgKey(m: UiMessage): UiMsgKey { return (m.id || m.clientId)! }
+function isSelected(m: UiMessage) { return selected.has(getMsgKey(m)) }
+function toggleSelect(m: UiMessage) {
+  const k = getMsgKey(m)
+  if (selected.has(k)) selected.delete(k); else selected.add(k)
+}
+function clearSelection() { selected.clear(); selectionMode.value = false }
+
+const selectedMessages = computed(() => messages.value.filter(m => selected.has(getMsgKey(m))))
+const selectedCount = computed(() => selected.size)
+const allSelectedAreMine = computed(() => selectedMessages.value.length > 0 && selectedMessages.value.every(m => m.senderId === myId.value))
+
+watch(selectedUser, () => clearSelection())
+
+function onKeydownSelection(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectionMode.value) clearSelection()
+}
+onMounted(() => window.addEventListener('keydown', onKeydownSelection))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydownSelection))
+
+async function writeClipboard(text: string) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch {}
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try { document.execCommand('copy') } catch {}
+  document.body.removeChild(ta)
+}
+
+async function copySelectedText() {
+  if (!selectedCount.value) return
+  const ordered = [...selectedMessages.value].sort((a,b) => (a.sentAt||'').localeCompare(b.sentAt||''))
+  const lines = ordered.map(m => (m.plainText || '').trim()).filter(Boolean)
+  if (lines.length === 0) return
+  await writeClipboard(lines.join('\n'))
+  clearSelection()
+  showToast('متن کپی شد')
+}
+
+
+// Extract URLs from text
+const URL_RE = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?)/g
+function extractUrls(s: string): string[] {
+  return (s.match(URL_RE) || []).map(u => u.startsWith('www.') ? `https://${u}` : u)
+}
+
+async function copySelectedLinks() {
+  if (!selectedCount.value) return
+  const urls: string[] = []
+  for (const m of selectedMessages.value) {
+    if (m.plainText) urls.push(...extractUrls(m.plainText))
+    if (m.fileUrl) urls.push(m.fileUrl)
+  }
+  const uniq = Array.from(new Set(urls))
+  if (uniq.length === 0) return
+  await writeClipboard(uniq.join('\n'))
+}
+
+async function deleteSelectedForMe() {
+  if (!selectedCount.value) return
+  openDeleteConfirmMulti()
+}
+
+function startSelectionFrom(m: UiMessage) {
+  selectionMode.value = true
+  selected.clear()
+  toggleSelect(m)
+  closeMenu()
+}
 
 
 function cacheForwardName(id?: string | null) {
@@ -616,23 +952,11 @@ function doEdit() {
 }
 async function doDeleteMe() {
   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-  try {
-    await deleteMessage(m.id, 'me')
-    const i = messages.value.findIndex(x => x.id === m.id)
-    if (i >= 0) messages.value.splice(i, 1)
-  } catch(e) { console.warn('delete me failed', e) }
+  openDeleteConfirmSingle(m, 'me')
 }
 async function doDeleteAll() {
   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-  try {
-    await deleteMessage(m.id, 'all')
-    // قبلاً: m.isDeleted = true ...
-    // الان: کلاً حذف از لیست
-    const idx = messages.value.findIndex(x => x.id === m.id)
-    if (idx >= 0) messages.value.splice(idx, 1)
-  } catch(e) {
-    console.warn('delete all failed', e)
-  }
+  openDeleteConfirmSingle(m, 'all')
 }
 
 
@@ -928,6 +1252,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('scroll', onWindowScroll, true)
   window.removeEventListener('resize', onWindowResize)
+  stopAutoScroll()
+  window.removeEventListener('mouseup', endDragSelect)
+  window.removeEventListener('mousemove', onDragMouseMove)
 })
 
 
