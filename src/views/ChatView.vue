@@ -106,6 +106,26 @@
               پیام حذف شد
             </div>
 
+                        <!-- برچسب فروارد -->
+            <div
+              v-if="msg.forwardedFromSenderId"
+              class="mb-1 text-xs opacity-80 border-l-2 pl-2"
+            >
+              فروارد‌شده از
+              <router-link
+                v-if="forwardNames[msg.forwardedFromSenderId]"
+                :to="`/u/${forwardNames[msg.forwardedFromSenderId].replace(/^@/,'')}`"
+                class="font-medium underline hover:opacity-90"
+                @mouseenter="cacheForwardName(msg.forwardedFromSenderId)"
+              >
+                {{ forwardNames[msg.forwardedFromSenderId] }}
+              </router-link>
+              <span v-else class="font-medium">
+                {{ resolveUserName(msg.forwardedFromSenderId) }}
+              </span>
+            </div>
+
+
             <!-- متن -->
             <div v-if="!msg.isDeleted" class="whitespace-pre-wrap break-words">
               {{ msg.plainText || '' }}
@@ -211,10 +231,32 @@
           :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
           @click.stop
         >
+          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">فوروارد…</button>
           <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
           <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
           <button class="w-full text-right px-3 py-2 hover:bg-gray-50 text-amber-700" @click="doDeleteMe">حذف برای من</button>
           <button v-if="isMine(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50 text-red-600" @click="doDeleteAll">حذف برای همه</button>
+        </div>
+      </div>
+
+
+      <!-- Forward picker -->
+      <div v-if="forwardPickerFor.visible" class="fixed inset-0 z-40 bg-black/20" @click.self="forwardPickerFor.visible=false">
+        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-3 w-[320px]">
+          <div class="font-medium mb-2">ارسال به…</div>
+          <div class="max-h-64 overflow-y-auto">
+            <button
+              v-for="c in conversations"
+              :key="c.peerId"
+              class="w-full text-right px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
+              @click="doForward(c.peerId)"
+            >
+              {{ c.displayName || '@' + c.username }}
+            </button>
+          </div>
+          <div class="mt-2 text-left">
+            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPickerFor.visible=false">بستن</button>
+          </div>
         </div>
       </div>
 
@@ -225,7 +267,7 @@
 
 
 <script setup lang="ts">
-import { ref, onMounted,nextTick,onBeforeUnmount  } from 'vue'
+import { ref, onMounted,nextTick,onBeforeUnmount,reactive  } from 'vue'
 
 import {
   connectToChatHub,
@@ -260,7 +302,7 @@ import {
   getConversations,
   editMessage,
   deleteMessage,
-  addReaction, removeReaction
+  addReaction, removeReaction,getUserById
 } from '../services/api'
 import {
   saveAESKey,
@@ -286,6 +328,8 @@ type UiMessage = {
   isDeleted?: boolean
   updatedAtUtc?: string | null
   reactions?: UiReaction[]
+  forwardedFromMessageId?: string | null
+  forwardedFromSenderId?: string | null
 }
 
 type UiConversation = {
@@ -336,8 +380,6 @@ const hasMore = ref(true)
 const oldestId = ref<string | null>(null)
 const replyingTo = ref<UiMessage | null>(null)
 
-
-
 const conversations = ref<UiConversation[]>([])
 
 
@@ -353,6 +395,112 @@ const menuEl = ref<HTMLElement | null>(null)
 const quickEmojis = ['👍','❤️','😂','😮','😢','🔥']
 const reactionPickerFor = ref<string | null>(null)
 
+const forwardPickerFor = ref<{ msg: UiMessage | null, visible: boolean }>({ msg: null, visible: false })
+
+const forwardNames = reactive<Record<string, string>>({})
+
+
+
+function cacheForwardName(id?: string | null) {
+  if (!id || forwardNames[id]) return
+
+  const conv = conversations.value.find(c => c.peerId === id)
+  if (conv) {
+    forwardNames[id] = conv.displayName || '@' + conv.username
+    return
+  }
+
+  getUserById(id)
+    .then(u => { if (u) forwardNames[id] = (u.displayName || '@' + u.username) })
+    .catch(() => {})
+}
+
+
+function openForwardPicker() {
+  if (!contextMenu.value.msg) return
+  forwardPickerFor.value = { msg: contextMenu.value.msg, visible: true }
+  closeMenu()
+}
+
+async function doForward(toPeerId: string) {
+  const src = forwardPickerFor.value.msg
+  forwardPickerFor.value.visible = false
+  if (!src) return
+
+  try {
+    const aesKey = await getOrLoadKey(toPeerId)
+    const cipher = await encryptAES(aesKey, src.plainText || '')
+
+    // ⬇️ NEW: اگر مقصد همان چتِ باز است، پیام لوکال بسازیم
+    const sameChat = selectedUser.value && selectedUser.value.id === toPeerId
+    const clientId = crypto.randomUUID()
+
+    if (sameChat) {
+      const mine: UiMessage = {
+        clientId,
+        senderId: myId.value,
+        plainText: src.plainText,
+        fileUrl: src.fileUrl || null,
+        status: 'sending',
+        sentAt: new Date().toISOString(),
+        // برچسب فروارد
+        forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
+        forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
+      }
+      messages.value.push(mine)
+      await nextTick()
+      const el = scrollBox.value
+      if (el) el.scrollTop = el.scrollHeight
+
+      if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
+    }
+
+    // ⬇️ NEW: clientId و forwardedFromMessageId را به سرور بده
+    await sendMessage(
+      toPeerId,
+      cipher,
+      src.fileUrl || null,
+      sameChat ? clientId : null,   // اگر همون چته، با clientId تا Delivered آپدیت شه
+      null,
+      src.id || null                // forwardedFromMessageId
+    )
+
+    // ⬇️ NEW: اگر مقصد چتِ دیگری است، سایدبار را آپدیت کن
+    if (!sameChat) {
+      const nowIso = new Date().toISOString()
+      const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
+      if (idx >= 0) {
+        const c = conversations.value[idx]
+        c.lastSentAt = nowIso
+        c.lastFileUrl = src.fileUrl || null
+        c.lastPreview = src.plainText || (src.fileUrl ? null : '')
+        const [moved] = conversations.value.splice(idx, 1)
+        conversations.value.unshift(moved)
+      } else {
+        conversations.value.unshift({
+          peerId: toPeerId,
+          username: 'user_' + toPeerId.slice(0, 6),
+          unreadCount: 0,
+          lastSentAt: nowIso,
+          lastFileUrl: src.fileUrl || null,
+          lastPreview: src.plainText || ''
+        } as UiConversation)
+      }
+    }
+
+  } catch (e) {
+    console.warn('forward failed', e)
+  }
+}
+
+
+function resolveUserName(userId?: string | null) {
+  if (!userId) return 'کاربر'
+  const conv = conversations.value.find(c => c.peerId === userId)
+  if (conv) return conv.displayName || '@' + conv.username
+  // اگر نداشتی، حداقل یه fallback کوتاه
+  return 'کاربر'
+}
 
 
 function draftKey(peerId: string) {
@@ -514,13 +662,13 @@ async function jumpToReplied(targetId?: string | null) {
 }
 
 async function jumpToMessage(targetId: string) {
-  // 1) اگر پیام همین حالا توی لیست هست، مستقیم اسکرول و هایلایت
+
   let el = msgElMap.get(targetId);
   if (!el) {
-    // 2) اگر نیست، صفحه‌های قبلی را prepend کن تا برسیم به پیام (تا 10 نوبت یا تا تمام‌شدن)
+
     let tries = 0;
     while (!el && hasMore.value && tries < 10) {
-      const loaded = await loadOlderOnce(); // یک صفحهٔ قبلی بارگذاری می‌کند
+      const loaded = await loadOlderOnce();
       if (!loaded) break;
       await nextTick();
       el = msgElMap.get(targetId);
@@ -541,7 +689,7 @@ async function jumpToMessage(targetId: string) {
   }
 }
 
-// یک بار لودِ صفحهٔ قبلی (همانی که در onScrollLoadMore انجام می‌دهی، ولی برنامه‌ای)
+
 async function loadOlderOnce(): Promise<boolean> {
   if (!selectedUser.value || !hasMore.value || loadingOlder.value) return false;
   const el = scrollBox.value;
@@ -556,7 +704,6 @@ async function loadOlderOnce(): Promise<boolean> {
 
     if (!items.length) return false;
     
-    // همان مپ/دیکریپتی که در onScrollLoadMore داری — حتماً مثل آن پیاده کن
     const aesKey = await getOrLoadKey(selectedUser.value.id);
     const older = await Promise.all(items.map(async (msg: any) => {
       const raw = (msg.encryptedContent || "") as string;
@@ -580,6 +727,10 @@ async function loadOlderOnce(): Promise<boolean> {
         ? (msg.isRead ? "read" : "delivered")
         : undefined;
 
+      const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
+      if (fwdFrom) cacheForwardName(fwdFrom)
+
+
       return {
         id: msg.messageId,
         senderId: msg.senderId,
@@ -592,8 +743,9 @@ async function loadOlderOnce(): Promise<boolean> {
         replyToMessageId: msg.replyToMessageId || null,
         isDeleted: !!msg.isDeleted,
         updatedAtUtc: msg.updatedAtUtc || null,
-        reactions
-
+        reactions,
+        forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
+        forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
       } as UiMessage;
     }));
 
@@ -734,6 +886,11 @@ async function onScrollLoadMore(e: Event) {
           ? (msg.isRead ? 'read' : 'delivered')
           : undefined;
 
+        
+        const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
+        if (fwdFrom) cacheForwardName(fwdFrom)
+
+
         return {
           id: msg.messageId,
           senderId: msg.senderId,
@@ -746,16 +903,18 @@ async function onScrollLoadMore(e: Event) {
           replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null,
           isDeleted: !!msg.isDeleted,
           updatedAtUtc: msg.updatedAtUtc || null,
-          reactions
+          reactions,
+          forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
+          forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
+
 
         } as UiMessage;
       }));
 
-      // prepend
       messages.value = [...older, ...messages.value];
 
       await nextTick();
-      // نگه‌داشتن موقعیت اسکرول
+      
       const newHeight = el.scrollHeight;
       el.scrollTop = newHeight - prevHeight;
     }
@@ -898,8 +1057,11 @@ function wireSignalR() {
       deliveredAtUtc: message.deliveredAtUtc || null,
       readAtUtc: message.readAtUtc || null,
       replyToMessageId: message.replyToMessageId || message.ReplyToMessageId || null,
+      forwardedFromMessageId: message.forwardedFromMessageId || message.ForwardedFromMessageId || null,
+      forwardedFromSenderId:  message.forwardedFromSenderId  || message.ForwardedFromSenderId  || null,
       
     }
+    if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId) // ⬅️ NEW
     messages.value.push(ui)
     await nextTick()
     const el = scrollBox.value
@@ -1062,6 +1224,8 @@ async function handleUserSelect(user: { id: string; username: string }) {
 
     selectedUser.value = user
     isPeerTyping.value = false
+    const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
+    if (fwdFrom) cacheForwardName(fwdFrom)
 
     return {
       id: msg.messageId,
@@ -1075,7 +1239,10 @@ async function handleUserSelect(user: { id: string; username: string }) {
       replyToMessageId: msg.replyToMessageId || null,
       isDeleted: !!msg.isDeleted,
       updatedAtUtc: msg.updatedAtUtc || null,
-      reactions
+      reactions,
+      forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
+      forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
+
 
     } as UiMessage
   }))
@@ -1189,7 +1356,7 @@ async function send() {
     replyingTo.value?.id ?? null // ← NEW
   )
   replyingTo.value = null
-  
+
   if (selectedUser.value) clearDraft(selectedUser.value.id)
 
   if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})

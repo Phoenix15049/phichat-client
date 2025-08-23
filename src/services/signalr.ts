@@ -87,7 +87,8 @@ export async function sendMessage(
   encryptedText: string,
   fileUrl?: string | null,
   clientId?: string | null,
-  replyToMessageId?: string | null // ← NEW
+  replyToMessageId?: string | null,
+  forwardedFromMessageId?: string | null
 ) {
   if (!connection) throw new Error('SignalR not connected')
   await connection.invoke('SendMessage', {
@@ -95,7 +96,8 @@ export async function sendMessage(
     encryptedText,
     fileUrl: fileUrl ?? null,
     clientId: clientId ?? null,
-    replyToMessageId: replyToMessageId ?? null, // ← use param, not replyingTo
+    replyToMessageId: replyToMessageId ?? null,
+    forwardedFromMessageId: forwardedFromMessageId ?? null
   })
 }
 
