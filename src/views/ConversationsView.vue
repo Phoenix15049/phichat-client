@@ -33,7 +33,6 @@
           </div>
         </div>
 
-        <!-- 🔴 دقیقا از unreadCount استفاده کن -->
         <span
           v-if="c.unreadCount > 0"
           class="min-w-6 h-6 px-2 inline-flex items-center justify-center text-xs rounded-full bg-red-600 text-white"
@@ -86,7 +85,6 @@ function onRefresh() { load() }
 
 onMounted(() => {
   load()
-  // رفرش سبک: فوکوس پنجره یا رویداد سفارشی
   window.addEventListener('focus', onRefresh)
   window.addEventListener('refresh-conversations', onRefresh as EventListener)
 })

@@ -101,10 +101,10 @@
             'relative',
             msg.senderId === myId ? 'text-right' : 'text-left'
           ]"
-          @click.stop="selectionMode ? toggleSelect(msg) : null"
-          @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
-          @mousedown.left="startDragSelect(msg, $event)"
-          @mouseenter="onRowMouseEnter(msg)"
+          @click.stop="onRowClick($event, msg)"                              
+          @contextmenu.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
+          @mousedown.left="onRowMouseDown($event, msg)"
+          @mouseenter="onRowMouseEnter(msg)"   
         >
           <div v-if="showDayHeader(index)" class="flex justify-center my-2">
             <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
@@ -114,14 +114,13 @@
 
           <div
             :class="[
-              'inline-block px-3 py-2 rounded max-w-[80%] select-text', 
+              'inline-block px-3 py-2 rounded max-w-[80%]',
               msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
               selectionMode && isSelected(msg) ? 'ring-2 ring-offset-2 ring-blue-400 ring-offset-transparent' : ''
             ]"
             :title="tooltipForMessage(msg)"
             @dblclick="!selectionMode ? (replyingTo = msg) : null"
-            @contextmenu.prevent="selectionMode ? null : openMenu($event, msg)" 
-            @click.stop="selectionMode ? toggleSelect(msg) : null"
+            @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
             :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
           >
 
@@ -162,7 +161,7 @@
 
 
             <!-- متن -->
-            <div v-if="!msg.isDeleted" class="whitespace-pre-wrap break-words">
+            <div class="whitespace-pre-wrap break-words select-text" data-text-selectable>
               {{ msg.plainText || '' }}
             </div>
 
@@ -456,7 +455,7 @@ function resolveReplyPreview(id?: string | null): string {
 
 
 const route = useRoute()
-const EMPTY_MSG_MARKER = '\u200B' // zero-width space
+const EMPTY_MSG_MARKER = '\u200B' 
 
 const myId = ref<string>('')
 const selectedUser = ref<{ id: string; username: string } | null>(null)
@@ -466,7 +465,7 @@ const selectedFile = ref<File | null>(null)
 const unread = ref<Record<string, number>>({})
 const online = new Set<string>()
 const typing = new Set<string>()
-// --- typing state (کم‌تغییر) ---
+
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
 const TYPING_IDLE_MS = 4000
@@ -522,18 +521,16 @@ const confirmDel = reactive<{
   forAll: false
 })
 
-const isDragSelecting = ref(false)
+const isDragSelecting = ref(false)     
+const dragPending = ref(false)         
 const dragMode = ref<'add' | 'remove'>('add')
 const dragVisited = reactive(new Set<string>())
+const startClientY = ref(0)
+const startClientX = ref(0)
 const lastMouseY = ref(0)
 let autoScrollTimer: number | null = null
-
-
-
-
-
-
-
+const DRAG_THRESHOLD = 8
+const dragStartMsg = ref<UiMessage | null>(null)
 
 
 function applyDragOn(m: UiMessage) {
@@ -544,26 +541,51 @@ function applyDragOn(m: UiMessage) {
   else selected.delete(k)
 }
 
-function startDragSelect(m: UiMessage, ev: MouseEvent) {
-  if (ev.button !== 0) return // فقط کلیک چپ
+function onRowMouseDown(ev: MouseEvent, m: UiMessage) {
+  // اگر روی متن قابل‌انتخاب کلیک شد → اجازه بده متن انتخاب شود
+  if (isInTextSelectable(ev.target)) return
   if (!selectedUser.value) return
+  if (ev.button !== 0) return
+
   ev.preventDefault()
   ev.stopPropagation()
 
-  if (!selectionMode.value) selectionMode.value = true
-
+  // حالت درگ در انتظار عبور از آستانه
   const k = getMsgKey(m)
   const already = selected.has(k)
   dragMode.value = already ? 'remove' : 'add'
-  dragVisited.clear()
-  applyDragOn(m)
 
-  isDragSelecting.value = true
+  dragStartMsg.value = m
+  dragPending.value = true
+  isDragSelecting.value = false
+  dragVisited.clear()
+  startClientY.value = ev.clientY
+  startClientX.value = ev.clientX
   lastMouseY.value = ev.clientY
-  startAutoScroll()
 
   window.addEventListener('mouseup', endDragSelect)
   window.addEventListener('mousemove', onDragMouseMove, { passive: true })
+}
+
+
+function onDragMouseMove(ev: MouseEvent) {
+  lastMouseY.value = ev.clientY
+
+  if (dragPending.value && !isDragSelecting.value) {
+    const dy = Math.abs(ev.clientY - startClientY.value)
+    const dx = Math.abs(ev.clientX - startClientX.value)
+    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+      // عبور از آستانه → شروع انتخاب
+      if (!selectionMode.value) selectionMode.value = true
+      isDragSelecting.value = true
+      dragPending.value = false
+      startAutoScroll()
+
+      // ✅ مهم: پیام شروع‌کننده را همین حالا اعمال کن
+      if (dragStartMsg.value) applyDragOn(dragStartMsg.value)
+    }
+  }
+  // انتخاب روی mouseenter انجام می‌شود
 }
 
 function onRowMouseEnter(m: UiMessage) {
@@ -571,15 +593,11 @@ function onRowMouseEnter(m: UiMessage) {
   applyDragOn(m)
 }
 
-function onDragMouseMove(ev: MouseEvent) {
-  lastMouseY.value = ev.clientY
-  // انتخاب پیام‌ها روی mouseenter انجام می‌شود؛ اینجا فقط برای اسکرول خودکار مختصات را می‌گیریم
-}
-
 function endDragSelect() {
+  stopAutoScroll()
+  dragPending.value = false
   isDragSelecting.value = false
   dragVisited.clear()
-  stopAutoScroll()
   window.removeEventListener('mouseup', endDragSelect)
   window.removeEventListener('mousemove', onDragMouseMove)
 }
@@ -591,8 +609,8 @@ function startAutoScroll() {
   autoScrollTimer = window.setInterval(() => {
     if (!isDragSelecting.value) return
     const rect = el.getBoundingClientRect()
-    const margin = 32   // ناحیه حساس بالا/پایین
-    const speed = 12    // سرعت اسکرول هر تیک
+    const margin = 32
+    const speed = 12
     if (lastMouseY.value < rect.top + margin) el.scrollTop -= speed
     else if (lastMouseY.value > rect.bottom - margin) el.scrollTop += speed
   }, 30)
@@ -600,6 +618,22 @@ function startAutoScroll() {
 function stopAutoScroll() {
   if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null }
 }
+
+
+function onRowClick(ev: MouseEvent, m: UiMessage) {
+  if (isInTextSelectable(ev.target)) return
+
+  if (selectionMode.value) {
+    toggleSelect(m)
+  }
+}
+
+function isInTextSelectable(target: EventTarget | null) {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  return !!el.closest('[data-text-selectable]')
+}
+
 
 function openDeleteConfirmSingle(msg: UiMessage, scopeDefault?: 'me'|'all') {
   confirmDel.visible = true
@@ -628,14 +662,12 @@ async function confirmDelete() {
     if (confirmDel.mode === 'single' && confirmDel.msg?.id) {
       const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
       await deleteMessage(confirmDel.msg.id, scope)
-      // از UI حذف کن (همان رفتاری که تا الان داشتی)
       const i = messages.value.findIndex(x => x.id === confirmDel.msg!.id)
       if (i >= 0) messages.value.splice(i, 1)
     } else if (confirmDel.mode === 'multi') {
       const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
       const ids = selectedMessages.value.map(m => m.id!).filter(Boolean)
       await Promise.all(ids.map(id => deleteMessage(id, scope).catch(()=>{})))
-      // از UI حذف کن
       for (const id of ids) {
         const i = messages.value.findIndex(x => x.id === id)
         if (i >= 0) messages.value.splice(i, 1)
@@ -671,6 +703,13 @@ const selectedCount = computed(() => selected.size)
 const allSelectedAreMine = computed(() => selectedMessages.value.length > 0 && selectedMessages.value.every(m => m.senderId === myId.value))
 
 watch(selectedUser, () => clearSelection())
+
+watch(selectedCount, (n) => {
+  if (n === 0 && selectionMode.value) {
+    selectionMode.value = false
+  }
+})
+
 
 function onKeydownSelection(e: KeyboardEvent) {
   if (e.key === 'Escape' && selectionMode.value) clearSelection()
@@ -767,7 +806,6 @@ async function doForward(toPeerId: string) {
     const aesKey = await getOrLoadKey(toPeerId)
     const cipher = await encryptAES(aesKey, src.plainText || '')
 
-    // ⬇️ NEW: اگر مقصد همان چتِ باز است، پیام لوکال بسازیم
     const sameChat = selectedUser.value && selectedUser.value.id === toPeerId
     const clientId = crypto.randomUUID()
 
@@ -779,7 +817,6 @@ async function doForward(toPeerId: string) {
         fileUrl: src.fileUrl || null,
         status: 'sending',
         sentAt: new Date().toISOString(),
-        // برچسب فروارد
         forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
         forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
       }
@@ -791,17 +828,15 @@ async function doForward(toPeerId: string) {
       if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
     }
 
-    // ⬇️ NEW: clientId و forwardedFromMessageId را به سرور بده
     await sendMessage(
       toPeerId,
       cipher,
       src.fileUrl || null,
-      sameChat ? clientId : null,   // اگر همون چته، با clientId تا Delivered آپدیت شه
+      sameChat ? clientId : null,   
       null,
-      src.id || null                // forwardedFromMessageId
+      src.id || null
     )
 
-    // ⬇️ NEW: اگر مقصد چتِ دیگری است، سایدبار را آپدیت کن
     if (!sameChat) {
       const nowIso = new Date().toISOString()
       const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
@@ -834,7 +869,6 @@ function resolveUserName(userId?: string | null) {
   if (!userId) return 'کاربر'
   const conv = conversations.value.find(c => c.peerId === userId)
   if (conv) return conv.displayName || '@' + conv.username
-  // اگر نداشتی، حداقل یه fallback کوتاه
   return 'کاربر'
 }
 
@@ -864,7 +898,6 @@ async function applyReaction(m: UiMessage, emoji: string) {
 async function toggleReaction(m: UiMessage, emoji: string) {
   if (!m.id) return;
   const list = m.reactions || (m.reactions = []);
-  // یکتاسازی قبل از هر تغییری
   m.reactions = dedupeReactions(list);
 
   const cur = m.reactions.find(r => r.emoji === emoji);
@@ -887,7 +920,6 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') closeMenu()
 }
 function onWindowScroll() {
-  // مثل تلگرام، با اسکرول منو بسته شود
   closeMenu()
 }
 function onWindowResize() {
@@ -905,11 +937,9 @@ function clampMenuPosition() {
   let x = contextMenu.value.x
   let y = contextMenu.value.y
 
-  // راست/چپ
   if (x + rect.width + pad > vpW) x = Math.max(pad, vpW - rect.width - pad)
   else x = Math.max(pad, x)
 
-  // پایین/بالا
   if (y + rect.height + pad > vpH) y = Math.max(pad, vpH - rect.height - pad)
   else y = Math.max(pad, y)
 
@@ -922,12 +952,10 @@ function clampMenuPosition() {
 
 
 function openMenu(e: MouseEvent, m: UiMessage) {
-  // اگر منو باز است: با راست‌کلیک فقط ببند و تمام (مثل تلگرام)
   if (contextMenu.value.visible) {
     closeMenu()
     return
   }
-  // در غیر این صورت، باز کن و موقعیت را داخل ویوپورت clamp کن
   contextMenu.value.msg = m
   contextMenu.value.visible = true
   contextMenu.value.x = e.clientX
@@ -1002,10 +1030,10 @@ async function jumpToMessage(targetId: string) {
   if (el && scrollBox.value) {
     
     const container = scrollBox.value;
-    const top = el.offsetTop - 100; // کمی حاشیه بالا
+    const top = el.offsetTop - 100;
     container.scrollTo({ top, behavior: "smooth" });
 
-    // هایلایت کوتاه (حاشیه زرد)
+
     el.classList.add("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
     setTimeout(() => {
       el.classList.remove("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
@@ -1131,7 +1159,7 @@ function tooltipForMessage(msg: any): string {
 
 
 async function selectConversation(conv: UiConversation) {
-  // reset unread badge برای این گفتگو (کلاینتی)
+
   const target = conversations.value.find(c => c.peerId === conv.peerId)
   if (target) target.unreadCount = 0
 
@@ -1148,13 +1176,13 @@ function dayKey(iso?: string | null): string {
 function dayLabel(iso?: string | null): string {
   const d = toDateSafe(iso);
   if (!d) return '';
-  // امروز/دیروز
+
   const today = new Date(); today.setHours(0,0,0,0);
   const that = new Date(d); that.setHours(0,0,0,0);
   const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
   if (diffDays === 0) return 'امروز';
   if (diffDays === 1) return 'دیروز';
-  // نمای کامل محلی
+
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'full' }).format(d);
 }
 
@@ -1174,12 +1202,11 @@ async function onScrollLoadMore(e: Event) {
   if (!selectedUser.value || !hasMore.value || loadingOlder.value) return;
   const el = scrollBox.value;
   if (!el) return;
-  if (el.scrollTop > 80) return; // نزدیک بالا نیست
+  if (el.scrollTop > 80) return;
 
   loadingOlder.value = true;
   const before = oldestId.value || undefined;
 
-  // ارتفاع قبل از prepend
   const prevHeight = el.scrollHeight;
 
   try {
@@ -1270,7 +1297,7 @@ onMounted(async () => {
   }
 
   try {
-      const data = await getConversations()  // آرایه‌ای از کانورسیشن‌ها
+      const data = await getConversations() 
       conversations.value = (data || []).map((c: any) => ({
         peerId: c.peerId || c.PeerId,
         username: c.peerUsername || c.PeerUsername || '',
@@ -1279,9 +1306,9 @@ onMounted(async () => {
         unreadCount: c.unreadCount ?? c.UnreadCount ?? 0,
         lastSentAt: c.lastSentAt || c.LastSentAt || null,
         lastFileUrl: c.lastFileUrl || c.LastFileUrl || null,
-        lastPreview: null // در صورت نیاز بعداً با کلید، رمزگشایی و پر می‌کنیم
+        lastPreview: null 
       }))
-      // مرتب به‌صورت نزولی زمان آخرین پیام
+
       conversations.value.sort((a, b) => {
         const ta = toDateSafe(a.lastSentAt)?.getTime() || 0
         const tb = toDateSafe(b.lastSentAt)?.getTime() || 0
@@ -1317,7 +1344,7 @@ onMounted(async () => {
   onTypingStopped(handleTypingStopped)
 
   window.addEventListener('keydown', onKeydown)
-  window.addEventListener('scroll', onWindowScroll, true) // capture روی همهٔ اسکرول‌ها
+  window.addEventListener('scroll', onWindowScroll, true) 
   window.addEventListener('resize', onWindowResize)
 
 
@@ -1347,7 +1374,7 @@ function wireSignalR() {
           const [moved] = conversations.value.splice(convIdx, 1)
           conversations.value.unshift(moved)
         } else {
-          // اگر گفتگو در لیست نبود، یک مورد حداقلی بساز؛ یا می‌تونی از API رفرش کنی
+
           conversations.value.unshift({
             peerId: sid,
             username: message.senderUsername || ('user_' + sid.substring(0,6)),
@@ -1388,7 +1415,7 @@ function wireSignalR() {
       forwardedFromSenderId:  message.forwardedFromSenderId  || message.ForwardedFromSenderId  || null,
       
     }
-    if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId) // ⬅️ NEW
+    if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId)
     messages.value.push(ui)
     await nextTick()
     const el = scrollBox.value
@@ -1474,13 +1501,13 @@ onReactionUpdated((p) => {
   if (!m) return;
 
   const list = m.reactions || (m.reactions = []);
-  // همهٔ آیتم‌های این ایموجی را پیدا کن
+
   const idxs = list.map((r, i) => r.emoji === p.emoji ? i : -1).filter(i => i >= 0);
 
   if (idxs.length === 0) {
     list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' });
   } else {
-    // اولی را نگه‌دار، بقیه را حذف کن
+
     const first = list[idxs[0]];
     first.count = p.count;
     if (p.userId === myId.value) first.mine = (p.action === 'added');
@@ -1574,14 +1601,13 @@ async function handleUserSelect(user: { id: string; username: string }) {
     } as UiMessage
   }))
 
-  // 3) یکجا ست کن
+
   messages.value = prepared
   await nextTick()
   const el = scrollBox.value
   if (el) el.scrollTop = el.scrollHeight
 
 
-  // 4) markAsRead ها رو موازی و بدون انتظار سراسری بفرست
   const unreadIds: string[] = history
     .filter((m: any) => m.senderId === user.id && (m.isRead === false || m.isRead === undefined))
     .map((m: any) => m.messageId)
@@ -1605,7 +1631,7 @@ async function send() {
   if (selectedFile.value) {
     const fd = new FormData()
     fd.append('file', selectedFile.value)
-    const uploadedUrl = await uploadEncryptedFile(fd) // returns absolute url or /uploads/...
+    const uploadedUrl = await uploadEncryptedFile(fd)
     fileUrl = toAbsoluteFileUrl(uploadedUrl)
   }
 
@@ -1680,7 +1706,7 @@ async function send() {
     encrypted,
     fileUrl || null,
     clientId,
-    replyingTo.value?.id ?? null // ← NEW
+    replyingTo.value?.id ?? null 
   )
   replyingTo.value = null
 
@@ -1725,11 +1751,10 @@ function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 
 async function getOrLoadKey(partnerId: string) {
-  // 1) کش لوکال اما فقط اگر برای همین اکانت بوده
+
   let key = await loadAESKeyScoped(partnerId);
   if (key) return key;
 
-  // 2) از سرور بگیر (یک retry کوتاه برای ریس)
   let base64 = await getChatKey(partnerId);
   if (!base64) {
     await delay(250);
@@ -1741,7 +1766,6 @@ async function getOrLoadKey(partnerId: string) {
     return key;
   }
 
-  // 3) اولین شروع‌کننده: کلید بساز و ذخیره کن
   const newKey = await generateAESKey();
   const raw = await exportAESKey(newKey);
   const base64Key = btoa(String.fromCharCode(...raw));
