@@ -169,3 +169,16 @@ export async function addReaction(messageId: string, emoji: string) {
 export async function removeReaction(messageId: string, emoji: string) {
   await API.delete(`/messages/${messageId}/reactions`, { params: { emoji } });
 }
+
+
+export async function checkUsername(u: string) {
+  const { data } = await API.get('/users/check-username', { params: { u } })
+  return data as { available: boolean }
+}
+
+
+export async function updateDisplayName(displayName: string) {
+  await API.patch('/users/display-name', displayName, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  })
+}
