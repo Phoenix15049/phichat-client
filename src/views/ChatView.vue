@@ -39,44 +39,56 @@
     </div>
 
     <div class="flex-1 flex flex-col">
-      <div class="bg-blue-600 text-white p-3">
-        <template v-if="selectionMode">
-          <div class="flex items-center gap-3">
-            <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">انصراف</button>
-            <div class="font-medium">انتخاب‌شده: {{ selectedCount }}</div>
-            <div class="flex-1"></div>
-            <button
-              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-              :disabled="!selectedCount"
-              @click="copySelectedText"
-            >کپی متن</button>
-            <button
-              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-              :disabled="!selectedCount"
-              @click="copySelectedLinks"
-            >کپی لینک‌ها</button>
-            <button
-              class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-              :disabled="!selectedCount"
-              @click="deleteSelectedForMe"
-              title="حذف برای من"
-            >حذف</button>
-          </div>
+
+
+    <div class="bg-blue-600 text-white p-3">
+      <template v-if="selectionMode">
+        <div class="flex items-center gap-3">
+          <!-- راست: انصراف -->
+          <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">انصراف</button>
+
+          <div class="flex-1"></div>
+          <!-- چپ: فوروارد(تعداد) → حذف → کپی متن -->
+          <button
+            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-1"
+            :disabled="!selectedCount"
+            @click="openForwardPickerMulti"
+            title="فوروارد گروهی"
+          >
+            فوروارد
+            <span class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700">
+              {{ selectedCount }}
+            </span>
+          </button>
+
+          <button
+            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
+            :disabled="!selectedCount"
+            @click="openDeleteConfirmMulti"
+            title="حذف"
+          >حذف</button>
+
+          <button
+            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
+            :disabled="!selectedCount"
+            @click="copySelectedText"
+          >کپی متن</button>
+        </div>
+      </template>
+      <template v-else>
+        <template v-if="selectedUser">
+          <router-link
+            :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
+            class="underline hover:opacity-90 text-lg"
+          >
+            @{{ selectedUser.username.replace(/^@/, '') }}
+          </router-link>
         </template>
-        <template v-else>
-          <template v-if="selectedUser">
-            <router-link
-              :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
-              class="underline hover:opacity-90 text-lg"
-            >
-              @{{ selectedUser.username.replace(/^@/, '') }}
-            </router-link>
-          </template>
-          <template v-else>
-            یک مخاطب را انتخاب کنید
-          </template>
-        </template>
-      </div>
+        <template v-else>یک مخاطب را انتخاب کنید</template>
+      </template>
+    </div>
+    
+
 
 
       <div class="text-xs text-gray-500 h-5 px-4">
@@ -242,9 +254,7 @@
                 </span>
               </button>
 
-
           </div>
-
 
         </div>
       </div>
@@ -282,29 +292,32 @@
 
         <!-- منوی راست‌کلیک -->
       <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu" @contextmenu.prevent="closeMenu">
-        <div
-          ref="menuEl"                                
-          class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px]"
-          :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
-          @click.stop
-        >
-          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">انتخاب پیام</button>
-          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">فوروارد…</button>
-          <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
-          <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
-          <button
-            class="w-full text-right px-3 py-2 hover:bg-gray-50"
-            @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">حذف…</button>
+          <div
+            ref="menuEl"                                
+            class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px]"
+            :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+            @click.stop
+          >
+            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">انتخاب پیام</button>
+            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">فوروارد…</button>
+            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
+            <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
+            <button
+              class="w-full text-right px-3 py-2 hover:bg-gray-50"
+              @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">حذف…</button>
 
-            
+              
+          </div>
         </div>
       </div>
 
 
       <!-- Forward picker -->
-      <div v-if="forwardPickerFor.visible" class="fixed inset-0 z-40 bg-black/20" @click.self="forwardPickerFor.visible=false">
+      <div v-if="forwardPicker.visible" class="fixed inset-0 z-40 bg-black/20" @click.self="forwardPicker.visible=false">
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-3 w-[320px]">
-          <div class="font-medium mb-2">ارسال به…</div>
+          <div class="font-medium mb-2">
+            {{ forwardPicker.mode === 'multi' ? `ارسال ${forwardPicker.srcList.length} پیام به…` : 'ارسال به…' }}
+          </div>
           <div class="max-h-64 overflow-y-auto">
             <button
               v-for="c in conversations"
@@ -316,10 +329,11 @@
             </button>
           </div>
           <div class="mt-2 text-left">
-            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPickerFor.visible=false">بستن</button>
+            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPicker.visible=false">بستن</button>
           </div>
         </div>
       </div>
+
 
       <!-- Delete confirm dialog -->
       <div v-if="confirmDel.visible" class="fixed inset-0 z-50 bg-black/30" @click.self="cancelDelete">
@@ -347,8 +361,6 @@
           </div>
         </div>
       </div>
-
-
     </div>
   <!-- Toast -->
   <div
@@ -357,10 +369,6 @@
   >
     {{ toast.text }}
   </div>
-  </div>
-  
-  
-
 </template>
 
 
@@ -529,8 +537,33 @@ const startClientY = ref(0)
 const startClientX = ref(0)
 const lastMouseY = ref(0)
 let autoScrollTimer: number | null = null
-const DRAG_THRESHOLD = 8
+const DRAG_THRESHOLD = 16
 const dragStartMsg = ref<UiMessage | null>(null)
+
+const forwardPicker = reactive<{
+  visible: boolean
+  mode: 'single' | 'multi'
+  src: UiMessage | null
+  srcList: UiMessage[]
+}>({
+  visible: false,
+  mode: 'single',
+  src: null,
+  srcList: []
+})
+
+
+
+
+
+
+function openForwardPickerMulti() { // NEW: from selection header
+  if (!selectedCount.value) return
+  forwardPicker.visible = true
+  forwardPicker.mode = 'multi'
+  forwardPicker.src = null
+  forwardPicker.srcList = [...selectedMessages.value]
+}
 
 
 function applyDragOn(m: UiMessage) {
@@ -791,74 +824,133 @@ function cacheForwardName(id?: string | null) {
 }
 
 
-function openForwardPicker() {
+function openForwardPicker() { // single from context menu
   if (!contextMenu.value.msg) return
-  forwardPickerFor.value = { msg: contextMenu.value.msg, visible: true }
+  forwardPicker.visible = true
+  forwardPicker.mode = 'single'
+  forwardPicker.src = contextMenu.value.msg
+  forwardPicker.srcList = []
   closeMenu()
 }
 
 async function doForward(toPeerId: string) {
-  const src = forwardPickerFor.value.msg
-  forwardPickerFor.value.visible = false
-  if (!src) return
+  const mode = forwardPicker.mode
+  const srcSingle = forwardPicker.src
+  const srcList  = forwardPicker.srcList
+  forwardPicker.visible = false
 
   try {
     const aesKey = await getOrLoadKey(toPeerId)
-    const cipher = await encryptAES(aesKey, src.plainText || '')
-
     const sameChat = selectedUser.value && selectedUser.value.id === toPeerId
-    const clientId = crypto.randomUUID()
 
-    if (sameChat) {
-      const mine: UiMessage = {
+    if (mode === 'single' && srcSingle) {
+      const src = srcSingle
+      const cipher = await encryptAES(aesKey, src.plainText || '')
+      const clientId = sameChat ? crypto.randomUUID() : null
+
+      // optimistic برای همان چت
+      if (sameChat) {
+        const mine: UiMessage = {
+          clientId: clientId || undefined,
+          senderId: myId.value,
+          plainText: src.plainText,
+          fileUrl: src.fileUrl || null,
+          status: 'sending',
+          sentAt: new Date().toISOString(),
+          forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
+          forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
+        }
+        messages.value.push(mine)
+        await nextTick()
+        const el = scrollBox.value
+        if (el) el.scrollTop = el.scrollHeight
+        if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
+      }
+
+      await sendMessage(
+        toPeerId,
+        cipher,
+        src.fileUrl || null,
         clientId,
-        senderId: myId.value,
-        plainText: src.plainText,
-        fileUrl: src.fileUrl || null,
-        status: 'sending',
-        sentAt: new Date().toISOString(),
-        forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
-        forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
+        null,
+        src.forwardedFromMessageId || src.id || null
+      )
+
+      // آپدیت سایدبار مقصد (خلاصه)
+      if (!sameChat) {
+        const nowIso = new Date().toISOString()
+        const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
+        if (idx >= 0) {
+          const c = conversations.value[idx]
+          c.lastSentAt = nowIso
+          c.lastFileUrl = src.fileUrl || null
+          c.lastPreview = src.plainText || (src.fileUrl ? null : '')
+          const [moved] = conversations.value.splice(idx, 1)
+          conversations.value.unshift(moved)
+        }
       }
-      messages.value.push(mine)
-      await nextTick()
-      const el = scrollBox.value
-      if (el) el.scrollTop = el.scrollHeight
+    } else if (mode === 'multi' && srcList.length) {
+      // ترتیب زمان (قدیمی → جدید) مثل تلگرام
+      const list = [...srcList].sort((a,b) => (a.sentAt||'').localeCompare(b.sentAt||''))
 
-      if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
-    }
+      // optimistic: اگر مقصد همین چت است، همه را اضافه کنیم
+      const clientMap = new Map<string, string>() // srcKey -> clientId
+      if (sameChat) {
+        for (const src of list) {
+          const clientId = crypto.randomUUID()
+          clientMap.set((src.id || src.clientId)!, clientId)
+          const mine: UiMessage = {
+            clientId,
+            senderId: myId.value,
+            plainText: src.plainText,
+            fileUrl: src.fileUrl || null,
+            status: 'sending',
+            sentAt: new Date().toISOString(),
+            forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
+            forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
+          }
+          messages.value.push(mine)
+          if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
+        }
+        await nextTick()
+        const el = scrollBox.value
+        if (el) el.scrollTop = el.scrollHeight
+      }
 
-    await sendMessage(
-      toPeerId,
-      cipher,
-      src.fileUrl || null,
-      sameChat ? clientId : null,   
-      null,
-      src.id || null
-    )
+      // ارسال ترتیبی
+      for (const src of list) {
+        const cipher = await encryptAES(aesKey, src.plainText || '')
+        const srcKey = (src.id || src.clientId)!
+        const clientId = sameChat ? clientMap.get(srcKey) || null : null
 
-    if (!sameChat) {
-      const nowIso = new Date().toISOString()
-      const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
-      if (idx >= 0) {
-        const c = conversations.value[idx]
-        c.lastSentAt = nowIso
-        c.lastFileUrl = src.fileUrl || null
-        c.lastPreview = src.plainText || (src.fileUrl ? null : '')
-        const [moved] = conversations.value.splice(idx, 1)
-        conversations.value.unshift(moved)
-      } else {
-        conversations.value.unshift({
-          peerId: toPeerId,
-          username: 'user_' + toPeerId.slice(0, 6),
-          unreadCount: 0,
-          lastSentAt: nowIso,
-          lastFileUrl: src.fileUrl || null,
-          lastPreview: src.plainText || ''
-        } as UiConversation)
+        await sendMessage(
+          toPeerId,
+          cipher,
+          src.fileUrl || null,
+          clientId,
+          null,
+          src.forwardedFromMessageId || src.id || null
+        )
+      }
+
+      // خروج از حالت انتخاب و اعلان
+      clearSelection()
+      showToast('ارسال شد')
+      // سایدبار مقصد (خلاصه)
+      if (!sameChat) {
+        const last = list[list.length - 1]
+        const nowIso = new Date().toISOString()
+        const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
+        if (idx >= 0) {
+          const c = conversations.value[idx]
+          c.lastSentAt = nowIso
+          c.lastFileUrl = last.fileUrl || null
+          c.lastPreview = last.plainText || (last.fileUrl ? null : '')
+          const [moved] = conversations.value.splice(idx, 1)
+          conversations.value.unshift(moved)
+        }
       }
     }
-
   } catch (e) {
     console.warn('forward failed', e)
   }
@@ -978,14 +1070,14 @@ function doEdit() {
   text.value = editingMessage.value.plainText
   closeMenu()
 }
-async function doDeleteMe() {
-  const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-  openDeleteConfirmSingle(m, 'me')
-}
-async function doDeleteAll() {
-  const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-  openDeleteConfirmSingle(m, 'all')
-}
+// async function doDeleteMe() {
+//   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
+//   openDeleteConfirmSingle(m, 'me')
+// }
+// async function doDeleteAll() {
+//   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
+//   openDeleteConfirmSingle(m, 'all')
+// }
 
 
 
