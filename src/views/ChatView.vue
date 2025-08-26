@@ -1,7 +1,12 @@
 <template>
   <div class="flex h-screen">
     <div class="w-80 flex flex-col border-r">
-      <div class="px-3 py-2 font-semibold text-gray-700 border-b">گفتگوها</div>
+      <div class="px-3 py-2 font-semibold text-gray-700 border-b flex items-center justify-between">
+        <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true">☰</button>
+        <span>گفتگوها</span>
+        <span class="w-6"></span>
+      </div>
+
       <div class="flex-1 overflow-y-auto">
         <button
           v-for="conv in conversations"
@@ -369,11 +374,53 @@
   >
     {{ toast.text }}
   </div>
+  <!-- Side Menu -->
+  <SideMenu :open="menuOpen" :me="meProfile"
+            @close="menuOpen=false"
+            @action="onMenuAction" />
+
+  <!-- Profile Modal -->
+  <ProfileModal :open="showProfile" :me="meProfile"
+                @close="showProfile=false"
+                @edit="openSettings()" />
+
+  <!-- Settings Modal: reuse SettingsView inside ModalSheet -->
+  <ModalSheet :open="showSettings" @close="showSettings=false">
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-lg font-semibold">تنظیمات</div>
+        <button class="text-gray-500 hover:text-gray-700" @click="showSettings=false">✕</button>
+      </div>
+      <SettingsView/>
+    </div>
+  </ModalSheet>
+
+    <!-- Contacts Modal -->
+  <ModalSheet :open="showContacts" @close="showContacts=false">
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-lg font-semibold">مخاطبین</div>
+        <button class="text-gray-500 hover:text-gray-700" @click="showContacts=false">✕</button>
+      </div>
+      <ContactsView :inModal="true" />
+    </div>
+  </ModalSheet>
+
+
 </template>
 
 
 
 <script setup lang="ts">
+import SideMenu from '../components/SideMenu.vue'
+import ModalSheet from '../components/ModalSheet.vue'
+import ProfileModal from '../components/ProfileModal.vue'
+import ContactsView from './ContactsView.vue'   // NEW
+const showContacts = ref(false)                 // NEW
+
+
+import SettingsView from './SettingsView.vue'
+
 import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
 
 import {
@@ -409,7 +456,8 @@ import {
   getConversations,
   editMessage,
   deleteMessage,
-  addReaction, removeReaction,getUserById
+  addReaction, removeReaction,getUserById,
+  getMeProfile
 } from '../services/api'
 import {
   saveAESKey,
@@ -552,12 +600,40 @@ const forwardPicker = reactive<{
   srcList: []
 })
 
+const menuOpen = ref(false)
+const showProfile = ref(false)
+const showSettings = ref(false)
+const meProfile = ref<{ id?: string; username?: string; displayName?: string; avatarUrl?: string } | null>(null)
 
 
 
+function onMenuAction(a: 'profile'|'contacts'|'saved'|'settings') {
+  menuOpen.value = false
+  if (a === 'profile') {
+    showProfile.value = true
+  } else if (a === 'settings') {
+    showSettings.value = true
+  } else if (a === 'contacts') {
+    showContacts.value = true
+  } else if (a === 'saved') {
+    goSavedMessages()
+  }
+}
+
+function openSettings() {
+  showProfile.value = false
+  showSettings.value = true
+}
+
+async function goSavedMessages() {
+  // چت با خودم: اگر backend اجازه‌ی کلید خود-به-خود را ندهد، بعداً پچ می‌کنیم.
+  const uname = (meProfile.value?.username || '').replace(/^@/,'')
+  if (!myId.value || !uname) return
+  await handleUserSelect({ id: myId.value, username: uname })
+}
 
 
-function openForwardPickerMulti() { // NEW: from selection header
+function openForwardPickerMulti() { 
   if (!selectedCount.value) return
   forwardPicker.visible = true
   forwardPicker.mode = 'multi'
@@ -1390,6 +1466,10 @@ onMounted(async () => {
 
   try {
       const data = await getConversations() 
+
+      const me = await getMeProfile()
+      meProfile.value = me
+
       conversations.value = (data || []).map((c: any) => ({
         peerId: c.peerId || c.PeerId,
         username: c.peerUsername || c.PeerUsername || '',
