@@ -182,3 +182,15 @@ export async function updateDisplayName(displayName: string) {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' }
   })
 }
+
+export async function getMessageBrief(id: string) {
+  const { data } = await API.get(`/messages/${id}/brief`)
+  return data as {
+    messageId: string
+    senderId: string
+    receiverId: string
+    encryptedContent: string | null
+    fileUrl: string | null
+    sentAt: string
+  }
+}

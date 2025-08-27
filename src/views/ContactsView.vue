@@ -110,6 +110,7 @@ const q = ref('')                 // جست‌وجو
 const showAdd = ref(false)        // باز/بستن مودال افزودن
 const adding = ref(false) 
 const sortAlpha = ref(false)      // مرتب‌سازی الفبایی
+const emit = defineEmits<{ (e: 'open-chat', p: { id: string; username: string }): void }>()
 
 
 const filteredContacts = computed(() => {
@@ -172,7 +173,11 @@ async function onRemove(c: { contactId: string }) {
   }
 }
 
-function openChat(c: { contactId: string; username: string }) {
-  router.push(`/u/${c.username}`)
+function openChat(c: any) {
+  const id = c.userId || c.id || c.contactUserId || c.peerId || c.contactId
+  const username = (c.username || '').replace(/^@/, '')
+  if (!id || !username) return
+  emit('open-chat', { id, username })
 }
+
 </script>

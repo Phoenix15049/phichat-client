@@ -81,16 +81,33 @@
         </div>
       </template>
       <template v-else>
-        <template v-if="selectedUser">
-          <router-link
-            :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
-            class="underline hover:opacity-90 text-lg"
-          >
-            @{{ selectedUser.username.replace(/^@/, '') }}
-          </router-link>
-        </template>
-        <template v-else>یک مخاطب را انتخاب کنید</template>
+        <div class="flex items-left">
+          <button 
+            v-if="chatNavStack.length"
+            class="ml-2 px-2 py-1 rounded hover:bg-white/10 "
+            @click="goBackChat"
+            title="بازگشت"
+          >←</button>
+
+          <div class="flex-1 text-left">
+            <template v-if="selectedUser">
+              <router-link
+                :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
+                class="underline hover:opacity-90 text-lg"
+              >
+                @{{ selectedUser.username.replace(/^@/, '') }}
+              </router-link>
+            </template>
+            <template v-else>
+              یک مخاطب را انتخاب کنید
+            </template>
+          </div>
+
+          
+        </div>
       </template>
+
+
     </div>
     
 
@@ -138,7 +155,7 @@
             :title="tooltipForMessage(msg)"
             @dblclick="!selectionMode ? (replyingTo = msg) : null"
             @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
-            :ref="el => setMessageEl((msg.id || msg.clientId)!, el)"
+            :ref="bindMsgEl((msg.id || msg.clientId)!)"
           >
 
             <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
@@ -158,28 +175,33 @@
             </div>
 
             <!-- برچسب فروارد -->
-            <div
-              v-if="msg.forwardedFromSenderId"
-              class="mb-1 text-xs opacity-80 border-l-2 pl-2"
-            >
+            <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-l-2 pl-2">
               فروارد‌شده از
-              <router-link
-                v-if="forwardNames[msg.forwardedFromSenderId]"
-                :to="`/u/${forwardNames[msg.forwardedFromSenderId].replace(/^@/,'')}`"
-                class="font-medium underline hover:opacity-90"
+              <button
+                type="button"
+                class="font-medium underline hover:opacity-90 text-blue-600"
                 @mouseenter="cacheForwardName(msg.forwardedFromSenderId)"
+                @click.stop="openForwardUser(msg.forwardedFromSenderId)"
               >
-                {{ forwardNames[msg.forwardedFromSenderId] }}
-              </router-link>
-              <span v-else class="font-medium">
-                {{ resolveUserName(msg.forwardedFromSenderId) }}
-              </span>
+                {{ resolveForwardLabel(msg.forwardedFromSenderId) }}
+              </button>
             </div>
+
+
+
 
 
             <!-- متن -->
             <div class="whitespace-pre-wrap break-words select-text" data-text-selectable>
-              {{ msg.plainText || '' }}
+              <template v-for="(p, i) in toParts(msg.plainText)" :key="i">
+                <span v-if="p.t === 'text'">{{ p.s }}</span>
+                <span
+                  v-else
+                  class="text-blue-600 underline cursor-pointer"
+                  @click.stop="openMention(p.u)"
+                  data-text-selectable
+                >@{{ p.u }}</span>
+              </template>
             </div>
 
             <!-- فایل -->
@@ -402,7 +424,7 @@
         <div class="text-lg font-semibold">مخاطبین</div>
         <button class="text-gray-500 hover:text-gray-700" @click="showContacts=false">✕</button>
       </div>
-      <ContactsView :inModal="true" />
+      <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
     </div>
   </ModalSheet>
 
@@ -422,7 +444,7 @@ const showContacts = ref(false)                 // NEW
 import SettingsView from './SettingsView.vue'
 
 import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
-
+import { getMessageBrief } from '../services/api'
 import {
   connectToChatHub,
   onMessageReceived,
@@ -464,7 +486,7 @@ import {
   loadAESKey
 } from '../utils/aesKeyStore'
 import { getToken, parseJwt } from '../utils/jwt'
-import { useRoute } from 'vue-router'
+import { useRoute ,useRouter} from 'vue-router'
 import {toDateSafe, formatAbsoluteFa,formatRelativeFa} from "../utils/time";
 
 type UiReaction = { emoji: string; count: number; mine?: boolean }
@@ -498,19 +520,26 @@ type UiConversation = {
   lastPreview?: string | null
 }
 
-function resolveReplyPreview(id?: string | null): string {
-  if (!id) return ''
-  const m = messages.value.find((x: any) => x.id === id)
-  if (!m) return 'پیام'
-  if (m.plainText && m.plainText.trim()) {
-    return m.plainText.length > 60 ? m.plainText.slice(0, 60) + '…' : m.plainText
+function resolveReplyPreview(replyId?: string | null): string {
+  if (!replyId) return ''
+  // 1) اگر در پیام‌های حاضر هست
+  const same = messages.value.find(m => m.id === replyId || m.clientId === replyId)
+  if (same) return same.plainText || (same.fileUrl ? '[مدیا]' : '—')
+
+  // 2) اگر قبلاً کش شد
+  const cached = replyPreviewCache[replyId]
+  if (cached) return cached
+
+  // 3) یک بار فچ کن
+  if (!pendingReplyFetch.has(replyId)) {
+    pendingReplyFetch.add(replyId)
+    fetchReplyPreview(replyId)
   }
-  if (m.fileUrl) return '[مدیا]'
-  return 'پیام'
+  return 'در حال بارگذاری…'
 }
 
-
 const route = useRoute()
+const router = useRouter()
 const EMPTY_MSG_MARKER = '\u200B' 
 
 const myId = ref<string>('')
@@ -553,7 +582,7 @@ const reactionPickerFor = ref<string | null>(null)
 const forwardPickerFor = ref<{ msg: UiMessage | null, visible: boolean }>({ msg: null, visible: false })
 
 const forwardNames = reactive<Record<string, string>>({})
-
+const forwardHandles = reactive<Record<string, string>>({}) 
 
 const selectionMode = ref(false)
 const selected = reactive(new Set<string>())
@@ -605,7 +634,100 @@ const showProfile = ref(false)
 const showSettings = ref(false)
 const meProfile = ref<{ id?: string; username?: string; displayName?: string; avatarUrl?: string } | null>(null)
 
+const chatNavStack = ref<Array<{ id: string; username: string }>>([])
+ // label (DisplayName یا @username)
 
+const messageEls: Map<string, HTMLElement> = new Map()
+
+const bindMsgEl = (key: string) => (el: Element | any | null) => {
+  const dom = el && (el as any).$el ? (el as any).$el as HTMLElement : (el as HTMLElement | null)
+  if (dom) messageEls.set(key, dom)
+  else messageEls.delete(key)
+}
+
+const replyPreviewCache = reactive<Record<string, string>>({})
+const pendingReplyFetch = new Set<string>()
+
+
+
+
+
+async function fetchReplyPreview(id: string) {
+  try {
+    const dto = await getMessageBrief(id)
+    const plain = await decryptMessageText(dto.encryptedContent)
+    replyPreviewCache[id] = plain || (dto.fileUrl ? '[مدیا]' : '—')
+  } catch {
+    replyPreviewCache[id] = 'نامشخص'
+  } finally {
+    pendingReplyFetch.delete(id)
+  }
+}
+
+
+async function decryptMessageText(base64?: string | null): Promise<string> {
+  if (!base64 || !selectedUser.value) return ''
+  try {
+    const key = await getOrLoadKey(selectedUser.value.id)
+    const plain = await decryptAES(key, base64)
+    return plain && plain !== EMPTY_MSG_MARKER ? plain : ''
+  } catch {
+    return '[رمزگشایی نشد]'
+  }
+}
+
+function currentChatRef() {
+  if (!selectedUser.value) return null
+  return { id: selectedUser.value.id, username: selectedUser.value.username.replace(/^@/, '') }
+}
+
+async function goBackChat() {
+  if (!chatNavStack.value.length) return
+  const prev = chatNavStack.value.pop()!
+  await handleUserSelect({ id: prev.id, username: prev.username })
+  if (route.path !== '/chat') router.replace('/chat')
+}
+
+type Part = { t: 'text'; s: string } | { t: 'mention'; u: string }
+function toParts(txt?: string | null): Part[] {
+  if (!txt) return []
+  const re = /@([A-Za-z0-9_]{3,32})/g
+  const out: Part[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(txt)) !== null) {
+    const start = m.index
+    if (start > last) out.push({ t: 'text', s: txt.slice(last, start) })
+    out.push({ t: 'mention', u: m[1] })
+    last = start + m[0].length
+  }
+  if (last < txt.length) out.push({ t: 'text', s: txt.slice(last) })
+  return out
+}
+
+async function openMention(usernameOrAt: string) {
+  const uname = usernameOrAt.replace(/^@/, '')
+  try {
+    const u = await getUserByUsername(uname)
+    if (!u || !u.id) {
+      showToast('یوزرنیم یافت نشد')
+      return
+    }
+
+    const cur = currentChatRef()
+    if (cur && cur.id !== u.id) chatNavStack.value.push(cur)
+    await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
+    if (route.path !== '/chat') router.replace('/chat')
+  } catch {
+    showToast('یوزرنیم یافت نشد')
+  }
+}
+
+async function onOpenChatFromContacts(p: { id: string; username: string }) {
+  showContacts.value = false
+  await handleUserSelect({ id: p.id, username: p.username })
+  if (route.path !== '/chat') router.replace('/chat')
+}
 
 function onMenuAction(a: 'profile'|'contacts'|'saved'|'settings') {
   menuOpen.value = false
@@ -651,7 +773,7 @@ function applyDragOn(m: UiMessage) {
 }
 
 function onRowMouseDown(ev: MouseEvent, m: UiMessage) {
-  // اگر روی متن قابل‌انتخاب کلیک شد → اجازه بده متن انتخاب شود
+
   if (isInTextSelectable(ev.target)) return
   if (!selectedUser.value) return
   if (ev.button !== 0) return
@@ -819,6 +941,14 @@ watch(selectedCount, (n) => {
   }
 })
 
+watch(messages, (list) => {
+  const ids = new Set(
+    list.map(m => m.forwardedFromSenderId).filter(Boolean) as string[]
+  )
+  ids.forEach(id => { if (!forwardNames[id]) cacheForwardName(id) })
+}, { immediate: true, deep: true })
+
+
 
 function onKeydownSelection(e: KeyboardEvent) {
   if (e.key === 'Escape' && selectionMode.value) clearSelection()
@@ -885,19 +1015,73 @@ function startSelectionFrom(m: UiMessage) {
 }
 
 
-function cacheForwardName(id?: string | null) {
-  if (!id || forwardNames[id]) return
+async function cacheForwardName(userId: string) {
+  // اگر قبلاً کش شد، رها کن
+  if (forwardNames[userId] && forwardHandles[userId]) return
 
-  const conv = conversations.value.find(c => c.peerId === id)
-  if (conv) {
-    forwardNames[id] = conv.displayName || '@' + conv.username
-    return
+  // 1) تلاش سریع از لیست گفتگوها (اگر دیده‌ایم)
+  const inConv = conversations.value.find(c => c.peerId === userId)
+  if (inConv) {
+    const handle = (inConv.username || '').replace(/^@/, '')
+    // نمایش = displayName اگر موجود؛ وگرنه @handle
+    const label  = inConv.displayName || (handle ? '@' + handle : '')
+    if (label)  forwardNames[userId]   = label
+    if (handle) forwardHandles[userId] = handle
   }
 
-  getUserById(id)
-    .then(u => { if (u) forwardNames[id] = (u.displayName || '@' + u.username) })
-    .catch(() => {})
+  // 2) درخواست دقیق به سرور
+  try {
+    const u = await getUserById(userId)
+    console.log("DISPLAY")
+    console.log(u?.DisplayName)
+    console.log("ID")
+    console.log(u?.id)
+    const handleRaw = (u?.username ?? u?.Username ?? '')
+    const handle    = handleRaw.replace(/^@/, '')
+
+    // تلاش برای استخراج DisplayName با پوشش نام‌های متفاوت
+    const display =
+      (u?.displayName ?? u?.DisplayName) ??
+      ([u?.firstName ?? u?.FirstName, u?.lastName ?? u?.LastName]
+        .filter(Boolean).join(' ').trim() || undefined) ??
+      (u?.name ?? u?.Name)
+
+    const label = (display && display.trim()) || (handle ? '@' + handle : '')
+    if (label)  forwardNames[userId]   = label
+    if (handle) forwardHandles[userId] = handle
+  } catch {
+    // در خطا چیزی تنظیم نکن؛ دفعات بعد دوباره تلاش می‌کنیم
+  }
 }
+
+
+function resolveForwardLabel(userId: string) {
+  return forwardNames[userId] || (forwardHandles[userId] ? '@' + forwardHandles[userId] : 'کاربر')
+}
+function resolveForwardHandle(userId: string) {
+  return forwardHandles[userId] || ''
+}
+
+
+async function openForwardUser(userId: string) {
+  try {
+    const u = await getUserById(userId)
+    if (!u?.id || !u?.username) {
+      showToast('یوزرنیم یافت نشد')
+      return
+    }
+    const cur = currentChatRef?.()
+    if (cur && cur.id !== u.id) chatNavStack.value.push(cur)
+
+    await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
+    if (route.path !== '/chat') router.replace('/chat')
+  } catch {
+    showToast('یوزرنیم یافت نشد')
+  }
+}
+
+
+
 
 
 function openForwardPicker() { // single from context menu
@@ -1174,11 +1358,37 @@ async function saveAESKeyScoped(partnerId: string, key: CryptoKey) {
   return await saveAESKey(partnerId, key);
 }
 
+function scrollToMessageEl(el: HTMLElement) {
+  const sc = scrollBox.value as HTMLElement | null
+  if (!sc) return
+  const scRect = sc.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const offset = elRect.top - scRect.top
+  const target = sc.scrollTop + offset - (sc.clientHeight / 2) + (el.clientHeight / 2)
+  sc.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+}
 
+async function jumpToReplied(replyId: string) {
+  let el = messageEls.get(replyId)
 
-async function jumpToReplied(targetId?: string | null) {
-  if (!targetId || !selectedUser.value) return;
-  await jumpToMessage(targetId);
+  // اگر تو DOM نیست، قدیمی‌ترها را یک/چند بار لود کن تا بیاید
+  if (!el && typeof loadOlderOnce === 'function') {
+    for (let i = 0; i < 5 && !el; i++) {
+      const loaded = await loadOlderOnce()   // از فانکشن فعلی خودت استفاده کن
+      await nextTick()
+      el = messageEls.get(replyId)
+      if (!loaded) break
+    }
+  }
+
+  if (el) {
+    scrollToMessageEl(el)
+    el.classList.add('ring-2','ring-yellow-400')
+    setTimeout(() => el && el.classList.remove('ring-2','ring-yellow-400'), 1000)
+  } else {
+    // پیام هنوز لود نشده
+    showToast('برای دیدن پیام قدیمی‌تر، کمی بالاتر بروید')
+  }
 }
 
 async function jumpToMessage(targetId: string) {
@@ -1301,11 +1511,9 @@ function dedupeReactions(list: {emoji:string; count:number; mine?:boolean}[]) {
 
 
 
-
-function setMessageEl(id?: string, el?: Element | null) {
-  if (!id) return;
-  if (el) msgElMap.set(id, el as HTMLElement);
-  else msgElMap.delete(id);
+function setMessageEl(key: string, el: Element | null) {
+  if (el) messageEls.set(key, el as HTMLElement)
+  else messageEls.delete(key)
 }
 
 function fmtHHmmLocal(iso?: string | null): string {
@@ -1326,13 +1534,12 @@ function tooltipForMessage(msg: any): string {
 
 
 
-async function selectConversation(conv: UiConversation) {
-
-  const target = conversations.value.find(c => c.peerId === conv.peerId)
-  if (target) target.unreadCount = 0
-
+async function selectConversation(conv: any) {
+  chatNavStack.value = []
   await handleUserSelect({ id: conv.peerId, username: conv.username })
+  if (route.path !== '/chat') router.replace('/chat')
 }
+
 
 
 function dayKey(iso?: string | null): string {
