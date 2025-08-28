@@ -110,11 +110,10 @@ export async function markAsRead(messageId: string) {
 /* ---------------- Presence ---------------- */
 
 // OnlineSnapshot(string[])
-export function onOnlineSnapshot(cb: (userIds: string[]) => void) {
+export function onOnlineSnapshot(cb: (ids: string[]) => void) {
   const sub = (c: HubConnection) => c.on('OnlineSnapshot', (ids: string[]) => cb(ids))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
-
 
 // UserOnline(userId, at)
 export function onUserOnline(cb: (userId: string, at: string) => void) {
@@ -173,9 +172,8 @@ export async function stopTyping(receiverId: string) {
   await connection?.invoke('StopTyping', receiverId)
 }
 
-export function onUserLastSeen(cb: (userId: string, isoUtc: string) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('UserLastSeen', (uid: string, when: string) => cb(uid, when))
+export function onUserLastSeen(cb: (userId: string, whenIso: string) => void) {
+  const sub = (c: HubConnection) => c.on('UserLastSeen', (id: string, when: string) => cb(id, when))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
 
@@ -197,4 +195,9 @@ export function onMessageDeleted(cb: (p: { messageId: string; scope: 'me'|'all' 
 export function onReactionUpdated(cb: (p: { messageId:string; emoji:string; count:number; userId:string; action:'added'|'removed' }) => void) {
   const sub = (c: HubConnection) => c.on('ReactionUpdated', (p:any) => cb(p));
   if (connection) sub(connection); else pendingSubs.push(sub);
+}
+
+export async function fetchOnlineUsers(): Promise<string[]> {
+  if (!connection) throw new Error('SignalR not connected')
+  return await connection.invoke<string[]>('GetOnlineUsers')
 }

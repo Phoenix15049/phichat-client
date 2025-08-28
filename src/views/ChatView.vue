@@ -15,7 +15,23 @@
           class="w-full text-right px-3 py-3 border-b hover:bg-gray-50 flex gap-3 items-center"
         >
           <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
-            <span class="text-sm">👤</span>
+            <span class="text-sm">
+
+
+              <div class="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
+                  :style="!avatarById[conv.peerId] ? { backgroundColor: colorFromString(displayById[conv.peerId] || conv.username) } : {}">
+                <img v-if="avatarById[conv.peerId]" :src="avatarById[conv.peerId]!" class="w-full h-full object-cover" />
+                <span v-else class="text-white text-sm">
+                  {{ initialsOf(displayById[conv.peerId] || conv.displayName || conv.username) }}
+                </span>
+
+                <!-- online dot -->
+                <span v-if="onlineIds.has(conv.peerId)"
+                      class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white"></span>
+              </div>
+
+              
+            </span>
           </div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
@@ -46,14 +62,17 @@
     <div class="flex-1 flex flex-col">
 
 
-    <div class="bg-blue-600 text-white p-3">
+    <div
+      class="bg-blue-600 text-white p-3 cursor-pointer select-none"
+      @click="!selectionMode && selectedUser && openPeerProfile()"
+      role="button"
+      aria-label="نمایش پروفایل مخاطب"
+    >
       <template v-if="selectionMode">
         <div class="flex items-center gap-3">
-          <!-- راست: انصراف -->
           <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">انصراف</button>
-
           <div class="flex-1"></div>
-          <!-- چپ: فوروارد(تعداد) → حذف → کپی متن -->
+
           <button
             class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-1"
             :disabled="!selectedCount"
@@ -65,50 +84,44 @@
               {{ selectedCount }}
             </span>
           </button>
-
-          <button
-            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-            :disabled="!selectedCount"
-            @click="openDeleteConfirmMulti"
-            title="حذف"
-          >حذف</button>
-
-          <button
-            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-            :disabled="!selectedCount"
-            @click="copySelectedText"
-          >کپی متن</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti">حذف</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText">کپی متن</button>
         </div>
       </template>
+
       <template v-else>
         <div class="flex items-left">
-          <button 
+          <button
             v-if="chatNavStack.length"
-            class="ml-2 px-2 py-1 rounded hover:bg-white/10 "
-            @click="goBackChat"
+            class="ml-2 px-2 py-1 rounded hover:bg-white/10"
+            @click.stop="goBackChat"
             title="بازگشت"
           >←</button>
 
-          <div class="flex-1 text-left">
-            <template v-if="selectedUser">
-              <router-link
-                :to="`/u/${selectedUser.username.replace(/^@/, '')}`"
-                class="underline hover:opacity-90 text-lg"
-              >
-                @{{ selectedUser.username.replace(/^@/, '') }}
-              </router-link>
+          <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
+            <template v-if="isPeerTyping">در حال تایپ…</template>
+            <template v-else-if="onlineIds.has(selectedUser.id)">
+              <div class="text-lg font-semibold truncate">
+                {{ selectedLabel }}
+              </div>
+              <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
+                {{ peerStatus }}
+              </div>
             </template>
             <template v-else>
-              یک مخاطب را انتخاب کنید
+              <div class="text-lg font-semibold truncate">
+                {{ selectedLabel }}
+              </div>
+              <div class="text-xs text-white/80 mt-0.5" v-if="selectedUser">
+                {{ peerStatus }}
+              </div>
             </template>
           </div>
 
-          
         </div>
       </template>
-
-
     </div>
+
     
 
 
@@ -153,7 +166,7 @@
               selectionMode && isSelected(msg) ? 'ring-2 ring-offset-2 ring-blue-400 ring-offset-transparent' : ''
             ]"
             :title="tooltipForMessage(msg)"
-            @dblclick="!selectionMode ? (replyingTo = msg) : null"
+            @dblclick="!selectionMode ? startReplyFrom(msg) : null"
             @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
             :ref="bindMsgEl((msg.id || msg.clientId)!)"
           >
@@ -308,13 +321,17 @@
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
         <input
           v-model="text"
+          ref="msgInput"
           @input="onInputChanged"
           @blur="onBlurInput"
           placeholder="پیام."
           class="flex-1 border rounded px-3 py-2"
         />
         <input type="file" @change="onFileSelected" />
-        <button class="bg-blue-600 text-white px-4 py-2 rounded">ارسال</button>
+        <button
+          class="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!canSend"
+        >ارسال</button>
       </form>
 
         <!-- منوی راست‌کلیک -->
@@ -428,19 +445,32 @@
     </div>
   </ModalSheet>
 
+  <PeerProfileModal
+  :open="showPeerProfile"
+  :user="peerProfile"
+  :isContact="isPeerInContacts"
+  @close="showPeerProfile=false"
+  @send-message="onPeerSendMessage"
+  @add-contact="onPeerAddContact"
+  @remove-contact="onPeerRemoveContact"
+  @share-contact="onPeerShareContact"
+/>
 
 </template>
 
 
 
-<script setup lang="ts">
+<script setup lang="ts">//----------------------------------------------------------------------------------------------------
+
+
+
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import ContactsView from './ContactsView.vue'   // NEW
 const showContacts = ref(false)                 // NEW
 
-
+import PeerProfileModal from '../components/PeerProfileModal.vue'
 import SettingsView from './SettingsView.vue'
 
 import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
@@ -460,7 +490,10 @@ import {
   onUserOffline,
   onMessageEdited,
   onMessageDeleted,
-  onReactionUpdated
+  onReactionUpdated,
+  fetchOnlineUsers,
+  onOnlineSnapshot,
+  onUserLastSeen
 } from '../services/signalr'
 import {
   encryptAES,
@@ -488,6 +521,9 @@ import {
 import { getToken, parseJwt } from '../utils/jwt'
 import { useRoute ,useRouter} from 'vue-router'
 import {toDateSafe, formatAbsoluteFa,formatRelativeFa} from "../utils/time";
+
+import {getMyContacts, addContact, removeContact,getUsersList } from '../services/api'
+
 
 type UiReaction = { emoji: string; count: number; mine?: boolean }
 
@@ -647,6 +683,102 @@ const bindMsgEl = (key: string) => (el: Element | any | null) => {
 
 const replyPreviewCache = reactive<Record<string, string>>({})
 const pendingReplyFetch = new Set<string>()
+
+const showPeerProfile = ref(false)
+const peerProfile = ref<any|null>(null)
+const myContacts = ref<Array<{ contactId: string; username: string }>>([])
+
+const selectedLabel = computed(() => {
+  const su = selectedUser.value
+  if (!su) return ''
+  const conv = conversations.value.find(c => c.peerId === su.id)
+  return (conv?.displayName && conv.displayName.trim())
+    || ('@' + su.username.replace(/^@/, ''))
+})
+
+const msgInput = ref<HTMLInputElement|null>(null)
+
+const canSend = computed(() =>
+  !!selectedUser.value && (
+    (text.value && text.value.trim().length > 0) ||
+    !!selectedFile.value ||
+    !!editingMessage.value
+  )
+)
+
+const onlineIds = reactive(new Set<string>())
+const lastSeenMap = reactive<Record<string, string | null>>({})
+const avatarById  = reactive<Record<string, string | null>>({})
+const displayById = reactive<Record<string, string | null>>({})
+
+const peerStatus = computed(() => {
+  const su = selectedUser.value
+  if (!su) return ''
+  if (isPeerTyping.value) return 'در حال تایپ…'
+  if (onlineIds.has(su.id)) return 'آنلاین'
+  const ls = lastSeenMap[su.id]
+  return ls ? `آخرین بازدید: ${formatRelativeFa(ls)}` : 'آخرین بازدید: نامشخص'
+})
+
+
+
+
+function initialsOf(name: string) {
+  const t = (name || '').trim()
+  if (!t) return '؟'
+  const p = t.split(/\s+/)
+  return (p.length === 1 ? p[0].slice(0,2) : (p[0][0] + p[1][0])).toUpperCase()
+}
+function colorFromString(s: string) {
+  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return `hsl(${h % 360} 65% 55%)`
+}
+
+function startReplyFrom(m: UiMessage) {
+  replyingTo.value = m
+  nextTick(() => msgInput.value?.focus())
+}
+
+async function openPeerProfile() {
+  if (!selectedUser.value) return
+  // پروفایل کامل با bio/avatar/lastSeen/phoneNumber
+  const u = await getUserByUsername(selectedUser.value.username.replace(/^@/,''))
+  peerProfile.value = u
+  // برای تشخیص «مخاطب هست/نیست»
+  try { myContacts.value = await getMyContacts() } catch {}
+  showPeerProfile.value = true
+}
+
+const isPeerInContacts = computed(() => {
+  if (!peerProfile.value) return false
+  return myContacts.value.some(c => c.username === peerProfile.value.username)
+})
+
+async function onPeerAddContact(id: string) {
+  await addContact(id)
+  myContacts.value = await getMyContacts()
+}
+
+async function onPeerRemoveContact(id: string) {
+  await removeContact(id)
+  myContacts.value = await getMyContacts()
+}
+
+function onPeerSendMessage(id: string) {
+  // در همان /chat بمان و به چت او برو
+  handleUserSelect({ id, username: peerProfile.value.username })
+  if (route.path !== '/chat') router.replace('/chat')
+  showPeerProfile.value = false
+}
+
+async function onPeerShareContact(u: any) {
+  const text = u.displayName ? `${u.displayName} (@${u.username})` : `@${u.username}`
+  await navigator.clipboard.writeText(text)
+  showToast('اطلاعات مخاطب کپی شد')
+}
+
+
+
 
 
 
@@ -1029,7 +1161,6 @@ async function cacheForwardName(userId: string) {
     if (handle) forwardHandles[userId] = handle
   }
 
-  // 2) درخواست دقیق به سرور
   try {
     const u = await getUserById(userId)
     console.log("DISPLAY")
@@ -1321,8 +1452,9 @@ function closeMenu() {
   contextMenu.value.msg = null
 }
 function doReply() {
-  if (contextMenu.value.msg) replyingTo.value = contextMenu.value.msg
+  const m = contextMenu.value.msg
   closeMenu()
+  if (m) startReplyFrom(m)
 }
 function doEdit() {
   if (!contextMenu.value.msg) return
@@ -1667,9 +1799,16 @@ onMounted(async () => {
     const payload = parseJwt(token)
     myId.value = payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? ''
     try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
-    await connectToChatHub(token)
+
     wireSignalR()
+    await connectToChatHub(token)
+    try {
+      const ids = await fetchOnlineUsers()
+      onlineIds.clear()
+      ids.forEach(id => onlineIds.add(id))
+    } catch {}
   }
+  
 
   try {
       const data = await getConversations() 
@@ -1687,6 +1826,23 @@ onMounted(async () => {
         lastFileUrl: c.lastFileUrl || c.LastFileUrl || null,
         lastPreview: null 
       }))
+
+      try {
+        const all = await getUsersList()
+        const peerIds = new Set(conversations.value.map(c => c.peerId))
+        for (const u of all) {
+          if (!peerIds.has(u.id)) continue
+          if (u.lastSeenUtc) lastSeenMap[u.id] = u.lastSeenUtc
+          if (u.displayName) displayById[u.id] = u.displayName
+          if (u.avatarUrl)   avatarById[u.id]  = u.avatarUrl
+        }
+      } catch {}
+
+      for (const c of conversations.value) {
+          if (c.displayName) displayById[c.peerId] = c.displayName
+          if (c.avatarUrl)   avatarById[c.peerId]  = c.avatarUrl
+        }
+
 
       conversations.value.sort((a, b) => {
         const ta = toDateSafe(a.lastSentAt)?.getTime() || 0
@@ -1711,16 +1867,41 @@ onMounted(async () => {
     }
   }
 
-  const handleOnline = (userId: string /*, at: string */) => online.add(userId)
-  const handleOffline = (userId: string /*, at: string */) => online.delete(userId)
+  const handleOnline  = (userId: string) => onlineIds.add(userId)
+  const handleOffline = (userId: string, when?: string) => {
+    onlineIds.delete(userId)
+    if (when) lastSeenMap[userId] = when
+  }
 
   const handleTyping = (p: { SenderId: string }) => typing.add(p.SenderId)
   const handleTypingStopped = (p: { SenderId: string }) => typing.delete(p.SenderId)
 
+  
+
   onUserOnline(handleOnline)
-  onUserOffline(handleOffline)
+  onUserOffline(handleOffline as any)
+  onOnlineSnapshot((ids) => {
+    onlineIds.clear()
+    ids.forEach(id => onlineIds.add(id))
+  })
+
+  onUserLastSeen((uid, whenIso) => {
+    lastSeenMap[uid] = whenIso
+  })
   onTyping(handleTyping)
   onTypingStopped(handleTypingStopped)
+  
+  watch(selectedUser, async (su) => {
+    if (!su) return
+    if (!lastSeenMap[su.id]) {
+      try {
+        const u = await getUserById(su.id)
+        if (u?.lastSeenUtc) lastSeenMap[su.id] = u.lastSeenUtc
+        if (u?.displayName) displayById[su.id] = u.displayName
+        if (u?.avatarUrl)   avatarById[su.id]  = u.avatarUrl
+      } catch {}
+    }
+  }, { immediate: true })
 
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('scroll', onWindowScroll, true) 
@@ -2002,6 +2183,10 @@ function onFileSelected(e: Event) {
 
 async function send() {
   if (!selectedUser.value) return
+
+  if (!selectedFile.value && (!text.value || !text.value.trim())) {
+    return
+  }
 
   const aesKey = await getOrLoadKey(selectedUser.value.id)
 

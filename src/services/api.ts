@@ -194,3 +194,21 @@ export async function getMessageBrief(id: string) {
     sentAt: string
   }
 }
+
+export async function uploadAvatar(formData: FormData): Promise<string> {
+  const res = await API.post('/users/avatar', formData)
+  const url: string = res.data.url
+  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+}
+
+export async function getUsersList() {
+  const { data } = await API.get('/users/list')
+  return data as Array<{
+    id: string; username: string; displayName?: string; avatarUrl?: string; lastSeenUtc?: string | null
+  }>
+}
+
+export async function getOnlineUsers() {
+  // از SignalR می‌گیریم (invoke)، پس این تابع را در signalr.ts می‌سازیم نه اینجا
+  return [] as string[]
+}
