@@ -205,7 +205,7 @@
 
 
             <!-- متن -->
-            <div class="whitespace-pre-wrap break-words select-text" data-text-selectable>
+            <div v-if="!msg.fileUrl && msg.plainText" class="whitespace-pre-wrap break-words select-text" data-text-selectable>
               <template v-for="(p, i) in toParts(msg.plainText)" :key="i">
                 <span v-if="p.t === 'text'">{{ p.s }}</span>
                 <span
@@ -217,19 +217,41 @@
               </template>
             </div>
 
-            <!-- فایل -->
-            <div v-if="!msg.isDeleted && msg.fileUrl" class="mt-1">
-              <a
-                :href="msg.fileUrl"
-                target="_blank"
+
+            <!-- File bubble -->
+            <div v-if="msg.fileUrl" class="mt-1">
+              <div
                 :class="[
-                  'text-xs',
-                  msg.senderId === myId ? 'text-white underline' : 'text-blue-600 underline'
+                  'flex items-center gap-3 rounded px-3 py-2',
+                  msg.senderId === myId ? 'bg-white/10' : 'bg-white'
                 ]"
               >
-                دانلود فایل
-              </a>
+                <!-- download button -->
+                <button type="button"
+                        class="w-8 h-8 rounded-full border flex items-center justify-center"
+                        :class="msg.senderId === myId ? 'border-white/50 text-white' : 'border-gray-300 text-gray-600'"
+                        @click="downloadFile(msg)">
+                  <span v-if="downloading[fileKey(msg)]">⏬</span>
+                  <span v-else-if="downloaded[fileKey(msg)]">✅</span>
+                  <span v-else>⬇️</span>
+                </button>
+
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium truncate max-w-[16rem] min-w-0">
+                    {{ fileNameFromUrl(msg.fileUrl) }}
+                  </div>
+                  <div class="text-xs opacity-70">
+                    {{ humanFileSize(fileSizeMap[fileKey(msg)] || 0) }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- caption زیر فایل -->
+              <div v-if="msg.fileUrl && msg.plainText" class="mt-1 whitespace-pre-wrap break-words">
+                {{ msg.plainText }}
+              </div>
             </div>
+
 
             <!-- زمان + وضعیت + برچسب ویرایش‌شده -->
             <div
@@ -313,12 +335,43 @@
       <div v-if="editingMessage" class="px-4 pt-2">
         <div class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded">
           <div class="truncate">در حال ویرایش پیام</div>
-          <button type="button" class="text-gray-500 hover:text-red-600" @click="editingMessage = null">✕</button>
+          <button type="button" class="text-gray-500 hover:text-red-600" @click="cancelEdit">✕</button>
         </div>
       </div>
 
       <!-- فرم ارسال -->
-      <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex gap-2 border-t">
+      <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex items-center gap-2 border-t relative">
+        
+        <!-- Attach (paperclip) -->
+        <div class="relative"
+            @mouseenter="clipHover = true"
+            @mouseleave="clipHover = false">
+          <button type="button" class="px-2 text-gray-500 hover:text-gray-700" @click="openFilePicker" title="پیوست">
+            📎
+          </button>
+
+          <!-- منو دقیقا چسبیده به سنجاق -->
+          <div v-if="clipHover || menuHover"
+              class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
+              @mouseenter="menuHover = true"
+              @mouseleave="menuHover = false">
+            <button type="button"
+                    class="block w-full text-right px-3 py-2 hover:bg-gray-50"
+                    @click="openFilePicker">
+              فایل
+            </button>
+            <button type="button" disabled
+                    class="block w-full text-right px-3 py-2 text-gray-400 cursor-not-allowed">
+              عکس و ویدیو (به‌زودی)
+            </button>
+          </div>
+        </div>
+
+
+        <!-- input مخفی انتخاب فایل -->
+        <input ref="fileInput" type="file" class="hidden" @change="onFileChosen" />
+
+        
         <input
           v-model="text"
           ref="msgInput"
@@ -327,7 +380,7 @@
           placeholder="پیام."
           class="flex-1 border rounded px-3 py-2"
         />
-        <input type="file" @change="onFileSelected" />
+        
         <button
           class="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!canSend"
@@ -353,6 +406,44 @@
               
           </div>
         </div>
+
+        <!-- File Send Modal -->
+        <div v-if="showFileModal" class="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
+          <div class="w-[420px] max-w-[90%] rounded-xl bg-white shadow p-4">
+            <div class="text-lg font-semibold mb-2">ارسال به‌عنوان فایل</div>
+
+            <div class="flex items-center gap-3 p-3 rounded bg-gray-100">
+              <div class="w-10 h-10 rounded bg-blue-500 flex items-center justify-center text-white">📄</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium truncate">{{ pendingFileName }}</div>
+                <div class="text-xs text-gray-500">{{ pendingFileSizeHuman }}</div>
+              </div>
+              <button class="text-sm text-blue-600 hover:underline" @click="openFilePicker">جایگزین</button>
+            </div>
+
+            <label class="block text-sm text-gray-600 mt-3 mb-1">کپشن (اختیاری)</label>
+            <textarea v-model="pendingCaption"
+                      rows="3"
+                      class="w-full border rounded px-3 py-2"></textarea>
+
+            <div class="mt-4 flex items-center justify-between">
+              <button class="text-gray-600 hover:text-gray-800" @click="cancelFileSend">انصراف</button>
+              <div class="flex items-center gap-3">
+                <button class="text-gray-600 hover:text-gray-800" @click="addAnotherFile" disabled>افزودن</button>
+                <button class="bg-blue-600 text-white px-4 py-2 rounded"
+                        :disabled="sendingFile"
+                        @click="confirmSendFile">
+                  {{ sendingFile ? 'در حال ارسال…' : 'ارسال' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+
+
+      
       </div>
 
 
@@ -461,7 +552,10 @@
 
 
 <script setup lang="ts">//----------------------------------------------------------------------------------------------------
-
+//----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------
 
 
 import SideMenu from '../components/SideMenu.vue'
@@ -474,7 +568,7 @@ import PeerProfileModal from '../components/PeerProfileModal.vue'
 import SettingsView from './SettingsView.vue'
 
 import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
-import { getMessageBrief } from '../services/api'
+import { getMessageBrief,sendMessageWithFileFD } from '../services/api'
 import {
   connectToChatHub,
   onMessageReceived,
@@ -500,7 +594,9 @@ import {
   decryptAES,
   importAESKey,
   generateAESKey,
-  exportAESKey
+  exportAESKey,
+
+
 } from '../services/crypto'
 import {
   getChatKey,
@@ -558,15 +654,13 @@ type UiConversation = {
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
-  // 1) اگر در پیام‌های حاضر هست
+
   const same = messages.value.find(m => m.id === replyId || m.clientId === replyId)
   if (same) return same.plainText || (same.fileUrl ? '[مدیا]' : '—')
 
-  // 2) اگر قبلاً کش شد
   const cached = replyPreviewCache[replyId]
   if (cached) return cached
 
-  // 3) یک بار فچ کن
   if (!pendingReplyFetch.has(replyId)) {
     pendingReplyFetch.add(replyId)
     fetchReplyPreview(replyId)
@@ -720,6 +814,156 @@ const peerStatus = computed(() => {
   return ls ? `آخرین بازدید: ${formatRelativeFa(ls)}` : 'آخرین بازدید: نامشخص'
 })
 
+const attachOpen = ref(false)
+const fileInput = ref<HTMLInputElement|null>(null)
+
+function openFilePicker() {
+  fileInput.value?.click()
+}
+
+const pendingFile = ref<File|null>(null)
+const pendingCaption = ref('')
+const showFileModal = ref(false)
+const sendingFile = ref(false)
+
+const downloaded = reactive<Record<string, boolean>>({})
+const downloading = reactive<Record<string, boolean>>({})
+const fileSizeMap = reactive<Record<string, number>>({})
+
+const clipHover = ref(false)
+const menuHover = ref(false)
+
+const prevDraftBeforeEdit = ref('')
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------
+
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------
+
+
+function fileKey(m: any) {
+  return (m.id || m.clientId || '') as string
+}
+
+function fileNameFromUrl(url: string) {
+  try {
+    const p = url.split('/').pop() || ''
+    const i = p.indexOf('_')
+    return decodeURIComponent(i >= 0 ? p.slice(i + 1) : p)
+  } catch { return 'file' }
+}
+
+function humanFileSize(n: number) {
+  if (!n) return ''
+  const units = ['B','KB','MB','GB']
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  return `${n.toFixed( (i===0)?0:1 )} ${units[i]}`
+}
+
+async function ensureFileSize(url: string, k: string) {
+  if (fileSizeMap[k]) return
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    const len = parseInt(res.headers.get('content-length') || '0', 10)
+    if (len > 0) fileSizeMap[k] = len
+  } catch {}
+}
+
+async function downloadFile(m: any) {
+  const k = fileKey(m)
+  if (!m.fileUrl) return
+  downloading[k] = true
+  try {
+    // try get size once
+    ensureFileSize(m.fileUrl, k)
+
+    const a = document.createElement('a')
+    a.href = m.fileUrl
+    a.download = fileNameFromUrl(m.fileUrl)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    downloaded[k] = true
+  } finally {
+    downloading[k] = false
+  }
+}
+
+function onFileChosen(e: Event) {
+  const el = e.target as HTMLInputElement
+  const f = el.files?.[0]
+  if (f) {
+    pendingFile.value = f
+    pendingCaption.value = ''
+    showFileModal.value = true
+    el.value = '' // allow re-choose same file
+  }
+}
+
+function cancelFileSend() {
+  showFileModal.value = false
+  pendingFile.value = null
+  pendingCaption.value = ''
+}
+
+function addAnotherFile() {
+  // reserved for future multi-attach
+}
+
+const pendingFileName = computed(() => pendingFile.value?.name || '—')
+const pendingFileSizeHuman = computed(() => humanFileSize(pendingFile.value?.size || 0))
+
+
+async function confirmSendFile() {
+  if (!selectedUser.value || !pendingFile.value) return
+  sendingFile.value = true
+  try {
+    const key = await getOrLoadKey(selectedUser.value.id)
+
+    const caption = (pendingCaption.value || '').trim()
+    const toEncrypt = caption ? caption : EMPTY_MSG_MARKER
+    const captionEnc = await encryptAES(key, toEncrypt)
+
+    const clientId = crypto.randomUUID()
+
+    const fd = new FormData()
+    fd.append('receiverId', selectedUser.value.id)
+    fd.append('encryptedText', captionEnc)
+    fd.append('file', pendingFile.value)
+    if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
+    fd.append('clientId', clientId)
+
+    messages.value.push({
+      clientId,
+      senderId: myId.value,
+      plainText: caption || '',
+      fileUrl: '(pending)',
+      status: 'sending',
+      sentAt: new Date().toISOString(),
+      replyToMessageId: replyingTo.value?.id || null
+    } as UiMessage)
+
+    await nextTick()
+    const el = scrollBox.value
+    if (el) el.scrollTop = el.scrollHeight
+
+    // ارسال
+    await sendMessageWithFileFD(fd)
+  } catch (e) {
+    console.error('send file failed', e)
+  } finally {
+    sendingFile.value = false
+    showFileModal.value = false
+    pendingFile.value = null
+    pendingCaption.value = ''
+    replyingTo.value = null
+  }
+}
 
 
 
@@ -741,10 +985,8 @@ function startReplyFrom(m: UiMessage) {
 
 async function openPeerProfile() {
   if (!selectedUser.value) return
-  // پروفایل کامل با bio/avatar/lastSeen/phoneNumber
   const u = await getUserByUsername(selectedUser.value.username.replace(/^@/,''))
   peerProfile.value = u
-  // برای تشخیص «مخاطب هست/نیست»
   try { myContacts.value = await getMyContacts() } catch {}
   showPeerProfile.value = true
 }
@@ -765,7 +1007,7 @@ async function onPeerRemoveContact(id: string) {
 }
 
 function onPeerSendMessage(id: string) {
-  // در همان /chat بمان و به چت او برو
+
   handleUserSelect({ id, username: peerProfile.value.username })
   if (route.path !== '/chat') router.replace('/chat')
   showPeerProfile.value = false
@@ -880,7 +1122,6 @@ function openSettings() {
 }
 
 async function goSavedMessages() {
-  // چت با خودم: اگر backend اجازه‌ی کلید خود-به-خود را ندهد، بعداً پچ می‌کنیم.
   const uname = (meProfile.value?.username || '').replace(/^@/,'')
   if (!myId.value || !uname) return
   await handleUserSelect({ id: myId.value, username: uname })
@@ -913,7 +1154,6 @@ function onRowMouseDown(ev: MouseEvent, m: UiMessage) {
   ev.preventDefault()
   ev.stopPropagation()
 
-  // حالت درگ در انتظار عبور از آستانه
   const k = getMsgKey(m)
   const already = selected.has(k)
   dragMode.value = already ? 'remove' : 'add'
@@ -938,17 +1178,14 @@ function onDragMouseMove(ev: MouseEvent) {
     const dy = Math.abs(ev.clientY - startClientY.value)
     const dx = Math.abs(ev.clientX - startClientX.value)
     if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-      // عبور از آستانه → شروع انتخاب
       if (!selectionMode.value) selectionMode.value = true
       isDragSelecting.value = true
       dragPending.value = false
       startAutoScroll()
 
-      // ✅ مهم: پیام شروع‌کننده را همین حالا اعمال کن
       if (dragStartMsg.value) applyDragOn(dragStartMsg.value)
     }
   }
-  // انتخاب روی mouseenter انجام می‌شود
 }
 
 function onRowMouseEnter(m: UiMessage) {
@@ -1115,25 +1352,6 @@ async function copySelectedText() {
   showToast('متن کپی شد')
 }
 
-
-// Extract URLs from text
-const URL_RE = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?)/g
-function extractUrls(s: string): string[] {
-  return (s.match(URL_RE) || []).map(u => u.startsWith('www.') ? `https://${u}` : u)
-}
-
-async function copySelectedLinks() {
-  if (!selectedCount.value) return
-  const urls: string[] = []
-  for (const m of selectedMessages.value) {
-    if (m.plainText) urls.push(...extractUrls(m.plainText))
-    if (m.fileUrl) urls.push(m.fileUrl)
-  }
-  const uniq = Array.from(new Set(urls))
-  if (uniq.length === 0) return
-  await writeClipboard(uniq.join('\n'))
-}
-
 async function deleteSelectedForMe() {
   if (!selectedCount.value) return
   openDeleteConfirmMulti()
@@ -1148,14 +1366,11 @@ function startSelectionFrom(m: UiMessage) {
 
 
 async function cacheForwardName(userId: string) {
-  // اگر قبلاً کش شد، رها کن
   if (forwardNames[userId] && forwardHandles[userId]) return
 
-  // 1) تلاش سریع از لیست گفتگوها (اگر دیده‌ایم)
   const inConv = conversations.value.find(c => c.peerId === userId)
   if (inConv) {
     const handle = (inConv.username || '').replace(/^@/, '')
-    // نمایش = displayName اگر موجود؛ وگرنه @handle
     const label  = inConv.displayName || (handle ? '@' + handle : '')
     if (label)  forwardNames[userId]   = label
     if (handle) forwardHandles[userId] = handle
@@ -1170,7 +1385,6 @@ async function cacheForwardName(userId: string) {
     const handleRaw = (u?.username ?? u?.Username ?? '')
     const handle    = handleRaw.replace(/^@/, '')
 
-    // تلاش برای استخراج DisplayName با پوشش نام‌های متفاوت
     const display =
       (u?.displayName ?? u?.DisplayName) ??
       ([u?.firstName ?? u?.FirstName, u?.lastName ?? u?.LastName]
@@ -1181,7 +1395,6 @@ async function cacheForwardName(userId: string) {
     if (label)  forwardNames[userId]   = label
     if (handle) forwardHandles[userId] = handle
   } catch {
-    // در خطا چیزی تنظیم نکن؛ دفعات بعد دوباره تلاش می‌کنیم
   }
 }
 
@@ -1189,10 +1402,6 @@ async function cacheForwardName(userId: string) {
 function resolveForwardLabel(userId: string) {
   return forwardNames[userId] || (forwardHandles[userId] ? '@' + forwardHandles[userId] : 'کاربر')
 }
-function resolveForwardHandle(userId: string) {
-  return forwardHandles[userId] || ''
-}
-
 
 async function openForwardUser(userId: string) {
   try {
@@ -1210,10 +1419,6 @@ async function openForwardUser(userId: string) {
     showToast('یوزرنیم یافت نشد')
   }
 }
-
-
-
-
 
 function openForwardPicker() { // single from context menu
   if (!contextMenu.value.msg) return
@@ -1239,7 +1444,6 @@ async function doForward(toPeerId: string) {
       const cipher = await encryptAES(aesKey, src.plainText || '')
       const clientId = sameChat ? crypto.randomUUID() : null
 
-      // optimistic برای همان چت
       if (sameChat) {
         const mine: UiMessage = {
           clientId: clientId || undefined,
@@ -1267,7 +1471,6 @@ async function doForward(toPeerId: string) {
         src.forwardedFromMessageId || src.id || null
       )
 
-      // آپدیت سایدبار مقصد (خلاصه)
       if (!sameChat) {
         const nowIso = new Date().toISOString()
         const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
@@ -1281,10 +1484,9 @@ async function doForward(toPeerId: string) {
         }
       }
     } else if (mode === 'multi' && srcList.length) {
-      // ترتیب زمان (قدیمی → جدید) مثل تلگرام
+
       const list = [...srcList].sort((a,b) => (a.sentAt||'').localeCompare(b.sentAt||''))
 
-      // optimistic: اگر مقصد همین چت است، همه را اضافه کنیم
       const clientMap = new Map<string, string>() // srcKey -> clientId
       if (sameChat) {
         for (const src of list) {
@@ -1308,7 +1510,6 @@ async function doForward(toPeerId: string) {
         if (el) el.scrollTop = el.scrollHeight
       }
 
-      // ارسال ترتیبی
       for (const src of list) {
         const cipher = await encryptAES(aesKey, src.plainText || '')
         const srcKey = (src.id || src.clientId)!
@@ -1324,10 +1525,8 @@ async function doForward(toPeerId: string) {
         )
       }
 
-      // خروج از حالت انتخاب و اعلان
       clearSelection()
       showToast('ارسال شد')
-      // سایدبار مقصد (خلاصه)
       if (!sameChat) {
         const last = list[list.length - 1]
         const nowIso = new Date().toISOString()
@@ -1457,21 +1656,28 @@ function doReply() {
   if (m) startReplyFrom(m)
 }
 function doEdit() {
-  if (!contextMenu.value.msg) return
-  editingMessage.value = contextMenu.value.msg
-  text.value = editingMessage.value.plainText
+  const m = contextMenu.value.msg
   closeMenu()
+  if (!m) return
+  editingMessage.value = m
+  prevDraftBeforeEdit.value = text.value
+  text.value = m.plainText || ''
+  replyingTo.value = null
+  nextTick(() => {
+    const el = msgInput.value as HTMLInputElement | null
+    el?.focus()
+    try { el?.setSelectionRange?.(el.value.length, el.value.length) } catch {}
+  })
+  if (selectedUser.value) startTyping(selectedUser.value.id).catch(()=>{})
 }
-// async function doDeleteMe() {
-//   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-//   openDeleteConfirmSingle(m, 'me')
-// }
-// async function doDeleteAll() {
-//   const m = contextMenu.value.msg; closeMenu(); if (!m?.id) return
-//   openDeleteConfirmSingle(m, 'all')
-// }
 
-
+function cancelEdit() {
+  editingMessage.value = null
+  text.value = prevDraftBeforeEdit.value
+  if (!text.value.trim() && selectedUser.value) {
+    stopTyping(selectedUser.value.id).catch(()=>{})
+  }
+}
 
 function isMine(m?: UiMessage|null) { return !!m && m.senderId === myId.value }
 function canEdit(m?: UiMessage|null) { return isMine(m) && !m?.fileUrl && !m?.isDeleted }
@@ -1503,10 +1709,9 @@ function scrollToMessageEl(el: HTMLElement) {
 async function jumpToReplied(replyId: string) {
   let el = messageEls.get(replyId)
 
-  // اگر تو DOM نیست، قدیمی‌ترها را یک/چند بار لود کن تا بیاید
   if (!el && typeof loadOlderOnce === 'function') {
     for (let i = 0; i < 5 && !el; i++) {
-      const loaded = await loadOlderOnce()   // از فانکشن فعلی خودت استفاده کن
+      const loaded = await loadOlderOnce()  
       await nextTick()
       el = messageEls.get(replyId)
       if (!loaded) break
@@ -1518,7 +1723,6 @@ async function jumpToReplied(replyId: string) {
     el.classList.add('ring-2','ring-yellow-400')
     setTimeout(() => el && el.classList.remove('ring-2','ring-yellow-400'), 1000)
   } else {
-    // پیام هنوز لود نشده
     showToast('برای دیدن پیام قدیمی‌تر، کمی بالاتر بروید')
   }
 }
@@ -1612,6 +1816,13 @@ async function loadOlderOnce(): Promise<boolean> {
     }));
 
     messages.value = [...older, ...messages.value];
+
+    for (const msg of messages.value) {
+      if (msg.fileUrl) {
+        const key = fileKey(msg)
+        if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
+      }
+    }
 
     await nextTick();
     if (el) {
@@ -1770,6 +1981,13 @@ async function onScrollLoadMore(e: Event) {
       }));
 
       messages.value = [...older, ...messages.value];
+
+      for (const msg of messages.value) {
+        if (msg.fileUrl) {
+          const key = fileKey(msg)
+          if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
+        }
+      }
 
       await nextTick();
       
@@ -1963,7 +2181,7 @@ function wireSignalR() {
     }
 
     const ui: UiMessage = {
-      id: message.messageId,
+      id: message.messageId || message.id,
       senderId: message.senderId,
       plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
       fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
@@ -1976,7 +2194,22 @@ function wireSignalR() {
       
     }
     if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId)
+    
+
     messages.value.push(ui)
+
+    if (ui.senderId === myId.value) {
+      console.log("IF STATE")
+      const idx = messages.value.findIndex(x => x.fileUrl === '(pending)')
+      if (idx !== -1) messages.value.splice(idx, 1)
+    }
+
+    if (ui.fileUrl) {
+      console.log("IF STATE2")
+      const key = fileKey(ui)
+      if (!fileSizeMap[key]) ensureFileSize(ui.fileUrl, key)
+    }
+
     await nextTick()
     const el = scrollBox.value
     if (el) {
@@ -1988,18 +2221,53 @@ function wireSignalR() {
     if (message.messageId) {
       try { await markAsRead(message.messageId) } catch {}
     }
+})
 
-    
-  })
-  onDelivered((info: any) => {
-    const m = messages.value.find(x => x.clientId === info.clientId)
-    if (m) {
-      m.status = 'delivered'
-      m.id = info.messageId
-      if (info.deliveredAtUtc) m.deliveredAtUtc = info.deliveredAtUtc
-      if (!m.sentAt) m.sentAt = info.sentAt || new Date().toISOString()
+
+  onDelivered(async (info: any) => {
+    // پیدا کردن همان حباب پندینگ با clientId
+    const cid = info.clientId ?? info.ClientId
+    let m = cid ? messages.value.find(x => x.clientId === cid) : undefined
+
+    // اگر clientId نبود (بکاپ): آخرین پیامِ خودم که هنوز id ندارد و status == 'sending'
+    if (!m && info.messageId) {
+      m = [...messages.value].reverse().find(x =>
+        x.senderId === myId.value && x.status === 'sending' && !x.id
+      )
+    }
+    if (!m) return
+
+    // ست کردن وضعیت/شناسه/زمان
+    if (info.messageId) m.id = info.messageId
+    if (info.sentAt)    m.sentAt = info.sentAt
+    m.status = 'delivered'
+
+    // جایگزینی محتوای واقعی (بدون نیاز به GET اضافه)
+    const fileUrl = info.fileUrl ?? info.FileUrl ?? null
+    if (fileUrl) {
+      m.fileUrl = toAbsoluteFileUrl(fileUrl)
+      const k = fileKey(m)
+      if (!fileSizeMap[k]) ensureFileSize(m.fileUrl!, k)
+    }
+
+    // متن (کپشن) را اگر هست، decrypt کن و مارکر خالی را نادیده بگیر
+    const raw: string = String(info.encryptedText ?? info.EncryptedText ?? '')
+    if (raw && raw.trim()) {
+      try {
+        // partnerId را از چت جاری بگیر (چون Delivered همیشه برای خودِ ماست)
+        const partnerId = selectedUser.value?.id
+        if (partnerId) {
+          const key = await getOrLoadKey(partnerId)
+          const txt = await decryptAES(key, raw)
+          if (txt && txt !== EMPTY_MSG_MARKER) m.plainText = txt
+          else m.plainText = ''
+        }
+      } catch { /* ignore */ }
     }
   })
+
+
+
 
   onMessageRead((info: any) => {
     const m = messages.value.find(x => x.id === info.messageId)
@@ -2167,6 +2435,13 @@ async function handleUserSelect(user: { id: string; username: string }) {
   const el = scrollBox.value
   if (el) el.scrollTop = el.scrollHeight
 
+  for (const msg of messages.value) {
+      if (msg.fileUrl) {
+        const key = fileKey(msg)
+        if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
+      }
+    }
+
 
   const unreadIds: string[] = history
     .filter((m: any) => m.senderId === user.id && (m.isRead === false || m.isRead === undefined))
@@ -2205,18 +2480,19 @@ async function send() {
   if (editingMessage.value && editingMessage.value.id) {
     const aesKey = await getOrLoadKey(selectedUser.value.id)
     const encrypted = await encryptAES(aesKey, text.value.trim() || EMPTY_MSG_MARKER)
+    const back = prevDraftBeforeEdit.value
     try {
       await editMessage(editingMessage.value.id, encrypted)
       editingMessage.value.plainText = text.value.trim()
       editingMessage.value.updatedAtUtc = new Date().toISOString()
       editingMessage.value = null
-      text.value = ''
-      
+      text.value = back  
     } catch(e) {
       console.warn('edit failed', e)
     }
     return
   }
+
 
 
 

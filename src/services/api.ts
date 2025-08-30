@@ -212,3 +212,9 @@ export async function getOnlineUsers() {
   // از SignalR می‌گیریم (invoke)، پس این تابع را در signalr.ts می‌سازیم نه اینجا
   return [] as string[]
 }
+
+export async function sendMessageWithFileFD(fd: FormData) {
+  return API.post('/messages/with-file', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
