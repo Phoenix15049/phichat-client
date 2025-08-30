@@ -99,7 +99,16 @@
           >←</button>
 
           <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
-            <template v-if="isPeerTyping">در حال تایپ…</template>
+            <template v-if="isPeerTyping">
+              <div class="text-lg font-semibold truncate">
+                {{ selectedLabel }}
+              </div>
+              <div class="text-xs text-white/100 mt-0.5">
+                is typing...
+              </div>
+
+
+            </template>
             <template v-else-if="onlineIds.has(selectedUser.id)">
               <div class="text-lg font-semibold truncate">
                 {{ selectedLabel }}
@@ -126,9 +135,6 @@
 
 
 
-      <div class="text-xs text-gray-500 h-5 px-4">
-        <span v-if="isPeerTyping">در حال تایپ…</span>
-      </div>
 
       <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 space-y-2" @scroll="onScrollLoadMore">
         <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
@@ -845,6 +851,10 @@ const prevDraftBeforeEdit = ref('')
 //----------------------------------------------------------------------------------------------------------------------------
 
 
+function isNearBottom(el: HTMLElement, threshold = 400) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+
 function fileKey(m: any) {
   return (m.id || m.clientId || '') as string
 }
@@ -951,7 +961,7 @@ async function confirmSendFile() {
     await nextTick()
     const el = scrollBox.value
     if (el) el.scrollTop = el.scrollHeight
-
+    
     // ارسال
     await sendMessageWithFileFD(fd)
   } catch (e) {
@@ -2130,6 +2140,9 @@ onMounted(async () => {
 
 function wireSignalR() {
   onMessageReceived(async (message: any) => {
+
+
+    
     // unify fields
     const isFromOtherPeer = selectedUser.value && message.senderId !== selectedUser.value.id
     const isMyEcho = message.senderId === myId.value
@@ -2181,7 +2194,7 @@ function wireSignalR() {
     }
 
     const ui: UiMessage = {
-      id: message.messageId || message.id,
+      id: message.messageId || message.id || message.MessageId || null,
       senderId: message.senderId,
       plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
       fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
@@ -2194,7 +2207,9 @@ function wireSignalR() {
       
     }
     if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId)
-    
+
+    const el0 = scrollBox.value as HTMLElement | null
+    const stick = !!el0 && isNearBottom(el0)
 
     messages.value.push(ui)
 
@@ -2205,31 +2220,28 @@ function wireSignalR() {
     }
 
     if (ui.fileUrl) {
-      console.log("IF STATE2")
       const key = fileKey(ui)
       if (!fileSizeMap[key]) ensureFileSize(ui.fileUrl, key)
     }
 
     await nextTick()
-    const el = scrollBox.value
-    if (el) {
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
-      if (nearBottom) el.scrollTop = el.scrollHeight
-    }
-
-    // mark as read for incoming message
-    if (message.messageId) {
-      try { await markAsRead(message.messageId) } catch {}
+    const box = scrollBox.value as HTMLElement | null
+    if (box && stick) box.scrollTop = box.scrollHeight
+    await nextTick()
+    const mid = message.messageId || message.id || message.MessageId
+    if (mid) {
+      try { await markAsRead(mid) } catch {}
     }
 })
 
 
   onDelivered(async (info: any) => {
-    // پیدا کردن همان حباب پندینگ با clientId
     const cid = info.clientId ?? info.ClientId
     let m = cid ? messages.value.find(x => x.clientId === cid) : undefined
 
-    // اگر clientId نبود (بکاپ): آخرین پیامِ خودم که هنوز id ندارد و status == 'sending'
+    const el0 = scrollBox.value as HTMLElement | null
+    const stick = !!el0 && isNearBottom(el0)
+
     if (!m && info.messageId) {
       m = [...messages.value].reverse().find(x =>
         x.senderId === myId.value && x.status === 'sending' && !x.id
@@ -2237,12 +2249,11 @@ function wireSignalR() {
     }
     if (!m) return
 
-    // ست کردن وضعیت/شناسه/زمان
     if (info.messageId) m.id = info.messageId
     if (info.sentAt)    m.sentAt = info.sentAt
+
     m.status = 'delivered'
 
-    // جایگزینی محتوای واقعی (بدون نیاز به GET اضافه)
     const fileUrl = info.fileUrl ?? info.FileUrl ?? null
     if (fileUrl) {
       m.fileUrl = toAbsoluteFileUrl(fileUrl)
@@ -2250,11 +2261,9 @@ function wireSignalR() {
       if (!fileSizeMap[k]) ensureFileSize(m.fileUrl!, k)
     }
 
-    // متن (کپشن) را اگر هست، decrypt کن و مارکر خالی را نادیده بگیر
     const raw: string = String(info.encryptedText ?? info.EncryptedText ?? '')
     if (raw && raw.trim()) {
       try {
-        // partnerId را از چت جاری بگیر (چون Delivered همیشه برای خودِ ماست)
         const partnerId = selectedUser.value?.id
         if (partnerId) {
           const key = await getOrLoadKey(partnerId)
@@ -2264,6 +2273,11 @@ function wireSignalR() {
         }
       } catch { /* ignore */ }
     }
+
+    await nextTick()
+    const el = scrollBox.value as HTMLElement | null
+    if (el && stick) el.scrollTop = el.scrollHeight
+    await nextTick()
   })
 
 
