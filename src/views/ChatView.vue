@@ -131,10 +131,6 @@
       </template>
     </div>
 
-    
-
-
-
 
       <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 space-y-2" @scroll="onScrollLoadMore">
         <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
@@ -375,7 +371,7 @@
 
 
         <!-- input مخفی انتخاب فایل -->
-        <input ref="fileInput" type="file" class="hidden" @change="onFileChosen" />
+        <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
 
         
         <input
@@ -418,32 +414,35 @@
           <div class="w-[420px] max-w-[90%] rounded-xl bg-white shadow p-4">
             <div class="text-lg font-semibold mb-2">ارسال به‌عنوان فایل</div>
 
-            <div class="flex items-center gap-3 p-3 rounded bg-gray-100">
-              <div class="w-10 h-10 rounded bg-blue-500 flex items-center justify-center text-white">📄</div>
-              <div class="flex-1 min-w-0">
-                <div class="font-medium truncate">{{ pendingFileName }}</div>
-                <div class="text-xs text-gray-500">{{ pendingFileSizeHuman }}</div>
+            <!-- لیست فایل‌ها -->
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+              <div v-for="(f, i) in pendingFiles" :key="i" class="flex items-center gap-3 p-3 rounded bg-gray-100">
+                <div class="w-10 h-10 rounded bg-blue-500 flex items-center justify-center text-white">📄</div>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium truncate">{{ f.name }}</div>
+                  <div class="text-xs text-gray-500">{{ humanFileSize(f.size) }}</div>
+                </div>
+                <button class="text-sm text-red-600 hover:underline" @click="removePendingFile(i)">حذف</button>
               </div>
-              <button class="text-sm text-blue-600 hover:underline" @click="openFilePicker">جایگزین</button>
             </div>
 
-            <label class="block text-sm text-gray-600 mt-3 mb-1">کپشن (اختیاری)</label>
-            <textarea v-model="pendingCaption"
-                      rows="3"
-                      class="w-full border rounded px-3 py-2"></textarea>
+            <!-- کپشن یکسان برای همه (اختیاری) -->
+            <label class="block text-sm text-gray-600 mt-3 mb-1">کپشن (اختیاری، برای همه فایل‌ها)</label>
+            <textarea v-model="pendingCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
 
             <div class="mt-4 flex items-center justify-between">
               <button class="text-gray-600 hover:text-gray-800" @click="cancelFileSend">انصراف</button>
               <div class="flex items-center gap-3">
-                <button class="text-gray-600 hover:text-gray-800" @click="addAnotherFile" disabled>افزودن</button>
+                <button class="text-gray-600 hover:text-gray-800" @click="addAnotherFile">افزودن</button>
                 <button class="bg-blue-600 text-white px-4 py-2 rounded"
-                        :disabled="sendingFile"
+                        :disabled="sendingFile || pendingFiles.length===0"
                         @click="confirmSendFile">
-                  {{ sendingFile ? 'در حال ارسال…' : 'ارسال' }}
+                  {{ sendingFile ? 'در حال ارسال…' : `ارسال (${pendingFiles.length})` }}
                 </button>
               </div>
             </div>
           </div>
+
         </div>
 
 
@@ -827,7 +826,7 @@ function openFilePicker() {
   fileInput.value?.click()
 }
 
-const pendingFile = ref<File|null>(null)
+const pendingFiles = ref<File[]>([]) 
 const pendingCaption = ref('')
 const showFileModal = ref(false)
 const sendingFile = ref(false)
@@ -849,6 +848,33 @@ const prevDraftBeforeEdit = ref('')
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
+
+
+
+function onFilesChosen(e: Event) {
+  const el = e.target as HTMLInputElement
+  const list = el.files ? Array.from(el.files) : []
+  if (list.length) {
+    // به لیست موجود اضافه کن (بارهای بعدی هم قابل افزودن است)
+    pendingFiles.value.push(...list)
+    showFileModal.value = true
+  }
+  // اجازه انتخاب دوباره همان فایل‌ها
+  el.value = ''
+}
+
+
+
+function removePendingFile(i: number) {
+  pendingFiles.value.splice(i, 1)
+  if (pendingFiles.value.length === 0) {
+    // اگر همه حذف شد، مودال را ببند
+    showFileModal.value = false
+    pendingCaption.value = ''
+  }
+}
+
+
 
 
 function isNearBottom(el: HTMLElement, threshold = 400) {
@@ -904,33 +930,19 @@ async function downloadFile(m: any) {
   }
 }
 
-function onFileChosen(e: Event) {
-  const el = e.target as HTMLInputElement
-  const f = el.files?.[0]
-  if (f) {
-    pendingFile.value = f
-    pendingCaption.value = ''
-    showFileModal.value = true
-    el.value = '' // allow re-choose same file
-  }
-}
 
 function cancelFileSend() {
   showFileModal.value = false
-  pendingFile.value = null
+  pendingFiles.value = []
   pendingCaption.value = ''
 }
 
 function addAnotherFile() {
-  // reserved for future multi-attach
+  fileInput.value?.click()
 }
 
-const pendingFileName = computed(() => pendingFile.value?.name || '—')
-const pendingFileSizeHuman = computed(() => humanFileSize(pendingFile.value?.size || 0))
-
-
 async function confirmSendFile() {
-  if (!selectedUser.value || !pendingFile.value) return
+  if (!selectedUser.value || pendingFiles.value.length === 0) return
   sendingFile.value = true
   try {
     const key = await getOrLoadKey(selectedUser.value.id)
@@ -939,41 +951,63 @@ async function confirmSendFile() {
     const toEncrypt = caption ? caption : EMPTY_MSG_MARKER
     const captionEnc = await encryptAES(key, toEncrypt)
 
-    const clientId = crypto.randomUUID()
+    // برای هر فایل یک پیام pending بساز و ارسال کن
+    const sameChat = true  // چون در همین چت هستیم مودال را باز کرده‌ایم
+    const nowIso = new Date().toISOString()
 
-    const fd = new FormData()
-    fd.append('receiverId', selectedUser.value.id)
-    fd.append('encryptedText', captionEnc)
-    fd.append('file', pendingFile.value)
-    if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
-    fd.append('clientId', clientId)
+    for (const f of pendingFiles.value) {
+      const clientId = crypto.randomUUID()
 
-    messages.value.push({
-      clientId,
-      senderId: myId.value,
-      plainText: caption || '',
-      fileUrl: '(pending)',
-      status: 'sending',
-      sentAt: new Date().toISOString(),
-      replyToMessageId: replyingTo.value?.id || null
-    } as UiMessage)
+      // 1) پیام pending در UI
+      messages.value.push({
+        clientId,
+        senderId: myId.value,
+        plainText: caption || '',
+        fileUrl: '(pending)',
+        status: 'sending',
+        sentAt: nowIso,
+        replyToMessageId: replyingTo.value?.id || null
+      } as UiMessage)
 
-    await nextTick()
-    const el = scrollBox.value
-    if (el) el.scrollTop = el.scrollHeight
-    
-    // ارسال
-    await sendMessageWithFileFD(fd)
+      await nextTick()
+      const el = scrollBox.value
+      if (el) el.scrollTop = el.scrollHeight
+
+      // 2) ارسال به سرور
+      const fd = new FormData()
+      fd.append('receiverId', selectedUser.value.id)
+      fd.append('encryptedText', captionEnc)
+      fd.append('file', f)
+      if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
+      fd.append('clientId', clientId)
+
+      await sendMessageWithFileFD(fd)
+    }
+
+    // آپدیت سایدبار (آخرین وضعیت گفتگو)
+    const uid = selectedUser.value.id
+    const convIdx = conversations.value.findIndex(c => c.peerId === uid)
+    const lastFile = pendingFiles.value[pendingFiles.value.length - 1]
+    if (convIdx >= 0) {
+      const c = conversations.value[convIdx]
+      c.lastSentAt = nowIso
+      c.lastFileUrl = '(pending)'
+      c.lastPreview = caption || null
+      const [moved] = conversations.value.splice(convIdx, 1)
+      conversations.value.unshift(moved)
+    }
+
+    showFileModal.value = false
+    pendingFiles.value = []
+    pendingCaption.value = ''
+    replyingTo.value = null
   } catch (e) {
     console.error('send file failed', e)
   } finally {
     sendingFile.value = false
-    showFileModal.value = false
-    pendingFile.value = null
-    pendingCaption.value = ''
-    replyingTo.value = null
   }
 }
+
 
 
 
