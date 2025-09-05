@@ -45,3 +45,24 @@ export function formatRelativeFa(iso?: string | null): string {
   }
   return formatAbsoluteFa(iso)
 }
+
+export function formatAbsoluteEn(iso?: string | null): string {
+  const d = toDateSafe(iso); if (!d) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium', timeStyle: 'short'
+  }).format(d);
+}
+
+export function formatRelativeEn(iso?: string | null): string {
+  const d = toDateSafe(iso); if (!d) return '';
+  const diff = Date.now() - d.getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.round(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(d);
+}

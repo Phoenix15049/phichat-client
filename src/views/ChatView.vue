@@ -1,19 +1,26 @@
 <template>
-  <div class="flex h-screen">
-    <div class="w-80 flex flex-col border-r">
-      <div class="px-3 py-2 font-semibold text-gray-700 border-b flex items-center justify-between">
+  <div class="flex h-screen" dir="ltr">
+    <div class="w-80 md:w-96 flex flex-col border-r border-gray-200">
+      <div class="px-3 py-2 font-semibold text-gray-800 border-b border-gray-200 flex items-center justify-between">
         <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true">☰</button>
-        <span>گفتگوها</span>
+        <span>Chats</span>
         <span class="w-6"></span>
       </div>
+
 
       <div class="flex-1 overflow-y-auto">
         <button
           v-for="conv in conversations"
           :key="conv.peerId"
           @click="selectConversation(conv)"
-          class="w-full text-right px-3 py-3 border-b hover:bg-gray-50 flex gap-3 items-center"
+          class="relative w-full px-3 py-3 border-b border-gray-100 hover:bg-gray-50 flex gap-3 items-center text-left"
+          :class="{ 'bg-blue-50/70': selectedUser && selectedUser.id === conv.peerId }"
         >
+        <span
+          v-if="selectedUser && selectedUser.id === conv.peerId"
+          class="absolute left-0 top-0 h-full w-[3px] bg-blue-600 rounded-r">
+        </span>
+
           <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
             <span class="text-sm">
 
@@ -35,11 +42,12 @@
           </div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
-              <div class="font-medium truncate max-w-[10rem]">
+              <div class="font-medium truncate max-w-[10rem]"
+                :class="(selectedUser && selectedUser.id === conv.peerId) ? 'text-blue-700' : 'text-gray-900'">
                 {{ conv.displayName || '@' + conv.username }}
               </div>
               <div class="text-[11px] text-gray-500 whitespace-nowrap">
-                {{ formatRelativeFa(conv.lastSentAt || null) }}
+                {{ formatRelativeEn(conv.lastSentAt || null) }}
               </div>
             </div>
             <div class="text-xs text-gray-500 flex items-center gap-1">
@@ -69,23 +77,25 @@
       aria-label="نمایش پروفایل مخاطب"
     >
       <template v-if="selectionMode">
+        
         <div class="flex items-center gap-3">
-          <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">انصراف</button>
-          <div class="flex-1"></div>
-
           <button
             class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-1"
             :disabled="!selectedCount"
             @click="openForwardPickerMulti"
-            title="فوروارد گروهی"
+            title="Group Forward"
           >
-            فوروارد
+            Forward
             <span class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700">
               {{ selectedCount }}
             </span>
           </button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti">حذف</button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText">کپی متن</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti">Delete</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText">Copy text</button>
+          
+          <div class="flex-1"></div>
+
+          <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">Cancel</button>
         </div>
       </template>
 
@@ -95,7 +105,7 @@
             v-if="chatNavStack.length"
             class="ml-2 px-2 py-1 rounded hover:bg-white/10"
             @click.stop="goBackChat"
-            title="بازگشت"
+            title="Back"
           >←</button>
 
           <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
@@ -139,7 +149,7 @@
               <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" class="opacity-25"/>
               <path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
             </svg>
-            <span class="text-xs text-gray-600">در حال بارگذاری…</span>
+            <span class="text-xs text-gray-600">Loading…</span>
           </div>
         </div>
 
@@ -162,15 +172,12 @@
           </div>
 
           <div
-            :class="[
-              'inline-block px-3 py-2 rounded max-w-[80%]',
-              msg.senderId === myId ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900',
-              selectionMode && isSelected(msg) ? 'ring-2 ring-offset-2 ring-blue-400 ring-offset-transparent' : ''
-            ]"
+            :class="bubbleClasses(msg)"
             :title="tooltipForMessage(msg)"
             @dblclick="!selectionMode ? startReplyFrom(msg) : null"
             @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
             :ref="bindMsgEl((msg.id || msg.clientId)!)"
+            
           >
 
             <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
@@ -186,12 +193,12 @@
 
             <!-- پیام حذف‌شده -->
             <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">
-              پیام حذف شد
+              Message deleted
             </div>
 
             <!-- برچسب فروارد -->
             <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-l-2 pl-2">
-              فروارد‌شده از
+              Forwarded from
               <button
                 type="button"
                 class="font-medium underline hover:opacity-90 text-blue-600"
@@ -202,8 +209,7 @@
               </button>
             </div>
 
-
-
+            
 
 
             <!-- متن -->
@@ -219,9 +225,33 @@
               </template>
             </div>
 
+            
+            <div v-if="msg.fileUrl && isImageUrl(msg.fileUrl)" class="mt-1">
+              <img
+                :src="msg.fileUrl"
+                class="rounded-xl cursor-zoom-in
+                      max-h-[70vh]           <!-- قد: حداکثر 70% ارتفاع صفحه -->
+                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]  <!-- عرض: محدود به 60% یا 640px -->
+                      sm:min-w-[180px] min-w-[140px]                <!-- مینیمم عرض تا ریز نشه -->
+                      h-auto w-auto object-contain"
+                @click="openImage(msg)"
+              />
+            </div>
+
+            <div v-else-if="msg.fileUrl && isVideoUrl(msg.fileUrl)" class="mt-1">
+              <video
+                :src="msg.fileUrl" controls playsinline
+                class="rounded-xl bg-black cursor-pointer
+                      max-h-[70vh]
+                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]
+                      sm:min-w-[220px] min-w-[160px]
+                      h-auto w-auto"
+                @dblclick.prevent="openVideo(msg)"
+              ></video>
+            </div>
 
             <!-- File bubble -->
-            <div v-if="msg.fileUrl" class="mt-1">
+            <div v-else-if="msg.fileUrl" class="mt-1">
               <div
                 :class="[
                   'flex items-center gap-3 rounded px-3 py-2',
@@ -258,8 +288,8 @@
             <!-- زمان + وضعیت + برچسب ویرایش‌شده -->
             <div
               class="mt-1 flex items-center gap-1 text-[11px]"
-              :class="msg.senderId === myId ? 'text-white/80' : 'text-gray-500'"
-            >
+              :class="timeColorClass(msg)">
+            
               <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
               <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(ویرایش‌شده)</span>
               <span v-if="msg.senderId === myId">
@@ -327,7 +357,7 @@
       <div v-if="replyingTo" class="px-4 pt-2">
         <div class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded">
           <div class="truncate">
-            در پاسخ به: {{ resolveReplyPreview(replyingTo.id) }}
+            Replying to: {{ resolveReplyPreview(replyingTo.id) }}
           </div>
           <button type="button" class="text-gray-500 hover:text-red-600" @click="replyingTo = null">✕</button>
         </div>
@@ -336,7 +366,7 @@
       <!-- بنر ویرایش -->
       <div v-if="editingMessage" class="px-4 pt-2">
         <div class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded">
-          <div class="truncate">در حال ویرایش پیام</div>
+          <div class="truncate">Editing message</div>
           <button type="button" class="text-gray-500 hover:text-red-600" @click="cancelEdit">✕</button>
         </div>
       </div>
@@ -358,20 +388,18 @@
               @mouseenter="menuHover = true"
               @mouseleave="menuHover = false">
             <button type="button"
-                    class="block w-full text-right px-3 py-2 hover:bg-gray-50"
+                    class="block w-full text-left px-3 py-2 hover:bg-gray-50"
                     @click="openFilePicker">
-              فایل
+              File
             </button>
-            <button type="button" disabled
-                    class="block w-full text-right px-3 py-2 text-gray-400 cursor-not-allowed">
-              عکس و ویدیو (به‌زودی)
-            </button>
+            <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker">Photo & Video</button>
           </div>
         </div>
 
 
         <!-- input مخفی انتخاب فایل -->
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
+        <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
 
         
         <input
@@ -379,31 +407,31 @@
           ref="msgInput"
           @input="onInputChanged"
           @blur="onBlurInput"
-          placeholder="پیام."
+          placeholder="Write a message…"
           class="flex-1 border rounded px-3 py-2"
         />
         
         <button
           class="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!canSend"
-        >ارسال</button>
+        >Send</button>
       </form>
 
         <!-- منوی راست‌کلیک -->
       <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu" @contextmenu.prevent="closeMenu">
           <div
             ref="menuEl"                                
-            class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px]"
+            class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px] text-left "
             :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
             @click.stop
           >
-            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">انتخاب پیام</button>
-            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">فوروارد…</button>
-            <button class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doReply">پاسخ</button>
-            <button v-if="canEdit(contextMenu.msg)" class="w-full text-right px-3 py-2 hover:bg-gray-50" @click="doEdit">ویرایش</button>
+            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">Select</button>
+            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">Forward…</button>
+            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doReply">Reply</button>
+            <button v-if="canEdit(contextMenu.msg)" class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doEdit">Edit</button>
             <button
-              class="w-full text-right px-3 py-2 hover:bg-gray-50"
-              @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">حذف…</button>
+              class="w-full text-left px-3 py-2 hover:bg-gray-50"
+              @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">Delete</button>
 
               
           </div>
@@ -431,7 +459,7 @@
             <textarea v-model="pendingCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
 
             <div class="mt-4 flex items-center justify-between">
-              <button class="text-gray-600 hover:text-gray-800" @click="cancelFileSend">انصراف</button>
+              <button class="text-gray-600 hover:text-gray-800" @click="cancelFileSend">Cancel</button>
               <div class="flex items-center gap-3">
                 <button class="text-gray-600 hover:text-gray-800" @click="addAnotherFile">افزودن</button>
                 <button class="bg-blue-600 text-white px-4 py-2 rounded"
@@ -456,20 +484,20 @@
       <div v-if="forwardPicker.visible" class="fixed inset-0 z-40 bg-black/20" @click.self="forwardPicker.visible=false">
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-3 w-[320px]">
           <div class="font-medium mb-2">
-            {{ forwardPicker.mode === 'multi' ? `ارسال ${forwardPicker.srcList.length} پیام به…` : 'ارسال به…' }}
+            {{ forwardPicker.mode === 'multi' ? `Forward ${forwardPicker.srcList.length} messages to` : 'Forward to...' }}
           </div>
           <div class="max-h-64 overflow-y-auto">
             <button
               v-for="c in conversations"
               :key="c.peerId"
-              class="w-full text-right px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
+              class="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
               @click="doForward(c.peerId)"
             >
               {{ c.displayName || '@' + c.username }}
             </button>
           </div>
           <div class="mt-2 text-left">
-            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPicker.visible=false">بستن</button>
+            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPicker.visible=false">Close</button>
           </div>
         </div>
       </div>
@@ -478,9 +506,9 @@
       <!-- Delete confirm dialog -->
       <div v-if="confirmDel.visible" class="fixed inset-0 z-50 bg-black/30" @click.self="cancelDelete">
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-4 w-[360px]">
-          <div class="font-medium mb-2">حذف پیام‌ها</div>
+          <div class="font-medium mb-2">Delete messages</div>
           <p class="text-sm text-gray-700 mb-3">
-            آیا از حذف {{ confirmDel.count }} پیام مطمئن هستید؟
+            Delete {{ confirmDel.count }} message(s)?
           </p>
 
           <label class="flex items-center gap-2 text-sm mb-3">
@@ -491,13 +519,13 @@
               :disabled="!confirmDel.canAll"
             />
             <span :class="confirmDel.canAll ? '' : 'text-gray-400'">
-              حذف برای همه
+              Delete for everyone
             </span>
           </label>
 
           <div class="flex items-center justify-end gap-2">
-            <button class="px-3 py-1.5 rounded border" @click="cancelDelete">انصراف</button>
-            <button class="px-3 py-1.5 rounded bg-red-600 text-white" @click="confirmDelete">حذف</button>
+            <button class="px-3 py-1.5 rounded border" @click="cancelDelete">Cancel</button>
+            <button class="px-3 py-1.5 rounded bg-red-600 text-white" @click="confirmDelete">Delete</button>
           </div>
         </div>
       </div>
@@ -540,6 +568,62 @@
       <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
     </div>
   </ModalSheet>
+
+
+  <!-- Media Send Modal -->
+    <div v-if="showMediaModal" class="fixed inset-0 z-[999] bg-black/40 backdrop-blur grid place-items-center" @click.self="cancelMediaSend">
+      <div class="w-[520px] max-w-[95%] rounded-xl bg-white shadow p-4">
+        <div class="text-lg font-semibold mb-2">ارسال مدیا</div>
+
+        <!-- پیش‌نمایش -->
+        <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+          <div v-for="(f,i) in pendingMedia" :key="i" class="relative">
+            <img v-if="isImageFile(f)" :src="objUrl(f)" class="w-full h-28 object-cover rounded"/>
+            <video v-else :src="objUrl(f)" class="w-full h-28 object-cover rounded"></video>
+            <button class="absolute top-1 right-1 bg-white/80 rounded px-2 text-sm" @click="removePendingMedia(i)">حذف</button>
+          </div>
+        </div>
+
+        <!-- فشرده‌سازی فقط برای تصویر -->
+        <div class="mt-3 flex items-center gap-2" v-if="allImagesSelected">
+          <input id="cmp" type="checkbox" v-model="compressImages"/>
+          <label for="cmp" class="text-sm select-none">فشرده‌سازی تصویر</label>
+        </div>
+
+        <!-- Group items -->
+        <div class="mt-2 flex items-center gap-2">
+          <input id="grpMedia" type="checkbox" v-model="mediaGroupItems"/>
+          <label for="grpMedia" class="text-sm select-none">Group items</label>
+        </div>
+
+        <!-- کپشن -->
+        <label class="block text-sm text-gray-600 mt-2 mb-1">کپشن</label>
+        <textarea v-model="mediaCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
+
+        <div class="mt-4 flex items-center justify-between">
+          <button class="text-gray-600 hover:text-gray-800" @click="cancelMediaSend">Cancel</button>
+          <div class="flex items-center gap-3">
+            <button class="text-gray-600 hover:text-gray-800" @click="addAnotherMedia">افزودن</button>
+            <button class="bg-blue-600 text-white px-4 py-2 rounded"
+                    :disabled="sendingMedia || pendingMedia.length===0"
+                    @click="confirmSendMedia">
+              {{ sendingMedia ? 'در حال ارسال…' : `ارسال (${pendingMedia.length})` }}
+            </button>
+          </div>
+        </div>
+      </div>
+  </div>
+
+  
+
+
+  <MediaImageViewer v-if="showImageViewer"
+                  :src="viewerImageSrc" :caption="viewerCaption"
+                  @close="showImageViewer=false" />
+  <MediaVideoPlayer v-if="showVideoPlayer"
+                  :src="playerVideoSrc" :caption="playerCaption"
+                  @close="showVideoPlayer=false" />
+
 
   <PeerProfileModal
   :open="showPeerProfile"
@@ -621,8 +705,9 @@ import {
 } from '../utils/aesKeyStore'
 import { getToken, parseJwt } from '../utils/jwt'
 import { useRoute ,useRouter} from 'vue-router'
-import {toDateSafe, formatAbsoluteFa,formatRelativeFa} from "../utils/time";
-
+import {toDateSafe, formatAbsoluteEn,formatRelativeEn} from "../utils/time";
+import MediaImageViewer from '../components/MediaImageViewer.vue'
+import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
 import {getMyContacts, addContact, removeContact,getUsersList } from '../services/api'
 
 
@@ -813,10 +898,10 @@ const displayById = reactive<Record<string, string | null>>({})
 const peerStatus = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
-  if (isPeerTyping.value) return 'در حال تایپ…'
-  if (onlineIds.has(su.id)) return 'آنلاین'
+  if (isPeerTyping.value) return 'is typing...'
+  if (onlineIds.has(su.id)) return 'Online'
   const ls = lastSeenMap[su.id]
-  return ls ? `آخرین بازدید: ${formatRelativeFa(ls)}` : 'آخرین بازدید: نامشخص'
+  return ls ? `Last seen ${formatRelativeEn(ls)}` : 'Last seen unknown'
 })
 
 const attachOpen = ref(false)
@@ -840,6 +925,20 @@ const menuHover = ref(false)
 
 const prevDraftBeforeEdit = ref('')
 
+const mediaInput = ref<HTMLInputElement|null>(null)
+const pendingMedia = ref<File[]>([])
+const showMediaModal = ref(false)
+const sendingMedia = ref(false)
+const mediaCaption = ref('')
+const mediaGroupItems = ref(false)
+const compressImages = ref(true) 
+const showImageViewer = ref(false)
+const viewerImageSrc = ref<string>(''); const viewerCaption = ref<string>('')
+const showVideoPlayer = ref(false)
+const playerVideoSrc = ref<string>(''); const playerCaption = ref<string>('')
+
+const allImagesSelected = computed(() => pendingMedia.value.length>0 && pendingMedia.value.every(isImageFile))
+
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
@@ -849,6 +948,174 @@ const prevDraftBeforeEdit = ref('')
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
+function isMediaOnly(msg: UiMessage) {
+  return !!msg.fileUrl && (isImageUrl(msg.fileUrl) || isVideoUrl(msg.fileUrl)) && !msg.plainText
+}
+
+function bubbleClasses(msg: UiMessage) {
+  const base = ['inline-block', 'max-w-[80%]']
+  if (isMediaOnly(msg)) {
+    // مدیا بدون قاب
+    base.push('rounded-xl', 'p-0', 'bg-transparent', 'text-current')
+  } else {
+    // متن معمولی با گوشه نرم‌تر
+    base.push('rounded-2xl', 'px-3', 'py-2',
+      msg.senderId === myId.value ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
+    )
+  }
+  return base
+}
+
+
+function timeColorClass(msg: UiMessage) {
+
+  if (isMediaOnly(msg)) return 'text-gray-500'
+  return msg.senderId === myId.value ? 'text-white/80' : 'text-gray-500'
+}
+
+
+function objUrl(f: File) {
+
+  return (window.URL || globalThis.URL).createObjectURL(f)
+}
+
+
+function openImage(msg: UiMessage){
+  viewerImageSrc.value = msg.fileUrl || ''
+  viewerCaption.value = msg.plainText || ''
+  showImageViewer.value = true
+}
+function openVideo(msg: UiMessage){
+  playerVideoSrc.value = msg.fileUrl || ''
+  playerCaption.value = msg.plainText || ''
+  showVideoPlayer.value = true
+}
+
+
+function openMediaPicker(){ mediaInput.value?.click() }
+
+function onMediaChosen(e: Event){
+  const el = e.target as HTMLInputElement
+  const list = el.files ? Array.from(el.files) : []
+  if (list.length){
+    pendingMedia.value.push(...list)
+    showMediaModal.value = true
+  }
+  el.value = ''
+}
+function addAnotherMedia(){ mediaInput.value?.click() }
+function removePendingMedia(i:number){
+  pendingMedia.value.splice(i,1)
+  if (!pendingMedia.value.length){ cancelMediaSend() }
+}
+function cancelMediaSend(){
+  showMediaModal.value = false
+  pendingMedia.value = []
+  mediaCaption.value = ''
+  mediaGroupItems.value = false
+  compressImages.value = true
+}
+
+async function confirmSendMedia(){
+  if (!selectedUser.value || !pendingMedia.value.length) return
+  sendingMedia.value = true
+  try{
+    const partnerId = selectedUser.value.id
+    const key = await getOrLoadKey(partnerId)
+    const caption = (mediaCaption.value || '').trim()
+    const hasCaption = !!caption
+    const encCaption = hasCaption ? await encryptAES(key, caption) : await encryptAES(key, EMPTY_MSG_MARKER)
+
+    // غیرگروهی: مثل تلگرام اول کپشن به صورت متن جدا
+    if (!mediaGroupItems.value && hasCaption){
+      const cidTxt = crypto.randomUUID()
+      await sendMessage(partnerId, encCaption, undefined, cidTxt)
+    }
+
+    const gid = mediaGroupItems.value ? crypto.randomUUID() : null
+    const nowIso = new Date().toISOString()
+
+    for (let i=0;i<pendingMedia.value.length;i++){
+      let f = pendingMedia.value[i]
+      if (compressImages.value && isImageFile(f)){
+        try { f = await compressImageFile(f) } catch {}
+      }
+
+      const clientId = crypto.randomUUID()
+
+      // optimistic bubble
+      messages.value.push({
+        clientId,
+        senderId: myId.value,
+        plainText: mediaGroupItems.value ? (i===0 ? caption : '') : '',
+        fileUrl: '(pending)',
+        status: 'sending',
+        sentAt: nowIso,
+        replyToMessageId: replyingTo.value?.id || null,
+        groupId: gid
+      } as UiMessage)
+
+      await nextTick()
+      const el = scrollBox.value
+      if (el) el.scrollTop = el.scrollHeight
+
+      // ارسال
+      const fd = new FormData()
+      fd.append('receiverId', partnerId)
+      const enc = mediaGroupItems.value
+        ? (i===0 ? encCaption : await encryptAES(key, EMPTY_MSG_MARKER))
+        : await encryptAES(key, EMPTY_MSG_MARKER)
+      fd.append('encryptedText', enc)
+      fd.append('file', f)
+      if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
+      if (gid) fd.append('groupId', gid)
+      fd.append('clientId', clientId)
+
+      await sendMessageWithFileFD(fd)
+    }
+
+    showMediaModal.value = false
+    pendingMedia.value = []
+    mediaCaption.value = ''
+    mediaGroupItems.value = false
+    replyingTo.value = null
+  } finally {
+    sendingMedia.value = false
+  }
+}
+
+
+
+function isImageUrl(url?: string|null) {
+  if (!url) return false
+  return /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(url.split('?')[0] || '')
+}
+function isVideoUrl(url?: string|null) {
+  if (!url) return false
+  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(url.split('?')[0] || '')
+}
+function isImageFile(f: File){ return f.type.startsWith('image/') }
+function isVideoFile(f: File){ return f.type.startsWith('video/') }
+
+async function compressImageFile(file: File, maxDim = 1280, quality = 0.82): Promise<File> {
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const i = new Image()
+    i.onload = () => res(i); i.onerror = rej
+    i.src = URL.createObjectURL(file)
+  })
+  const w = img.naturalWidth, h = img.naturalHeight
+  let nw = w, nh = h
+  if (w > h && w > maxDim) { nw = maxDim; nh = Math.round(h * maxDim / w) }
+  else if (h >= w && h > maxDim) { nh = maxDim; nw = Math.round(w * maxDim / h) }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = nw; canvas.height = nh
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(img, 0, 0, nw, nh)
+
+  const blob: Blob = await new Promise(res => canvas.toBlob(b => res(b!), 'image/jpeg', quality))
+  return new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })
+}
 
 
 function onFilesChosen(e: Event) {
@@ -1060,7 +1327,7 @@ function onPeerSendMessage(id: string) {
 async function onPeerShareContact(u: any) {
   const text = u.displayName ? `${u.displayName} (@${u.username})` : `@${u.username}`
   await navigator.clipboard.writeText(text)
-  showToast('اطلاعات مخاطب کپی شد')
+  showToast('Contact copied')
 }
 
 
@@ -1128,7 +1395,7 @@ async function openMention(usernameOrAt: string) {
   try {
     const u = await getUserByUsername(uname)
     if (!u || !u.id) {
-      showToast('یوزرنیم یافت نشد')
+      showToast('Username not found')
       return
     }
 
@@ -1137,7 +1404,7 @@ async function openMention(usernameOrAt: string) {
     await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
     if (route.path !== '/chat') router.replace('/chat')
   } catch {
-    showToast('یوزرنیم یافت نشد')
+    showToast('Username not found')
   }
 }
 
@@ -1318,7 +1585,7 @@ async function confirmDelete() {
       }
       clearSelection()
     }
-    showToast('حذف شد')
+    showToast('Deleted')
   } catch (e) {
     console.warn('confirmDelete failed', e)
   } finally {
@@ -1393,7 +1660,7 @@ async function copySelectedText() {
   if (lines.length === 0) return
   await writeClipboard(lines.join('\n'))
   clearSelection()
-  showToast('متن کپی شد')
+  showToast('Copied')
 }
 
 async function deleteSelectedForMe() {
@@ -1451,7 +1718,7 @@ async function openForwardUser(userId: string) {
   try {
     const u = await getUserById(userId)
     if (!u?.id || !u?.username) {
-      showToast('یوزرنیم یافت نشد')
+      showToast('Username not found')
       return
     }
     const cur = currentChatRef?.()
@@ -1460,7 +1727,7 @@ async function openForwardUser(userId: string) {
     await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
     if (route.path !== '/chat') router.replace('/chat')
   } catch {
-    showToast('یوزرنیم یافت نشد')
+    showToast('Username not found')
   }
 }
 
@@ -1906,13 +2173,14 @@ function setMessageEl(key: string, el: Element | null) {
 function fmtHHmmLocal(iso?: string | null): string {
   const d = toDateSafe(iso);
   if (!d) return "";
-  return d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
+
 function tooltipForMessage(msg: any): string {
-  const sent = formatAbsoluteFa(msg.sentAt); 
-  const delivered = msg.deliveredAtUtc ? formatAbsoluteFa(msg.deliveredAtUtc) : null;
-  const read = msg.readAtUtc ? formatAbsoluteFa(msg.readAtUtc) : null;
+  const sent = formatAbsoluteEn(msg.sentAt); 
+  const delivered = msg.deliveredAtUtc ? formatAbsoluteEn(msg.deliveredAtUtc) : null;
+  const read = msg.readAtUtc ? formatAbsoluteEn(msg.readAtUtc) : null;
 
   if (read) return `ارسال: ${sent}\nخوانده‌شدن: ${read}`;
   if (delivered) return `ارسال: ${sent}\nتحویل: ${delivered}`;
@@ -1925,6 +2193,7 @@ async function selectConversation(conv: any) {
   chatNavStack.value = []
   await handleUserSelect({ id: conv.peerId, username: conv.username })
   if (route.path !== '/chat') router.replace('/chat')
+
 }
 
 
@@ -1936,17 +2205,15 @@ function dayKey(iso?: string | null): string {
 }
 
 function dayLabel(iso?: string | null): string {
-  const d = toDateSafe(iso);
-  if (!d) return '';
-
+  const d = toDateSafe(iso); if (!d) return '';
   const today = new Date(); today.setHours(0,0,0,0);
   const that = new Date(d); that.setHours(0,0,0,0);
   const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
-  if (diffDays === 0) return 'امروز';
-  if (diffDays === 1) return 'دیروز';
-
-  return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'full' }).format(d);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'full' }).format(d);
 }
+
 
 function showDayHeader(index: number): boolean {
   if (index === 0) return true;
