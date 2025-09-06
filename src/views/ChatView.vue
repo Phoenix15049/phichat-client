@@ -12,18 +12,26 @@
         <button
           v-for="conv in conversations"
           :key="conv.peerId"
-          @click="selectConversation(conv)"
-          class="relative w-full px-3 py-3 border-b border-gray-100 hover:bg-gray-50 flex gap-3 items-center text-left"
-          :class="{ 'bg-blue-50/70': selectedUser && selectedUser.id === conv.peerId }"
+          v-ripple
+          @click.stop="onConvDblClick(conv)"
+          @dblclick.stop="onConvDblClick(conv)"
+          class="relative overflow-hidden w-full px-3 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 flex gap-3 items-center text-left"
+          :class="{ 'bg-[#11BFAE]/10': selectedUser && selectedUser.id === conv.peerId }"
         >
+
         <span
           v-if="selectedUser && selectedUser.id === conv.peerId"
-          class="absolute left-0 top-0 h-full w-[3px] bg-blue-600 rounded-r">
+          class="absolute left-0 top-0 h-full w-[3px] bg-[#11BFAE] rounded-r">
         </span>
 
           <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
             <span class="text-sm">
 
+            <div class="relative w-10 h-10 overflow-hidden flex items-center justify-center">
+
+              <!-- online dot -->
+              <span v-if="onlineIds.has(conv.peerId)"
+                      class="absolute bottom-0 right-0 w-2.5 h-2.5 z-10 bg-green-500 rounded-full ring-2 ring-white"></span>
 
               <div class="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
                   :style="!avatarById[conv.peerId] ? { backgroundColor: colorFromString(displayById[conv.peerId] || conv.username) } : {}">
@@ -32,18 +40,15 @@
                   {{ initialsOf(displayById[conv.peerId] || conv.displayName || conv.username) }}
                 </span>
 
-                <!-- online dot -->
-                <span v-if="onlineIds.has(conv.peerId)"
-                      class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white"></span>
               </div>
-
+            </div>
               
             </span>
           </div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
               <div class="font-medium truncate max-w-[10rem]"
-                :class="(selectedUser && selectedUser.id === conv.peerId) ? 'text-blue-700' : 'text-gray-900'">
+                :class="(selectedUser && selectedUser.id === conv.peerId) ? 'text-[#1B3C59]' : 'text-gray-900'">
                 {{ conv.displayName || '@' + conv.username }}
               </div>
               <div class="text-[11px] text-gray-500 whitespace-nowrap">
@@ -57,7 +62,7 @@
               </span>
               <span
                 v-if="conv.unreadCount > 0"
-                class="ml-2 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[11px] min-w-[18px] px-1"
+                class="ml-2 inline-flex items-center justify-center rounded-full bg-[#11BFAE] text-white text-[11px] min-w-[18px] px-1"
               >
                 {{ conv.unreadCount }}
               </span>
@@ -71,41 +76,40 @@
 
 
     <div
-      class="bg-blue-600 text-white p-3 cursor-pointer select-none"
+      class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
       @click="!selectionMode && selectedUser && openPeerProfile()"
       role="button"
       aria-label="نمایش پروفایل مخاطب"
     >
-      <template v-if="selectionMode">
-        
-        <div class="flex items-center gap-3">
+      <transition name="slide-down" mode="out-in">
+        <div v-if="selectionMode" key="sel" class="flex items-center gap-3">
           <button
             class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-1"
             :disabled="!selectedCount"
             @click="openForwardPickerMulti"
             title="Group Forward"
+            v-ripple
           >
             Forward
             <span class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700">
               {{ selectedCount }}
             </span>
           </button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti">Delete</button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText">Copy text</button>
-          
-          <div class="flex-1"></div>
-
-          <button class="px-2 py-1 rounded hover:bg-white/10" @click="clearSelection">Cancel</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti" v-ripple>Delete</button>
+          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText" v-ripple>Copy text</button>
+          <div class="flex-1">
+            
+          </div>
+          <button class="px-2 py-1 rounded hover:bg-white/10" @click.stop="clearSelection" v-ripple>Cancel</button>
         </div>
-      </template>
 
-      <template v-else>
-        <div class="flex items-left">
+        <div v-else key="norm" class="flex items-left">
           <button
             v-if="chatNavStack.length"
             class="ml-2 px-2 py-1 rounded hover:bg-white/10"
             @click.stop="goBackChat"
             title="Back"
+            v-ripple
           >←</button>
 
           <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
@@ -113,36 +117,33 @@
               <div class="text-lg font-semibold truncate">
                 {{ selectedLabel }}
               </div>
-              <div class="text-xs text-white/100 mt-0.5">
-                is typing...
+              <div class="flex items-center gap-1 mt-0.5">
+                <span class="sr-only">typing</span>
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:0ms"></span>
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:120ms"></span>
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:240ms"></span>
               </div>
-
-
             </template>
             <template v-else-if="onlineIds.has(selectedUser.id)">
               <div class="text-lg font-semibold truncate">
                 {{ selectedLabel }}
               </div>
-              <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
-                {{ peerStatus }}
-              </div>
+              <div class="text-xs text-white/100 mt-0.5">{{ peerStatus }}</div>
             </template>
             <template v-else>
               <div class="text-lg font-semibold truncate">
                 {{ selectedLabel }}
               </div>
-              <div class="text-xs text-white/80 mt-0.5" v-if="selectedUser">
-                {{ peerStatus }}
-              </div>
+              <div class="text-xs text-white/80 mt-0.5">{{ peerStatus }}</div>
             </template>
           </div>
-
         </div>
-      </template>
+      </transition>
+
     </div>
 
 
-      <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 space-y-2" @scroll="onScrollLoadMore">
+      <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 bg-[#F2F2F0]" @scroll="onScrollLoadMore">
         <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
           <div class="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur px-3 py-1 shadow">
             <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
@@ -151,20 +152,19 @@
             </svg>
             <span class="text-xs text-gray-600">Loading…</span>
           </div>
+
         </div>
 
-        <div
-          v-for="(msg, index) in messages"
-          :key="index"
-          :class="[
-            'relative',
-            msg.senderId === myId ? 'text-right' : 'text-left'
-          ]"
-          @click.stop="onRowClick($event, msg)"                              
-          @contextmenu.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
-          @mousedown.left="onRowMouseDown($event, msg)"
-          @mouseenter="onRowMouseEnter(msg)"   
-        >
+        <transition-group name="bubble" tag="div" class="space-y-2">
+          <div
+            v-for="(msg, index) in messages"
+            :key="msg.id || msg.clientId || index"
+            :class="['relative', msg.senderId === myId ? 'text-right' : 'text-left']"
+            @click.stop="onRowClick($event, msg)"
+            @contextmenu.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
+            @mousedown.left="onRowMouseDown($event, msg)"
+            @mouseenter="onRowMouseEnter(msg)"
+          >
           <div v-if="showDayHeader(index)" class="flex justify-center my-2">
             <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
               {{ dayLabel(messages[index].sentAt) }}
@@ -201,7 +201,7 @@
               Forwarded from
               <button
                 type="button"
-                class="font-medium underline hover:opacity-90 text-blue-600"
+                class="font-medium underline hover:opacity-90 text-[#c5ffff]"
                 @mouseenter="cacheForwardName(msg.forwardedFromSenderId)"
                 @click.stop="openForwardUser(msg.forwardedFromSenderId)"
               >
@@ -218,7 +218,7 @@
                 <span v-if="p.t === 'text'">{{ p.s }}</span>
                 <span
                   v-else
-                  class="text-blue-600 underline cursor-pointer"
+                  class="text-[#11BFAE] underline cursor-pointer"
                   @click.stop="openMention(p.u)"
                   data-text-selectable
                 >@{{ p.u }}</span>
@@ -255,7 +255,7 @@
               <div
                 :class="[
                   'flex items-center gap-3 rounded px-3 py-2',
-                  msg.senderId === myId ? 'bg-white/10' : 'bg-white'
+                  msg.senderId === myId ? 'bg-white/10' : 'bg-[#536e7e]'
                 ]"
               >
                 <!-- download button -->
@@ -351,6 +351,7 @@
           </div>
 
         </div>
+        </transition-group>
       </div>
 
       <!-- بنر ریپلای -->
@@ -372,28 +373,28 @@
       </div>
 
       <!-- فرم ارسال -->
-      <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex items-center gap-2 border-t relative">
+      <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex items-center gap-2 border border-gray-100 relative ">
         
         <!-- Attach (paperclip) -->
         <div class="relative"
             @mouseenter="clipHover = true"
             @mouseleave="clipHover = false">
-          <button type="button" class="px-2 text-gray-500 hover:text-gray-700" @click="openFilePicker" title="پیوست">
+          <button type="button" class="px-4 py-2 text-gray-500 hover:text-gray-700 border border-gray-200 " @click="openFilePicker" title="Attach">
             📎
           </button>
 
           <!-- منو دقیقا چسبیده به سنجاق -->
-          <div v-if="clipHover || menuHover"
-              class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
-              @mouseenter="menuHover = true"
-              @mouseleave="menuHover = false">
-            <button type="button"
-                    class="block w-full text-left px-3 py-2 hover:bg-gray-50"
-                    @click="openFilePicker">
-              File
-            </button>
-            <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker">Photo & Video</button>
-          </div>
+          <transition name="clip-pop">
+            <div v-if="clipHover || menuHover"
+                class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
+                @mouseenter="menuHover = true"
+                @mouseleave="menuHover = false">
+              <button type="button" class="block w-full text-left px-3 py-2 hover:bg-gray-50 " @click="openFilePicker" v-ripple>
+                File
+              </button>
+              <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker" v-ripple>Photo & Video</button>
+            </div>
+          </transition>
         </div>
 
 
@@ -412,30 +413,41 @@
         />
         
         <button
-          class="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          class="bg-[#11BFAE] text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!canSend"
         >Send</button>
       </form>
 
-        <!-- منوی راست‌کلیک -->
-      <div v-if="contextMenu.visible" class="fixed inset-0 z-40" @click="closeMenu" @contextmenu.prevent="closeMenu">
-          <div
-            ref="menuEl"                                
-            class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px] text-left "
-            :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
-            @click.stop
-          >
-            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)">Select</button>
-            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="openForwardPicker">Forward…</button>
-            <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doReply">Reply</button>
-            <button v-if="canEdit(contextMenu.msg)" class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doEdit">Edit</button>
-            <button
-              class="w-full text-left px-3 py-2 hover:bg-gray-50"
-              @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }">Delete</button>
+      <!-- Context Menu -->
+      <transition name="fade">
+        <div v-if="contextMenu.visible"
+            class="fixed inset-0 z-40"
+            @click="closeMenu"
+            @contextmenu.prevent="closeMenu">
 
-              
-          </div>
+          <transition name="fade-scale">
+            <div
+              ref="menuEl"
+              class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px] text-left"
+              :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+              @click.stop
+            >
+              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)" v-ripple>Select</button>
+              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="openForwardPicker" v-ripple>Forward…</button>
+              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doReply" v-ripple>Reply</button>
+              <button v-if="canEdit(contextMenu.msg)" class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doEdit" v-ripple>Edit</button>
+              <button
+                class="w-full text-left px-3 py-2 hover:bg-gray-50"
+                @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }"
+                v-ripple
+              >Delete</button>
+            </div>
+          </transition>
+
         </div>
+      </transition>
+
+
 
         <!-- File Send Modal -->
         <div v-if="showFileModal" class="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
@@ -573,7 +585,7 @@
   <!-- Media Send Modal -->
     <div v-if="showMediaModal" class="fixed inset-0 z-[999] bg-black/40 backdrop-blur grid place-items-center" @click.self="cancelMediaSend">
       <div class="w-[520px] max-w-[95%] rounded-xl bg-white shadow p-4">
-        <div class="text-lg font-semibold mb-2">ارسال مدیا</div>
+        <div class="text-lg font-semibold mb-2">Media</div>
 
         <!-- پیش‌نمایش -->
         <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
@@ -597,13 +609,13 @@
         </div>
 
         <!-- کپشن -->
-        <label class="block text-sm text-gray-600 mt-2 mb-1">کپشن</label>
+        <label class="block text-sm text-gray-600 mt-2 mb-1">Caption</label>
         <textarea v-model="mediaCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
 
         <div class="mt-4 flex items-center justify-between">
           <button class="text-gray-600 hover:text-gray-800" @click="cancelMediaSend">Cancel</button>
           <div class="flex items-center gap-3">
-            <button class="text-gray-600 hover:text-gray-800" @click="addAnotherMedia">افزودن</button>
+            <button class="text-gray-600 hover:text-gray-800" @click="addAnotherMedia">Add</button>
             <button class="bg-blue-600 text-white px-4 py-2 rounded"
                     :disabled="sendingMedia || pendingMedia.length===0"
                     @click="confirmSendMedia">
@@ -939,6 +951,24 @@ const playerVideoSrc = ref<string>(''); const playerCaption = ref<string>('')
 
 const allImagesSelected = computed(() => pendingMedia.value.length>0 && pendingMedia.value.every(isImageFile))
 
+const vRipple = {
+  mounted(el: HTMLElement) {
+    el.style.position ||= 'relative'
+    el.style.overflow ||= 'hidden'
+    el.addEventListener('click', (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect()
+      const size = Math.max(rect.width, rect.height) * 1.1
+      const span = document.createElement('span')
+      span.className = 'ripple-ink'
+      span.style.width = span.style.height = `${size}px`
+      span.style.left = `${e.clientX - rect.left - size/2}px`
+      span.style.top = `${e.clientY - rect.top - size/2}px`
+      el.appendChild(span)
+      span.addEventListener('animationend', () => span.remove())
+    })
+  }
+}
+
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
@@ -947,30 +977,59 @@ const allImagesSelected = computed(() => pendingMedia.value.length>0 && pendingM
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
+
+function scrollToEndSmooth() {
+  const el = scrollBox.value
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+}
+function onConvDblClick(conv: any) {
+  // اگر همین چت بازه، فقط اسکرول کن
+  if (selectedUser.value && selectedUser.value.id === conv.peerId) {
+    scrollToEndSmooth()
+  } else {
+    // در غیر این صورت انتخاب و بعد از رندر، اسکرول
+    selectConversation(conv).then(() => nextTick(scrollToEndSmooth))
+  }
+}
+
+
 
 function isMediaOnly(msg: UiMessage) {
   return !!msg.fileUrl && (isImageUrl(msg.fileUrl) || isVideoUrl(msg.fileUrl)) && !msg.plainText
 }
 
 function bubbleClasses(msg: UiMessage) {
-  const base = ['inline-block', 'max-w-[80%]']
+  const base = ['inline-block', 'max-w-[80%]', 'transition', 'duration-150', 'ease-out']
+  const selOn = selectionMode.value && isSelected(msg)
+
   if (isMediaOnly(msg)) {
-    // مدیا بدون قاب
     base.push('rounded-xl', 'p-0', 'bg-transparent', 'text-current')
+    if (selOn) base.push('ring-2','ring-blue-300/60')
   } else {
-    // متن معمولی با گوشه نرم‌تر
-    base.push('rounded-2xl', 'px-3', 'py-2',
-      msg.senderId === myId.value ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'
+    base.push(
+      'rounded-2xl','px-3','py-2',
+      msg.senderId === myId.value
+        ? 'bg-[#11BFAE] text-white'          // حباب من: accent
+        : 'bg-[#456173] text-white'      // حباب طرف مقابل: surface + primary-text
     )
+    if (selOn) {
+      base.push('ring-2', msg.senderId === myId.value ? 'ring-white/80' : 'ring-[#11BFAE]/50', 'shadow-md')
+    }
+
+
+
   }
   return base
 }
 
 
+
 function timeColorClass(msg: UiMessage) {
 
   if (isMediaOnly(msg)) return 'text-gray-500'
-  return msg.senderId === myId.value ? 'text-white/80' : 'text-gray-500'
+  return msg.senderId === myId.value ? 'text-white/80' : 'text-white/80'
+
 }
 
 
@@ -2193,6 +2252,7 @@ async function selectConversation(conv: any) {
   chatNavStack.value = []
   await handleUserSelect({ id: conv.peerId, username: conv.username })
   if (route.path !== '/chat') router.replace('/chat')
+  scrollToEndSmooth()
 
 }
 
@@ -2936,5 +2996,51 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 }
 </script>
 
-<style scoped>
+<style>
+/* global (بدون scoped) تا روی span داینامیکی هم اعمال بشه */
+.ripple-ink {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: .15;
+  transform: scale(0);
+  pointer-events: none;
+  animation: ripple .5s ease-out forwards;
+}
+@keyframes ripple {
+  to { transform: scale(4); opacity: 0; }
+}
+
+/* پیام‌ها: ورود/خروج نرم */
+.bubble-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); }
+.bubble-enter-active { transition: opacity .15s ease, transform .15s ease; }
+.bubble-leave-active { transition: opacity .12s ease, transform .12s ease; }
+.bubble-leave-to     { opacity: 0; transform: translateY(-4px) scale(0.98); }
+
+/* منوی راست‌کلیک: پاپ/محو کوتاه */
+.fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
+.fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
+.fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
+.fade-scale-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
+
+/* منوی راست‌کلیک: پاپ/محو کوتاه */
+.fade-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); transform-origin: bottom right; }
+.fade-enter-active { transition: opacity .12s ease, transform .12s ease; }
+.fade-leave-active { transition: opacity .10s ease, transform .10s ease; }
+.fade-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
+
+/* منوی سنجاق: از پایین به بالا پاپ شود */
+.clip-pop-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); transform-origin: bottom right; }
+.clip-pop-enter-active { transition: opacity .12s ease, transform .12s ease; }
+.clip-pop-leave-active { transition: opacity .10s ease, transform .10s ease; }
+.clip-pop-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
+
+/* header (selection/non-selection) slide */
+.slide-down-enter-from { transform: translateY(-6px); opacity: 0; }
+.slide-down-enter-active { transition: transform .1s ease, opacity .1s ease; }
+.slide-down-leave-active { transition: transform .08s ease, opacity .08s ease; }
+.slide-down-leave-to { transform: translateY(-4px); opacity: 0; }
+
+
 </style>
+

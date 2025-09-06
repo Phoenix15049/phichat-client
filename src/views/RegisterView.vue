@@ -1,67 +1,67 @@
 <template>
-  
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-    <div class="w-full max-w-md bg-white rounded-2xl shadow p-6">
-      <h1 class="text-xl font-bold mb-4 text-center">ثبت‌نام در PhiChat</h1>
+  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4" dir="ltr">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
+      <h1 class="text-xl font-bold mb-4 text-center text-[#1B3C59]">Create your PhiChat account</h1>
 
-      <!-- Step 1: Phone & Code -->
-        <div v-if="step === 1" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold">ثبت‌نام - مرحله ۱</div>
+
+            <transition name="fade-up" mode="out-in">
+        <!-- Step 1: Phone & Code -->
+        <div v-if="step === 1" key="step1" class="max-w-sm mx-auto p-4 space-y-3">
+          <div class="text-lg font-semibold text-[#1B3C59]">Step 1 — Verify phone</div>
 
           <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" />
 
           <div class="flex items-center gap-2">
             <button
-              class="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50"
               :disabled="!phoneE164 || sending"
               @click="sendCode"
             >
-              {{ sending ? 'در حال ارسال…' : 'ارسال کد' }}
+              {{ sending ? 'Sending…' : 'Send code' }}
             </button>
-            <span v-if="smsSent" class="text-sm text-gray-600">کد ارسال شد</span>
+            <span v-if="smsSent" class="text-sm text-gray-600">Code sent</span>
           </div>
 
           <div v-if="smsSent" class="mt-2 space-y-2">
-            <input v-model="smsCode" class="border rounded px-3 py-2 w-full" placeholder="کد پیامک" />
+            <input v-model="smsCode" class="input" placeholder="SMS code" />
             <button
               type="button"
-              class="px-3 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50"
               :disabled="verifying || !smsCode || smsCode.length < 4"
               @click="verifyCode"
             >
-              {{ verifying ? 'در حال بررسی…' : 'ادامه' }}
+              {{ verifying ? 'Verifying…' : 'Verify & continue' }}
             </button>
-
           </div>
 
           <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
         </div>
 
         <!-- Step 2: Username (+ Password) -->
-        <div v-else-if="step === 2" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold">ثبت‌نام - مرحله ۲</div>
+        <div v-else-if="step === 2" key="step2" class="max-w-sm mx-auto p-4 space-y-3">
+          <div class="text-lg font-semibold text-[#1B3C59]">Step 2 — Username & password</div>
 
-          <label class="text-sm">یوزرنیم</label>
-          <input v-model="username" class="border rounded px-3 py-2 w-full" placeholder="مثلاً ali_1370" />
+          <label class="text-sm text-[#456173]">Username</label>
+          <input v-model="username" class="input" placeholder="e.g. ali_1370" />
           <div
             class="text-xs"
             :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-red-600' : 'text-gray-500'"
           >
-            <span v-if="uCheck.loading">در حال بررسی…</span>
+            <span v-if="uCheck.loading">Checking…</span>
             <span v-else>{{ uCheck.msg }}</span>
           </div>
 
-          <label class="text-sm">رمز عبور</label>
-          <input type="password" v-model="password" class="border rounded px-3 py-2 w-full" placeholder="حداقل ۶ کاراکتر" />
+          <label class="text-sm text-[#456173]">Password</label>
+          <input type="password" v-model="password" class="input" placeholder="At least 6 characters" />
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border" @click="step = 1">بازگشت</button>
+            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173]" @click="step = 1">Back</button>
             <button
-              class="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50"
               :disabled="!username || uCheck.ok !== true || !password || password.length < 6"
               @click="goStep3"
             >
-              ادامه
+              Next
             </button>
           </div>
 
@@ -69,39 +69,40 @@
         </div>
 
         <!-- Step 3: Names → displayName -->
-        <div v-else class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold">ثبت‌نام - مرحله ۳</div>
+        <div v-else key="step3" class="max-w-sm mx-auto p-4 space-y-3">
+          <div class="text-lg font-semibold text-[#1B3C59]">Step 3 — Profile</div>
 
-          <label class="text-sm">نام</label>
-          <input v-model="firstName" class="border rounded px-3 py-2 w-full" placeholder="الزامی" />
+          <label class="text-sm text-[#456173]">First name</label>
+          <input v-model="firstName" class="input" placeholder="Required" />
 
-          <label class="text-sm">نام‌خانوادگی (اختیاری)</label>
-          <input v-model="lastName" class="border rounded px-3 py-2 w-full" placeholder="اختیاری" />
+          <label class="text-sm text-[#456173]">Last name (optional)</label>
+          <input v-model="lastName" class="input" placeholder="Optional" />
 
           <div class="text-xs text-gray-600">
-            نام نمایشی: <span class="font-medium">{{ displayName || '—' }}</span>
+            Display name: <span class="font-medium">{{ displayName || '—' }}</span>
           </div>
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border" @click="step = 2">بازگشت</button>
+            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173]" @click="step = 2">Back</button>
             <button
-              class="px-3 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50"
               :disabled="!firstName || loading"
               @click="completeRegister"
             >
-              {{ loading ? 'در حال ثبت…' : 'اتمام ثبت‌نام' }}
+              {{ loading ? 'Saving…' : 'Finish' }}
             </button>
           </div>
 
           <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
         </div>
-
+      </transition>
 
       <p v-if="error" class="text-red-600 text-sm mt-4 text-center">{{ error }}</p>
 
       <div class="text-center mt-6">
-        <RouterLink to="/login" class="text-indigo-600 hover:underline">ورود</RouterLink>
+        <RouterLink to="/login" class="text-[#11BFAE] hover:underline">Already have an account? Sign in</RouterLink>
       </div>
+
     </div>
   </div>
 </template>
@@ -138,19 +139,17 @@ async function sendCode() {
   error.value = null;
   if (!phoneE164.value) return;
   try {
-    if (!phoneE164.value) { error.value = 'شماره معتبر نیست.'; return; }
+    if (!phoneE164.value) { error.value = 'Invalid phone number.'; return; }
     sending.value = true;
     await requestSmsCode({ phoneNumber: phoneE164.value as string });
     smsSent.value = true;
   } catch (e: any) {
-    error.value = e?.response?.data || "خطا در ارسال کد";
+    error.value = e?.response?.data || "Failed to send code";
   } finally {
     sending.value = false;
   }
 }
 
-// مثل تلگرام: اگر شماره از قبل اکانت داشته باشد، با کد وارد می‌شود.
-// اگر وجود نداشت/کد نامعتبر بود ⇒ می‌رویم مرحله ۲ برای ساخت حساب جدید.
 async function verifyCode() {
   error.value = null
   if (!phoneE164.value || !smsCode.value || verifying.value) return
@@ -160,21 +159,20 @@ async function verifyCode() {
       phoneNumber: phoneE164.value,
       code: smsCode.value,
     })
-    // حساب موجود بود ⇒ مستقیم وارد شو
+
     storeTokenFromAuthResponse(authResp)
     router.push('/chat')
   } catch (e: any) {
     const status = e?.response?.status
     const detail = e?.response?.data?.Detail || e?.response?.data || ''
-    // اگر حسابی برای این شماره نیست/کد برای «ورود» معتبر نیست ⇒ برو مرحله ۲
+
     if (
       (typeof detail === 'string' && detail.includes('No account')) ||
       status === 400 || status === 404
     ) {
       step.value = 2
-      // خطا نشان نده؛ کاربر وارد مرحله ساخت حساب می‌شود
     } else {
-      error.value = 'خطا در تأیید کد'
+      error.value = 'Code verification failed'
     }
   } finally {
     verifying.value = false
@@ -202,16 +200,16 @@ watch(username, (v) => {
   uCheck.value = { loading: true, ok: null, msg: "" };
   uTimer = window.setTimeout(async () => {
     try {
-      if (v.length < 3) {
-        uCheck.value = { loading: false, ok: null, msg: "حداقل ۳ کاراکتر" };
+      if (v.length < 4) {
+        uCheck.value = { loading: false, ok: null, msg: "Minimum 4 characters" };
         return;
       }
       const { available } = await checkUsername(v);
       uCheck.value = available
-        ? { loading: false, ok: true, msg: "در دسترس" }
-        : { loading: false, ok: false, msg: "قبلاً گرفته شده" };
+        ? { loading: false, ok: true, msg: "Available" }
+        : { loading: false, ok: false, msg: "Already taken" };
     } catch {
-      uCheck.value = { loading: false, ok: null, msg: "خطا در بررسی" };
+      uCheck.value = { loading: false, ok: null, msg: "Check failed" };
     }
   }, 350);
 });
@@ -256,7 +254,7 @@ async function completeRegister() {
 
     router.push("/chat");
   } catch (e: any) {
-    error.value = e?.response?.data || "خطا در ثبت‌نام";
+    error.value = e?.response?.data || "Registration failed";
   } finally {
     loading.value = false;
   }
@@ -264,12 +262,17 @@ async function completeRegister() {
 </script>
 
 
-<style scoped>
+<style>
 @reference "tailwindcss";
 .input {
-  @apply border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500;
+  @apply border rounded-lg px-3 py-2 w-full outline-none bg-white
+         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
 }
-.btn-primary {
-  @apply bg-indigo-600 text-white rounded-lg px-4 py-2 hover:bg-indigo-700 disabled:opacity-60;
-}
+
+/* step switch animation */
+.fade-up-enter-from { opacity: 0; transform: translateY(8px) scale(.98); }
+.fade-up-enter-active { transition: opacity .18s ease, transform .18s ease; }
+.fade-up-leave-active { transition: opacity .12s ease, transform .12s ease; }
+.fade-up-leave-to { opacity: 0; transform: translateY(-6px) scale(.98); }
+
 </style>

@@ -1,118 +1,123 @@
 <template>
-  <div class="max-w-2xl mx-auto p-4 space-y-4">
-    <h1 class="text-xl font-semibold"></h1>
+  <div class="max-w-2xl mx-auto p-4 space-y-4" dir="ltr">
+    <h1 class="text-xl font-bold text-[#1B3C59]">Contacts</h1>
 
+    <!-- Search + sort + count -->
     <div class="flex items-center gap-2">
       <input
         v-model="q"
-        placeholder="جست‌وجوی مخاطب…"
-        class="flex-1 border rounded px-3 py-2"
+        placeholder="Search contacts…"
+        class="input flex-1"
       />
+
       <button
-        class="px-2 py-1 text-sm rounded border hover:bg-gray-50"
+        class="btn-outline flex items-center gap-1"
         :aria-pressed="sortAlpha"
         @click="sortAlpha = !sortAlpha"
-        title="مرتب‌سازی الفبایی"
+        title="Sort A–Z"
+        v-ripple
       >
-        ⬇
+        <span class="text-sm">{{ sortAlpha ? 'A–Z' : 'A↔Z' }}</span>
       </button>
-      <div class="text-xs text-gray-500 whitespace-nowrap">
-        {{ filteredContacts.length }} مخاطب
+
+      <div class="text-xs text-[#456173] whitespace-nowrap">
+        {{ filteredContacts.length }} contacts
       </div>
     </div>
 
-
-
-    <ul class="divide-y">
+    <!-- List -->
+    <transition-group name="list-fade" tag="ul" class="divide-y bg-white rounded-xl ring-1 ring-black/5 overflow-hidden">
       <li
         v-for="c in filteredContacts"
         :key="c.contactId"
-        class="flex items-center justify-between py-3"
+        class="flex items-center justify-between py-3 px-3 hover:bg-[#11BFAE]/5 transition"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 min-w-0">
           <img
             v-if="c.avatarUrl"
             :src="c.avatarUrl"
-            class="w-9 h-9 rounded-full object-cover"
+            class="w-9 h-9 rounded-full object-cover ring-2 ring-[#F2F2F0]"
           />
-          <div v-else class="w-9 h-9 rounded-full bg-gray-300"></div>
+          <div
+            v-else
+            class="w-9 h-9 rounded-full grid place-items-center text-white text-xs font-semibold
+                   bg-gradient-to-br from-[#456173] to-[#1B3C59]"
+          >
+            {{ initials(c.displayName || c.username) }}
+          </div>
 
-          <div class="flex flex-col">
-            <router-link :to="`/u/${c.username}`" class="font-medium hover:underline">
-              @{{ c.username }}
-            </router-link>
-            <span v-if="c.displayName" class="text-sm text-gray-500">{{ c.displayName }}</span>
+          <div class="flex flex-col min-w-0">
+            <span class="font-medium text-[#1B3C59] truncate">@{{ (c.username || '').replace(/^@/, '') }}</span>
+            <span v-if="c.displayName" class="text-sm text-[#456173] truncate">{{ c.displayName }}</span>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
-          <button @click="openChat(c)" class="text-blue-600 hover:underline">چت</button>
-          <button @click="onRemove(c)" class="text-red-600 hover:underline">حذف</button>
+          <button @click="openChat(c)" class="btn-text" v-ripple>Chat</button>
+          <button @click="onRemove(c)" class="btn-danger" v-ripple>Remove</button>
         </div>
       </li>
-    </ul>
+    </transition-group>
 
-    <p v-if="contacts.length === 0" class="text-sm text-gray-500">مخاطبی ثبت نشده.</p>
+    <p v-if="contacts.length === 0" class="text-sm text-[#456173]">No contacts yet.</p>
+
+    <!-- Sticky add button when embedded as modal content -->
+    <div v-if="inModal" class="sticky bottom-0 left-0 right-0 bg-white/90 backdrop-blur border-t p-3">
+      <button class="btn-primary rounded-full shadow" @click="showAdd = true" v-ripple>
+        + Add contact
+      </button>
+    </div>
   </div>
-  <div v-if="props.inModal" class="sticky bottom-0 left-0 right-0 bg-white border-t p-3">
-    <button
-      class="bg-blue-600 text-white px-4 py-2 rounded-full shadow hover:bg-blue-700"
-      @click="showAdd = true"
-    >
-      + افزودن مخاطب
-    </button>
-  </div>
-  
-  <div v-if="showAdd" class="fixed inset-0 z-30">
-    <div class="absolute inset-0 bg-black/30" @click="showAdd=false"></div>
-    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
-                bg-white rounded-2xl shadow-xl w-[420px] max-w-[95vw] p-4">
+
+  <!-- Add contact modal -->
+  <ModalSheet :open="showAdd" @close="showAdd=false">
+    <div class="p-5 w-[420px] max-w-full" dir="ltr">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">افزودن مخاطب</div>
-        <button class="text-gray-500 hover:text-gray-700" @click="showAdd=false">✕</button>
+        <h2 class="text-lg font-bold text-[#1B3C59]">Add contact</h2>
+        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple>✕</button>
       </div>
 
       <form class="space-y-3" @submit.prevent="onAdd">
         <input
           v-model="usernameToAdd"
           placeholder="@username"
-          class="w-full border rounded px-3 py-2"
+          class="input w-full"
         />
         <div class="flex items-center justify-end gap-2">
-          <button type="button" class="px-3 py-2 rounded border" @click="showAdd=false">انصراف</button>
-          <button
-            class="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-            :disabled="!usernameToAdd || adding"
-          >
-            {{ adding ? 'در حال افزودن…' : 'افزودن' }}
+          <button type="button" class="btn-outline" @click="showAdd=false" v-ripple>Cancel</button>
+          <button class="btn-primary" :disabled="!usernameToAdd || adding" v-ripple>
+            <span v-if="!adding">Add</span>
+            <span v-else>Adding…</span>
           </button>
         </div>
       </form>
     </div>
-  </div>
-
+  </ModalSheet>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted,computed } from 'vue'
-import { getMyContacts, addContact, removeContact } from '../services/api'
-import { getUserByUsername } from '../services/api'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed } from 'vue'
+import { getMyContacts, addContact, removeContact, getUserByUsername } from '../services/api'
+import ModalSheet from '../components/ModalSheet.vue'
 
-
-
-const router = useRouter()
-const contacts = ref<Array<{ contactId: string; username: string; displayName?: string; avatarUrl?: string }>>([])
-const usernameToAdd = ref('')
 const props = defineProps<{ inModal?: boolean }>()
-
-const q = ref('')                 // جست‌وجو
-const showAdd = ref(false)        // باز/بستن مودال افزودن
-const adding = ref(false) 
-const sortAlpha = ref(false)      // مرتب‌سازی الفبایی
 const emit = defineEmits<{ (e: 'open-chat', p: { id: string; username: string }): void }>()
 
+// state
+const contacts = ref<Array<{ contactId: string; username: string; displayName?: string; avatarUrl?: string }>>([])
+const usernameToAdd = ref('')
+const q = ref('')
+const showAdd = ref(false)
+const adding = ref(false)
+const sortAlpha = ref(false)
 
+// load
+onMounted(load)
+async function load() {
+  contacts.value = await getMyContacts()
+}
+
+// computed
 const filteredContacts = computed(() => {
   const s = q.value.trim().toLowerCase()
   let arr = !s
@@ -126,43 +131,31 @@ const filteredContacts = computed(() => {
     arr = [...arr].sort((a, b) =>
       (a.displayName || a.username || '').localeCompare(
         b.displayName || b.username || '',
-        'fa'
+        'en'
       )
     )
   }
   return arr
 })
 
-
-
-
-
-onMounted(load)
-
-async function load() {
-  contacts.value = await getMyContacts()
-}
-
+// actions
 async function onAdd() {
   const u = (usernameToAdd.value || '').trim().replace(/^@/, '')
   if (!u) return
   adding.value = true
   try {
     const user = await getUserByUsername(u)
-    if (!user?.id) throw new Error('کاربر یافت نشد')
+    if (!user?.id) throw new Error('User not found')
     await addContact(user.id)
     usernameToAdd.value = ''
     showAdd.value = false
     await load()
   } catch (e) {
     console.error('add contact failed', e)
-    // اگر خواستی پیام کاربرپسند بده:
-    // alert('کاربر یافت نشد یا خطایی رخ داد')
   } finally {
     adding.value = false
   }
 }
-
 
 async function onRemove(c: { contactId: string }) {
   try {
@@ -180,4 +173,69 @@ function openChat(c: any) {
   emit('open-chat', { id, username })
 }
 
+// helpers
+function initials(name?: string) {
+  if (!name) return 'U'
+  const parts = name.trim().split(/\s+/).slice(0,2)
+  return parts.map(p => p[0]?.toUpperCase() ?? '').join('')
+}
+
+// ripple directive (local)
+const vRipple = {
+  mounted(el: HTMLElement) {
+    el.style.position ||= 'relative'
+    el.style.overflow ||= 'hidden'
+    el.addEventListener('click', (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect()
+      const size = Math.max(rect.width, rect.height) * 1.1
+      const span = document.createElement('span')
+      span.className = 'ripple-ink'
+      span.style.width = span.style.height = `${size}px`
+      span.style.left = `${e.clientX - rect.left - size/2}px`
+      span.style.top  = `${e.clientY - rect.top  - size/2}px`
+      el.appendChild(span)
+      span.addEventListener('animationend', () => span.remove())
+    })
+  }
+}
 </script>
+
+<style scoped>
+@reference "tailwindcss";
+
+/* palette-based controls (same across app) */
+.input {
+  @apply border rounded-lg px-3 py-2 outline-none bg-white
+         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+}
+.btn-primary {
+  @apply bg-[#11BFAE] text-white rounded-lg px-4 py-2 hover:bg-[#10B2A3] transition disabled:opacity-60;
+}
+.btn-outline {
+  @apply border border-[#456173]/40 text-[#1B3C59] rounded-lg px-3 py-2 hover:bg-[#F2F2F0] transition;
+}
+.btn-text {
+  @apply text-[#11BFAE] hover:underline px-2 py-1 rounded;
+}
+.btn-danger {
+  @apply text-red-600 px-2 py-1 rounded hover:bg-red-50;
+}
+
+/* list enter/leave */
+.list-fade-enter-from { opacity: 0; transform: translateY(4px); }
+.list-fade-leave-to   { opacity: 0; transform: translateY(-4px); }
+.list-fade-enter-active,
+.list-fade-leave-active { transition: opacity .16s ease, transform .16s ease; }
+
+/* ripple (global so dynamic span is styled) */
+:global(.ripple-ink) {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: .15;
+  transform: scale(0);
+  pointer-events: none;
+  animation: ripple .5s ease-out forwards;
+}
+@keyframes ripple { to { transform: scale(4); opacity: 0; } }
+</style>
