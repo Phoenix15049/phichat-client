@@ -57,7 +57,7 @@
             </div>
             <div class="text-xs text-gray-500 flex items-center gap-1">
               <span class="truncate max-w-[12rem]">
-                <template v-if="conv.lastFileUrl">[مدیا]</template>
+                <template v-if="conv.lastFileUrl">[Media]</template>
                 <template v-else>{{ conv.lastPreview || '' }}</template>
               </span>
               <span
@@ -79,7 +79,7 @@
       class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
       @click="!selectionMode && selectedUser && openPeerProfile()"
       role="button"
-      aria-label="نمایش پروفایل مخاطب"
+      aria-label="View contact profile"
     >
       <transition name="slide-down" mode="out-in">
         <div v-if="selectionMode" key="sel" class="flex items-center gap-3">
@@ -180,7 +180,6 @@
             
           >
 
-            <!-- بلوک ریپلای (قابل کلیک برای پرش) -->
             <div
               v-if="msg.replyToMessageId"
               class="mb-1 border-l-2 pl-2 text-xs opacity-80 cursor-pointer hover:underline"
@@ -191,12 +190,10 @@
               </div>
             </div>
 
-            <!-- پیام حذف‌شده -->
             <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">
               Message deleted
             </div>
 
-            <!-- برچسب فروارد -->
             <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-l-2 pl-2">
               Forwarded from
               <button
@@ -230,9 +227,9 @@
               <img
                 :src="msg.fileUrl"
                 class="rounded-xl cursor-zoom-in
-                      max-h-[70vh]           <!-- قد: حداکثر 70% ارتفاع صفحه -->
-                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]  <!-- عرض: محدود به 60% یا 640px -->
-                      sm:min-w-[180px] min-w-[140px]                <!-- مینیمم عرض تا ریز نشه -->
+                      max-h-[70vh]           
+                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]  
+                      sm:min-w-[180px] min-w-[140px]                
                       h-auto w-auto object-contain"
                 @click="openImage(msg)"
               />
@@ -278,20 +275,18 @@
                 </div>
               </div>
 
-              <!-- caption زیر فایل -->
+              <!-- caption  -->
               <div v-if="msg.fileUrl && msg.plainText" class="mt-1 whitespace-pre-wrap break-words">
                 {{ msg.plainText }}
               </div>
             </div>
 
-
-            <!-- زمان + وضعیت + برچسب ویرایش‌شده -->
             <div
               class="mt-1 flex items-center gap-1 text-[11px]"
               :class="timeColorClass(msg)">
             
               <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
-              <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(ویرایش‌شده)</span>
+              <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(edited)</span>
               <span v-if="msg.senderId === myId">
                 <template v-if="msg.status === 'read'">✓✓</template>
                 <template v-else-if="msg.status === 'delivered'">✓</template>
@@ -299,7 +294,7 @@
               </span>
             </div>
             
-                        <!-- Reactions -->
+            <!-- Reactions -->
             <div v-if="(msg.reactions && msg.reactions.length) || selectedUser" class="mt-1 flex flex-wrap gap-1">
               <button
                 v-for="r in (msg.reactions || [])"
@@ -317,11 +312,11 @@
               <button
                 class="text-[11px] px-2 py-[2px] rounded-full border bg-white/80 border-gray-200"
                 @click="openReactionPicker(msg)"
-                title="واکنش"
+                title="Reaction"
               >➕</button>
             </div>
 
-            <!-- Picker ساده‌ی inline -->
+            <!-- Picker inline -->
             <div v-if="reactionPickerFor && reactionPickerFor === (msg.id || msg.clientId)" class="mt-1 flex gap-1">
               <button v-for="e in quickEmojis" :key="e" class="px-2 py-[2px] text-[13px] rounded hover:bg-gray-100"
                       @click="applyReaction(msg, e)">{{ e }}</button>
@@ -334,7 +329,7 @@
                 class="absolute top-1"
                 :class="msg.senderId === myId ? 'left-1' : 'right-1'"
                 @click.stop="toggleSelect(msg)"
-                :title="isSelected(msg) ? 'برداشتن از انتخاب' : 'انتخاب پیام'"
+                :title="isSelected(msg) ? 'Remove from selection' : 'Select message'"
               >
                 <span
                   :class="[
@@ -354,7 +349,7 @@
         </transition-group>
       </div>
 
-      <!-- بنر ریپلای -->
+      <!-- Reply Banner -->
       <div v-if="replyingTo" class="px-4 pt-2">
         <div class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded">
           <div class="truncate">
@@ -364,7 +359,7 @@
         </div>
       </div>
 
-      <!-- بنر ویرایش -->
+      <!-- Edit Banner -->
       <div v-if="editingMessage" class="px-4 pt-2">
         <div class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded">
           <div class="truncate">Editing message</div>
@@ -372,7 +367,7 @@
         </div>
       </div>
 
-      <!-- فرم ارسال -->
+      <!-- Submission form -->
       <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex items-center gap-2 border border-gray-100 relative ">
         
         <!-- Attach (paperclip) -->
@@ -383,7 +378,7 @@
             📎
           </button>
 
-          <!-- منو دقیقا چسبیده به سنجاق -->
+          <!-- Pin menu -->
           <transition name="clip-pop">
             <div v-if="clipHover || menuHover"
                 class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
@@ -397,11 +392,8 @@
           </transition>
         </div>
 
-
-        <!-- input مخفی انتخاب فایل -->
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
         <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
-
         
         <input
           v-model="text"
@@ -450,40 +442,51 @@
 
 
         <!-- File Send Modal -->
-        <div v-if="showFileModal" class="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
-          <div class="w-[420px] max-w-[90%] rounded-xl bg-white shadow p-4">
-            <div class="text-lg font-semibold mb-2">ارسال به‌عنوان فایل</div>
+      <!-- File Send Modal -->
+      <ModalSheet :open="showFileModal" @close="cancelFileSend">
+        <div class="p-5 w-[480px] max-w-full" dir="ltr">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-bold text-[#1B3C59]">Send as files</h3>
+            <button class="btn-ghost" @click="cancelFileSend" v-ripple>✕</button>
+          </div>
 
-            <!-- لیست فایل‌ها -->
-            <div class="space-y-2 max-h-64 overflow-y-auto">
-              <div v-for="(f, i) in pendingFiles" :key="i" class="flex items-center gap-3 p-3 rounded bg-gray-100">
-                <div class="w-10 h-10 rounded bg-blue-500 flex items-center justify-center text-white">📄</div>
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium truncate">{{ f.name }}</div>
-                  <div class="text-xs text-gray-500">{{ humanFileSize(f.size) }}</div>
-                </div>
-                <button class="text-sm text-red-600 hover:underline" @click="removePendingFile(i)">حذف</button>
+          <!-- files list -->
+          <div class="space-y-2 max-h-64 overflow-y-auto">
+            <div
+              v-for="(f, i) in pendingFiles"
+              :key="i"
+              class="flex items-center gap-3 p-3 rounded-lg bg-white ring-1 ring-[#456173]/15 hover:ring-[#11BFAE]/30 transition"
+            >
+              <div class="w-10 h-10 rounded bg-[#1B3C59] grid place-items-center text-white">📄</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-[#1B3C59] truncate">{{ f.name }}</div>
+                <div class="text-xs text-[#456173]">{{ humanFileSize(f.size) }}</div>
               </div>
-            </div>
-
-            <!-- کپشن یکسان برای همه (اختیاری) -->
-            <label class="block text-sm text-gray-600 mt-3 mb-1">کپشن (اختیاری، برای همه فایل‌ها)</label>
-            <textarea v-model="pendingCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
-
-            <div class="mt-4 flex items-center justify-between">
-              <button class="text-gray-600 hover:text-gray-800" @click="cancelFileSend">Cancel</button>
-              <div class="flex items-center gap-3">
-                <button class="text-gray-600 hover:text-gray-800" @click="addAnotherFile">افزودن</button>
-                <button class="bg-blue-600 text-white px-4 py-2 rounded"
-                        :disabled="sendingFile || pendingFiles.length===0"
-                        @click="confirmSendFile">
-                  {{ sendingFile ? 'در حال ارسال…' : `ارسال (${pendingFiles.length})` }}
-                </button>
-              </div>
+              <button class="btn-danger" @click="removePendingFile(i)" v-ripple>Remove</button>
             </div>
           </div>
 
+          <!-- caption -->
+          <label class="block text-sm text-[#456173] mt-3 mb-1">Caption (optional, applies to all)</label>
+          <textarea v-model="pendingCaption" rows="3" class="input w-full min-h-[84px]" placeholder="Write a caption…"></textarea>
+
+          <!-- actions -->
+          <div class="mt-4 flex items-center justify-between">
+            <button class="btn-ghost" @click="cancelFileSend" v-ripple>Cancel</button>
+            <div class="flex items-center gap-2">
+              <button class="btn-outline" @click="addAnotherFile" v-ripple>Add more</button>
+              <button class="btn-primary"
+                      :disabled="sendingFile || pendingFiles.length===0"
+                      @click="confirmSendFile"
+                      v-ripple>
+                {{ sendingFile ? 'Sending…' : `Send (${pendingFiles.length})` }}
+              </button>
+            </div>
+          </div>
         </div>
+      </ModalSheet>
+
+
 
 
 
@@ -563,7 +566,7 @@
   <ModalSheet :open="showSettings" @close="showSettings=false">
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">تنظیمات</div>
+        <div class="text-lg font-semibold">Settings</div>
         <button class="text-gray-500 hover:text-gray-700" @click="showSettings=false">✕</button>
       </div>
       <SettingsView/>
@@ -574,7 +577,7 @@
   <ModalSheet :open="showContacts" @close="showContacts=false">
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">مخاطبین</div>
+        <div class="text-lg font-semibold">Contacts</div>
         <button class="text-gray-500 hover:text-gray-700" @click="showContacts=false">✕</button>
       </div>
       <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
@@ -583,48 +586,59 @@
 
 
   <!-- Media Send Modal -->
-    <div v-if="showMediaModal" class="fixed inset-0 z-[999] bg-black/40 backdrop-blur grid place-items-center" @click.self="cancelMediaSend">
-      <div class="w-[520px] max-w-[95%] rounded-xl bg-white shadow p-4">
-        <div class="text-lg font-semibold mb-2">Media</div>
+  <ModalSheet :open="showMediaModal" @close="cancelMediaSend">
+    <div class="p-5 w-[560px] max-w-full" dir="ltr">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-bold text-[#1B3C59]">Media</h3>
+        <button class="btn-ghost" @click="cancelMediaSend" v-ripple>✕</button>
+      </div>
 
-        <!-- پیش‌نمایش -->
-        <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-          <div v-for="(f,i) in pendingMedia" :key="i" class="relative">
-            <img v-if="isImageFile(f)" :src="objUrl(f)" class="w-full h-28 object-cover rounded"/>
-            <video v-else :src="objUrl(f)" class="w-full h-28 object-cover rounded"></video>
-            <button class="absolute top-1 right-1 bg-white/80 rounded px-2 text-sm" @click="removePendingMedia(i)">حذف</button>
-          </div>
-        </div>
-
-        <!-- فشرده‌سازی فقط برای تصویر -->
-        <div class="mt-3 flex items-center gap-2" v-if="allImagesSelected">
-          <input id="cmp" type="checkbox" v-model="compressImages"/>
-          <label for="cmp" class="text-sm select-none">فشرده‌سازی تصویر</label>
-        </div>
-
-        <!-- Group items -->
-        <div class="mt-2 flex items-center gap-2">
-          <input id="grpMedia" type="checkbox" v-model="mediaGroupItems"/>
-          <label for="grpMedia" class="text-sm select-none">Group items</label>
-        </div>
-
-        <!-- کپشن -->
-        <label class="block text-sm text-gray-600 mt-2 mb-1">Caption</label>
-        <textarea v-model="mediaCaption" rows="3" class="w-full border rounded px-3 py-2"></textarea>
-
-        <div class="mt-4 flex items-center justify-between">
-          <button class="text-gray-600 hover:text-gray-800" @click="cancelMediaSend">Cancel</button>
-          <div class="flex items-center gap-3">
-            <button class="text-gray-600 hover:text-gray-800" @click="addAnotherMedia">Add</button>
-            <button class="bg-blue-600 text-white px-4 py-2 rounded"
-                    :disabled="sendingMedia || pendingMedia.length===0"
-                    @click="confirmSendMedia">
-              {{ sendingMedia ? 'در حال ارسال…' : `ارسال (${pendingMedia.length})` }}
-            </button>
-          </div>
+      <!-- preview -->
+      <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+        <div v-for="(f,i) in pendingMedia" :key="i" class="relative group">
+          <img v-if="isImageFile(f)" :src="objUrl(f)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"/>
+          <video v-else :src="objUrl(f)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"></video>
+          <button
+            class="absolute top-1 right-1 btn-ghost !bg-white/90 hover:!bg-white shadow"
+            @click="removePendingMedia(i)"
+            v-ripple
+          >Remove</button>
         </div>
       </div>
-  </div>
+
+      <!-- image compression (images only) -->
+      <div class="mt-3 flex items-center gap-2" v-if="allImagesSelected">
+        <input id="cmp" type="checkbox" v-model="compressImages"/>
+        <label for="cmp" class="text-sm select-none text-[#456173]">Compress images</label>
+      </div>
+
+      <!-- group items -->
+      <div class="mt-2 flex items-center gap-2">
+        <input id="grpMedia" type="checkbox" v-model="mediaGroupItems"/>
+        <label for="grpMedia" class="text-sm select-none text-[#456173]">Group items</label>
+      </div>
+
+      <!-- caption -->
+      <label class="block text-sm text-[#456173] mt-2 mb-1">Caption</label>
+      <textarea v-model="mediaCaption" rows="3" class="input w-full min-h-[84px]" placeholder="Write a caption…"></textarea>
+
+      <!-- actions -->
+      <div class="mt-4 flex items-center justify-between">
+        <button class="btn-ghost" @click="cancelMediaSend" v-ripple>Cancel</button>
+        <div class="flex items-center gap-2">
+          <button class="btn-outline" @click="addAnotherMedia" v-ripple>Add more</button>
+          <button class="btn-primary"
+                  :disabled="sendingMedia || pendingMedia.length===0"
+                  @click="confirmSendMedia"
+                  v-ripple>
+            {{ sendingMedia ? 'Sending…' : `Send (${pendingMedia.length})` }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </ModalSheet>
+
+
 
   
 
@@ -658,7 +672,7 @@
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
-
+import { disconnectFromChatHub } from '../services/signalr'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
@@ -715,13 +729,14 @@ import {
   saveAESKey,
   loadAESKey
 } from '../utils/aesKeyStore'
-import { getToken, parseJwt } from '../utils/jwt'
+//import { getToken, parseJwt } from '../utils/jwt'
 import { useRoute ,useRouter} from 'vue-router'
 import {toDateSafe, formatAbsoluteEn,formatRelativeEn} from "../utils/time";
 import MediaImageViewer from '../components/MediaImageViewer.vue'
 import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
 import {getMyContacts, addContact, removeContact,getUsersList } from '../services/api'
 
+import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 type UiReaction = { emoji: string; count: number; mine?: boolean }
 
@@ -977,6 +992,41 @@ const vRipple = {
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
+
+
+async function ensurePeerCached(uid: string) {
+  if (displayById[uid] && avatarById[uid]) return
+  try {
+    const u = await getUserById(uid)
+    if (u?.displayName) displayById[uid] = u.displayName
+    if (u?.avatarUrl)   avatarById[uid]  = u.avatarUrl
+
+    const idx = conversations.value.findIndex(c => c.peerId === uid)
+    if (idx >= 0) {
+      conversations.value[idx].displayName = u?.displayName ?? conversations.value[idx].displayName
+      conversations.value[idx].avatarUrl   = u?.avatarUrl   ?? conversations.value[idx].avatarUrl
+    }
+  } catch {}
+}
+
+function resetState() {
+  conversations.value = []
+  messages.value = []
+  selectedUser.value = null
+  // اگر map/object داری:
+  for (const k in displayById) delete displayById[k]
+  for (const k in avatarById)  delete avatarById[k]
+  for (const k in lastSeenMap) delete lastSeenMap[k]
+  onlineIds.clear?.()
+  typing.clear?.()
+
+  text.value = ''
+  replyingTo.value = null
+  showFileModal.value = false
+  showMediaModal.value = false
+  pendingFiles.value = []
+  pendingMedia.value = []
+}
 
 function scrollToEndSmooth() {
   const el = scrollBox.value
@@ -2378,12 +2428,24 @@ onBeforeUnmount(() => {
   stopAutoScroll()
   window.removeEventListener('mouseup', endDragSelect)
   window.removeEventListener('mousemove', onDragMouseMove)
+  disconnectFromChatHub().catch(()=>{})
+
 })
 
 
 onMounted(async () => {
   // myId from JWT
+  resetState()
+
   const token = getToken()
+  if (!token || isJwtExpired(token)) {
+    router.replace('/login')
+    return
+  }
+
+  try { await disconnectFromChatHub() } catch {}
+
+
   if (token) {
     const payload = parseJwt(token)
     myId.value = payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? ''
@@ -2502,7 +2564,14 @@ onMounted(async () => {
 function wireSignalR() {
   onMessageReceived(async (message: any) => {
 
+    const senderId = String(message.senderId ?? message.SenderId)
+    await ensurePeerCached(senderId)
 
+    const ci = conversations.value.findIndex(c => c.peerId === senderId)
+    if (ci >= 0) {
+      if (displayById[senderId]) conversations.value[ci].displayName = displayById[senderId]!
+      if (avatarById[senderId])   conversations.value[ci].avatarUrl   = avatarById[senderId]!
+    }
     
     // unify fields
     const isFromOtherPeer = selectedUser.value && message.senderId !== selectedUser.value.id
@@ -2526,10 +2595,28 @@ function wireSignalR() {
           const [moved] = conversations.value.splice(convIdx, 1)
           conversations.value.unshift(moved)
         } else {
+          let uname = (message.senderUsername || '').replace(/^@/, '')
+          let disp  = displayById[sid] || null
+          let avatar = avatarById[sid] || null
+
+          if (!uname || !disp || !avatar) {
+            try {
+              const u = await getUserById(sid)
+              if (u) {
+                uname  = (u.username || uname || '').replace(/^@/, '')
+                disp   = (u.displayName || disp || null)
+                avatar = (u.avatarUrl   || avatar || null)
+                if (u.displayName) displayById[sid] = u.displayName
+                if (u.avatarUrl)   avatarById[sid]  = u.avatarUrl
+              }
+            } catch { /* ignore */ }
+          }
 
           conversations.value.unshift({
             peerId: sid,
-            username: message.senderUsername || ('user_' + sid.substring(0,6)),
+            username: uname,               
+            displayName: disp || null,     
+            avatarUrl: avatar || null,
             unreadCount: 1,
             lastSentAt: msgTime,
             lastFileUrl: message.fileUrl || null,
@@ -2905,6 +2992,8 @@ async function send() {
     conversations.value.unshift({
       peerId: uid,
       username: selectedUser.value.username,
+      displayName: displayById[uid] ?? null,   // ← اضافه شد
+      avatarUrl: avatarById[uid] ?? null,
       unreadCount: 0,
       lastSentAt: nowIso,
       lastFileUrl: mine.fileUrl,
@@ -3040,7 +3129,54 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 .slide-down-enter-active { transition: transform .1s ease, opacity .1s ease; }
 .slide-down-leave-active { transition: transform .08s ease, opacity .08s ease; }
 .slide-down-leave-to { transform: translateY(-4px); opacity: 0; }
+@reference "tailwindcss";
 
+/* unified inputs & buttons using your palette */
+.input {
+  @apply border rounded-lg px-3 py-2 outline-none bg-white
+         ring-1 ring-[#456173]/15
+         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+}
+.btn-primary {
+  @apply inline-flex items-center justify-center
+         bg-[#11BFAE] text-white rounded-lg px-4 py-2
+         ring-1 ring-[#11BFAE]/20
+         hover:bg-[#10B2A3] hover:ring-[#11BFAE]/30
+         transition disabled:opacity-60;
+}
+.btn-outline {
+  @apply inline-flex items-center justify-center
+         bg-white text-[#1B3C59] rounded-lg px-3 py-2
+         ring-1 ring-[#456173]/25
+         hover:bg-[#F2F2F0] hover:ring-[#456173]/40
+         transition disabled:opacity-60;
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center
+         text-[#456173] rounded-lg px-2 py-1
+         ring-1 ring-transparent
+         hover:bg-[#F2F2F0] hover:text-[#1B3C59]
+         transition;
+}
+.btn-danger {
+  @apply inline-flex items-center justify-center
+         text-red-600 rounded-lg px-2 py-1
+         ring-1 ring-red-500/10
+         hover:bg-red-50 hover:ring-red-500/30
+         transition;
+}
+
+
+:global(.ripple-ink){
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity:.15;
+  transform: scale(0);
+  pointer-events:none;
+  animation: ripple .5s ease-out forwards;
+}
+@keyframes ripple { to { transform: scale(4); opacity:0; } }
 
 </style>
 

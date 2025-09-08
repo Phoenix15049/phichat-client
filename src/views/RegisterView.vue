@@ -161,7 +161,10 @@ async function verifyCode() {
     })
 
     storeTokenFromAuthResponse(authResp)
-    router.push('/chat')
+
+    router.push('/chat').then(() => {
+      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
+    })
   } catch (e: any) {
     const status = e?.response?.status
     const detail = e?.response?.data?.Detail || e?.response?.data || ''
@@ -248,11 +251,11 @@ async function completeRegister() {
 
     storeTokenFromAuthResponse(auth);
 
-    if (displayName.value) {
-      await updateMyProfile({ displayName: displayName.value })
-    }
+    if (displayName.value) await updateMyProfile({ displayName: displayName.value })
 
-    router.push("/chat");
+    router.push('/chat').then(() => {
+      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
+    })
   } catch (e: any) {
     error.value = e?.response?.data || "Registration failed";
   } finally {

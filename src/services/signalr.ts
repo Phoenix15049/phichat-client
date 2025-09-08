@@ -201,3 +201,9 @@ export async function fetchOnlineUsers(): Promise<string[]> {
   if (!connection) throw new Error('SignalR not connected')
   return await connection.invoke<string[]>('GetOnlineUsers')
 }
+
+export async function disconnectFromChatHub() {
+  try { await connection?.stop(); } catch {}
+  connection = null;
+  started = false;
+}

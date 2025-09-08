@@ -1,6 +1,6 @@
 <template>
   <div class="max-w-xl mx-auto p-6 space-y-5 bg-[#F2F2F0] min-h-[70vh]" dir="ltr">
-    <h1 class="text-xl font-bold text-[#1B3C59]">Profile settings</h1>
+    <h1 class="text-xl font-bold text-[#1B3C59]"></h1>
 
     <!-- Display name -->
     <div class="space-y-2">
@@ -59,20 +59,56 @@
         <span v-if="saved" class="text-green-600 text-sm">Saved ✔</span>
       </transition>
     </div>
+
+    <!-- Divider -->
+    <hr class="my-6 border-[#456173]/20">
+
+    <!-- Logout -->
+    <div class="flex items-center justify-between">
+      <div class="text-[#1B3C59] font-medium">Logout</div>
+      <button class="btn-outline" @click="openLogout = true" v-ripple>Log out…</button>
+    </div>
+
+    <!-- Confirm dialog -->
+    <Teleport to="body">
+      <div v-if="openLogout" class="fixed inset-0 z-[90]">
+        <div class="absolute inset-0 bg-black/40" @click="openLogout=false"></div>
+
+        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+                    w-[420px] max-w-[95vw] rounded-2xl bg-white shadow-xl p-4">
+          <div class="text-lg font-semibold mb-2">Log out</div>
+          <p class="text-sm text-gray-600 mb-4">Are you sure you want to log out?</p>
+
+          <div class="flex items-center justify-end gap-2">
+            <button class="px-3 py-1.5 rounded border hover:bg-gray-50" @click="openLogout=false" v-ripple>Cancel</button>
+            <button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700" @click="doLogout" v-ripple>Log out</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+
+
+
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getMeProfile, updateMyProfile, uploadAvatar } from '../services/api'
-
+import { clearAuthLocal } from '../services/auth'
+import { useRouter } from 'vue-router'
+import ModalSheet from '../components/ModalSheet.vue'
 const displayName = ref<string>('')
 const avatarUrl   = ref<string>('')
 const bio         = ref<string>('')
 
+const router = useRouter()
+
 const saving = ref(false)
 const saved  = ref(false)
-
+const openLogout = ref(false)
 const avatarFile    = ref<File | null>(null)
 const avatarPreview = ref<string | null>(null)
 const hadServerAvatar = ref(false)
@@ -158,10 +194,24 @@ async function save() {
     saving.value = false
   }
 }
+
+function doLogout() {
+  clearAuthLocal()
+  openLogout.value = false
+  router.replace('/login')
+}
 </script>
 
 <style scoped>
 @reference "tailwindcss";
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 50; 
+}
+
 
 /* unified inputs & buttons using your palette */
 .input {

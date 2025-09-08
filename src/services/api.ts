@@ -1,6 +1,7 @@
 // src/services/api.ts
 import axios from 'axios'
-import { getToken } from '../utils/jwt'
+
+import { getToken, clearAuthLocal, setToken, ACCESS_TOKEN_KEY } from './auth'
 
 export const API = axios.create({
   baseURL: 'https://localhost:7146/api'
@@ -141,10 +142,13 @@ export async function loginWithSms(payload: LoginWithSmsRequest) {
 
 // (Optional) small helper if you want one place to store token
 export function storeTokenFromAuthResponse(data: any) {
-  const token = extractToken(data);
-  if (!token) throw new Error("Token not found in response.");
-  localStorage.setItem("token", token);
+  const token = data?.token ?? data?.Token ?? ''
+  if (!token) return
+  clearAuthLocal()
+  setToken(token)
+  API.defaults.headers.common['Authorization'] = `Bearer ${token}`
 }
+
 
 export async function getConversationPaged(userId: string, beforeId?: string, pageSize = 50) {
   const params: any = { pageSize };
@@ -218,3 +222,4 @@ export async function sendMessageWithFileFD(fd: FormData) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+

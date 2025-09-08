@@ -1,6 +1,6 @@
 <template>
   <div class="max-w-2xl mx-auto p-4 space-y-4" dir="ltr">
-    <h1 class="text-xl font-bold text-[#1B3C59]">Contacts</h1>
+    <h1 class="text-xl font-bold text-[#1B3C59]"></h1>
 
     <!-- Search + sort + count -->
     <div class="flex items-center gap-2">

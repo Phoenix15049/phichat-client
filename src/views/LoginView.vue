@@ -93,11 +93,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from "vue";
+import { ref, onBeforeUnmount,onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { API, loginWithSms, requestSmsCode, storeTokenFromAuthResponse } from "../services/api";
 import PhoneInput from "../components/PhoneInput.vue";
-
+import { getToken, isJwtExpired } from '../services/auth'
 // ui state
 const mode = ref<"password" | "sms">("password");
 const loading = ref(false);
@@ -132,6 +132,14 @@ onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer);
 });
 
+
+onMounted(() => {
+  const t = getToken()
+  if (t && !isJwtExpired(t)) {
+    router.replace('/chat')
+  }
+})
+
 // Ripple directive (local)
 const vRipple = {
   mounted(el: HTMLElement) {
@@ -160,7 +168,9 @@ async function handlePasswordLogin() {
       password: password.value
     });
     storeTokenFromAuthResponse(data);
-    router.push("/chat");
+    router.push('/chat').then(() => {
+      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
+    })
   } catch (e: any) {
     error.value = e?.response?.data ?? e?.message ?? "Login failed";
   } finally {
@@ -198,7 +208,9 @@ async function handleSmsLogin() {
       code: smsCode.value
     });
     storeTokenFromAuthResponse(data);
-    router.push("/chat");
+    router.push('/chat').then(() => {
+      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
+    })
   } catch (e: any) {
     error.value = e?.response?.data ?? e?.message ?? "SMS login failed";
   } finally {
