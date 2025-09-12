@@ -158,7 +158,7 @@
         <transition-group name="bubble" tag="div" class="space-y-2">
           <div
             v-for="(msg, index) in messages"
-            :key="msg.id || msg.clientId || index"
+            :key="msg.clientId || msg.id || index"
             :class="['relative', msg.senderId === myId ? 'text-right' : 'text-left']"
             @click.stop="onRowClick($event, msg)"
             @contextmenu.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
@@ -173,12 +173,15 @@
 
           <div
             :class="bubbleClasses(msg)"
-            :title="tooltipForMessage(msg)"
-            @dblclick="!selectionMode ? startReplyFrom(msg) : null"
+            
+            @dblclick="onBubbleDblClick($event, msg)"
             @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
             :ref="bindMsgEl((msg.id || msg.clientId)!)"
-            
+
+            @mouseenter="onBubbleHoverStart(msg)"
+            @mouseleave="onBubbleHoverEnd"
           >
+
 
             <div
               v-if="msg.replyToMessageId"
@@ -283,7 +286,9 @@
 
             <div
               class="mt-1 flex items-center gap-1 text-[11px]"
-              :class="timeColorClass(msg)">
+              :class="timeColorClass(msg)"
+              :title="tooltipForMessage(msg)">
+              
             
               <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
               <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(edited)</span>
@@ -295,26 +300,48 @@
             </div>
             
             <!-- Reactions -->
-            <div v-if="(msg.reactions && msg.reactions.length) || selectedUser" class="mt-1 flex flex-wrap gap-1">
-              <button
-                v-for="r in (msg.reactions || [])"
-                :key="r.emoji"
-                class="text-[11px] px-2 py-[2px] rounded-full border flex items-center gap-1"
-                :class="r.mine ? (msg.senderId === myId ? 'bg-white/20 border-white/40' : 'bg-blue-50 border-blue-200') : 'bg-white/80 border-gray-200'"
-                @click="toggleReaction(msg, r.emoji)"
-                :title="r.count.toString()"
+            <!-- Inline reaction bar on hover -->
+            <transition name="fade-scale">
+              <div
+                v-if="hoverReactFor === (msg.id || msg.clientId) && !selectionMode && !contextMenu.visible"
+                class="absolute z-20 pointer-events-auto select-none"
+                :class="msg.senderId === myId
+                        ? 'bottom-0 left-0 -translate-x-full -translate-y-1/6 -ml-1'
+                        : 'bottom-0 right-0 translate-x-full -translate-y-1/6 -mr-1'"
+                @mouseenter="keepHoverBar"
+                @mouseleave="hideHoverBarSoon"
               >
-                <span>{{ r.emoji }}</span>
-                <span>{{ r.count }}</span>
-              </button>
+                <div class="reaction-pill">
+                  <button v-for="e in quickEmojis"
+                          :key="e"
+                          class="reaction-btn"
+                          @click.stop="applyReaction(msg, e)">
+                    {{ e }}
+                  </button>
+                </div>
+              </div>
+            </transition>
 
-              <!-- Add (+) -->
+
+
+
+            <!-- Reactions chips under the bubble -->
+            <div v-if="msg.reactions && msg.reactions.length"
+                class="mt-1 flex flex-wrap gap-1"
+                :class="msg.senderId === myId ? 'justify-end' : 'justify-start'">
               <button
-                class="text-[11px] px-2 py-[2px] rounded-full border bg-white/80 border-gray-200"
-                @click="openReactionPicker(msg)"
-                title="Reaction"
-              >➕</button>
+                v-for="r in msg.reactions"
+                :key="r.emoji"
+                class="px-1.5 py-[2px] text-[12px] rounded-full bg-black/5 hover:bg-black/10 ring-1 ring-black/5 transition"
+                :class="r.mine ? 'ring-2 ring-[#11BFAE]' : ''"
+                @click.stop="applyReaction(msg, r.emoji)">
+                <span>{{ r.emoji }}</span>
+                <span class="ml-1 text-[11px] opacity-70">{{ r.count }}</span>
+              </button>
             </div>
+
+
+
 
             <!-- Picker inline -->
             <div v-if="reactionPickerFor && reactionPickerFor === (msg.id || msg.clientId)" class="mt-1 flex gap-1">
@@ -411,33 +438,76 @@
       </form>
 
       <!-- Context Menu -->
+      <!-- Context Menu -->
       <transition name="fade">
         <div v-if="contextMenu.visible"
-            class="fixed inset-0 z-40"
+            class="fixed inset-0 z-40 "
             @click="closeMenu"
             @contextmenu.prevent="closeMenu">
 
-          <transition name="fade-scale">
+          <transition name="ctx-pop">
             <div
               ref="menuEl"
-              class="absolute z-50 bg-white rounded-lg shadow border min-w-[160px] text-left"
-              :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+              role="menu"
+              class="absolute z-50 min-w-[168px] text-left
+                    rounded-2xl border border-[#456173]/10 bg-white/80 backdrop-blur-md
+                    ring-1 ring-black/5"         
+              :style="{
+                top: contextMenu.y + 'px',
+                left: contextMenu.x + 'px',
+                '--origin': contextMenu.pillAlign === 'right'
+                  ? 'top right'
+                  : (contextMenu.pillAlign === 'left' ? 'top left' : 'top center')
+              }"
               @click.stop
             >
-              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="startSelectionFrom(contextMenu.msg!)" v-ripple>Select</button>
-              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="openForwardPicker" v-ripple>Forward…</button>
-              <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doReply" v-ripple>Reply</button>
-              <button v-if="canEdit(contextMenu.msg)" class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="doEdit" v-ripple>Edit</button>
-              <button
-                class="w-full text-left px-3 py-2 hover:bg-gray-50"
-                @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }"
-                v-ripple
-              >Delete</button>
+              <transition name="ctx-pill">
+                <div class="absolute -top-11 "
+                    :class="contextMenu.pillAlign === 'right'
+                              ? 'right-2'
+                              : (contextMenu.pillAlign === 'left'
+                                  ? 'left-2'
+                                  : 'left-1/2 -translate-x-1/2')">
+                  <div class="reaction-pill bg-white/80 backdrop-blur-md">
+                    <button v-for="e in quickEmojis"
+                            :key="e"
+                            class="reaction-btn"
+                            @click.stop="contextMenu.msg && applyReaction(contextMenu.msg, e)"
+                            :title="e">{{ e }}</button>
+                    <button class="reaction-more" title="More">⌄</button>
+                  </div>
+                </div>
+              </transition>
+              <div class="max-w-[220px]">
+                <button class="menu-item rounded-t-2xl first:overflow-hidden"
+                        @click="startSelectionFrom(contextMenu.msg!)" v-ripple>
+                  Select
+                </button>
+                <button class="menu-item "
+                        @click="openForwardPicker" v-ripple>
+                  Forward…
+                </button>
+                <button class="menu-item "
+                        @click="doReply" v-ripple>
+                  Reply
+                </button>
+                <button v-if="canEdit(contextMenu.msg)"
+                        class="menu-item "
+                        @click="doEdit" v-ripple>
+                  Edit
+                </button>
+                <button class="menu-item rounded-b-2xl"
+                        @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }"
+                        v-ripple>
+                  Delete
+                </button>
+              </div>
             </div>
           </transition>
-
         </div>
       </transition>
+
+
 
 
 
@@ -818,12 +888,17 @@ const msgElMap = new Map<string, HTMLElement>();
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
 
-const contextMenu = ref<{ visible:boolean, x:number, y:number, msg:UiMessage|null }>({ visible:false, x:0, y:0, msg:null })
+const contextMenu = ref<{
+  visible: boolean; x: number; y: number;
+  msg: UiMessage | null;
+  pillAlign: 'center' | 'left' | 'right';
+}>({ visible:false, x:0, y:0, msg:null, pillAlign:'center' })
+
 const editingMessage = ref<UiMessage | null>(null)
 
 const menuEl = ref<HTMLElement | null>(null)
 
-const quickEmojis = ['👍','❤️','😂','😮','😢','🔥']
+const quickEmojis = ['👍','❤️','😂','😮','😢','🔥','🙏','🎹']
 const reactionPickerFor = ref<string | null>(null)
 
 const forwardPickerFor = ref<{ msg: UiMessage | null, visible: boolean }>({ msg: null, visible: false })
@@ -984,7 +1059,15 @@ const vRipple = {
   }
 }
 
+const hoverReactFor = ref<string|null>(null)   
+let hoverReactTimer: number | null = null         
+const HOVER_REACT_DELAY = 1000   
+let hoverBarHideTimer: number | null = null
+let hoverSuppressUntil = 0
+let suppressHoverUntil = 0
 
+let signalRWired = false
+let reactionsWired = false
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
@@ -993,6 +1076,49 @@ const vRipple = {
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
+function normEmoji(e: string): string {
+  return (e || '')
+    .replace(/\uFE0F/g, '')                 
+    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '');
+}
+
+function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
+  if (selectionMode.value) return
+  if (isInTextSelectable(ev.target)) return  // روی متن/منشن دابل‌کلیک شده: ریپلای نکن
+  startReplyFrom(m)
+}
+
+
+function keepHoverBar() {
+  if (hoverBarHideTimer) { clearTimeout(hoverBarHideTimer); hoverBarHideTimer = null }
+}
+
+function hideHoverBarSoon() {
+  if (hoverBarHideTimer) { clearTimeout(hoverBarHideTimer) }
+  hoverBarHideTimer = window.setTimeout(() => {
+    hoverReactFor.value = null
+    hoverBarHideTimer = null
+  }, 300) // کمی مهلت برای رسیدن ماوس به قرص
+}
+
+
+function onBubbleHoverStart(m: UiMessage) {
+  if (Date.now() < suppressHoverUntil) return
+  if (selectionMode.value || contextMenu.value.visible) return
+  clearBubbleHoverTimer()
+  keepHoverBar()
+  hoverReactTimer = window.setTimeout(() => {
+    hoverReactFor.value = getMsgKey(m)
+  }, HOVER_REACT_DELAY)
+}
+
+function onBubbleHoverEnd() {
+  clearBubbleHoverTimer()
+  hideHoverBarSoon()   
+}
+function clearBubbleHoverTimer() {
+  if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
+}
 
 async function ensurePeerCached(uid: string) {
   if (displayById[uid] && avatarById[uid]) return
@@ -1050,7 +1176,7 @@ function isMediaOnly(msg: UiMessage) {
 }
 
 function bubbleClasses(msg: UiMessage) {
-  const base = ['inline-block', 'max-w-[80%]', 'transition', 'duration-150', 'ease-out']
+  const base = ['relative','inline-block','max-w-[80%]','transition','duration-150','ease-out']
   const selOn = selectionMode.value && isSelected(msg)
 
   if (isMediaOnly(msg)) {
@@ -1994,28 +2120,48 @@ function openReactionPicker(m: UiMessage) {
 }
 
 async function applyReaction(m: UiMessage, emoji: string) {
-  reactionPickerFor.value = null
   await toggleReaction(m, emoji)
+  suppressHoverUntil = Date.now() + 700
+  if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
+  hoverSuppressUntil = Date.now() + 800
+  reactionPickerFor.value = null
+  hoverReactFor.value = null
+  contextMenu.value.visible = false
 }
+
+
+
 async function toggleReaction(m: UiMessage, emoji: string) {
-  if (!m.id) return;
-  const list = m.reactions || (m.reactions = []);
-  m.reactions = dedupeReactions(list);
+  if (!m.id) return
+  const list = m.reactions || (m.reactions = [])
+  m.reactions = dedupeReactions(list)
 
-  const cur = m.reactions.find(r => r.emoji === emoji);
+  const eKey = normEmoji(emoji)
 
+  const prevMine = m.reactions.find(r => r.mine && normEmoji(r.emoji) !== eKey)
+  if (prevMine) {
+    prevMine.mine = false
+    prevMine.count = Math.max(0, prevMine.count - 1)
+    if (prevMine.count === 0) m.reactions = m.reactions.filter(r => r !== prevMine)
+    removeReaction(m.id, prevMine.emoji).catch(() => {})
+  }
+
+  const cur = m.reactions.find(r => normEmoji(r.emoji) === eKey)
   if (cur?.mine) {
-    cur.mine = false;
-    cur.count = Math.max(0, cur.count - 1);
-    if (cur.count === 0) m.reactions = m.reactions.filter(r => r !== cur);
-    try { await removeReaction(m.id, emoji); } catch { /* می‌تونی rollback کنی */ }
+    cur.mine = false
+    cur.count = Math.max(0, cur.count - 1)
+    if (cur.count === 0) m.reactions = m.reactions.filter(r => r !== cur)
+    try { await removeReaction(m.id, emoji) } catch {}
   } else {
-    if (cur) { cur.mine = true; cur.count += 1; }
-    else m.reactions.push({ emoji, count: 1, mine: true });
-    m.reactions = dedupeReactions(m.reactions);
-    try { await addReaction(m.id, emoji); } catch { /* rollback در صورت نیاز */ }
+    if (cur) { cur.mine = true; cur.count += 1 }
+    else m.reactions.push({ emoji, count: 1, mine: true })
+    m.reactions = dedupeReactions(m.reactions)
+    try { await addReaction(m.id, emoji) } catch {}
   }
 }
+
+
+
 
 
 function onKeydown(e: KeyboardEvent) {
@@ -2031,23 +2177,35 @@ function onWindowResize() {
 function clampMenuPosition() {
   const el = menuEl.value
   if (!el) return
-  const pad = 8
-  const vpW = window.innerWidth
-  const vpH = window.innerHeight
-  const rect = el.getBoundingClientRect()
 
+  const pad = 8
+  const box = scrollBox.value?.getBoundingClientRect()
+  const bounds = box
+    ? { left: box.left + pad, top: box.top + pad, right: box.right - pad, bottom: box.bottom - pad }
+    : { left: pad, top: pad, right: window.innerWidth - pad, bottom: window.innerHeight - pad }
+
+  const rect = el.getBoundingClientRect()
   let x = contextMenu.value.x
   let y = contextMenu.value.y
 
-  if (x + rect.width + pad > vpW) x = Math.max(pad, vpW - rect.width - pad)
-  else x = Math.max(pad, x)
+  if (x + rect.width > bounds.right) x = bounds.right - rect.width
+  if (x < bounds.left)               x = bounds.left
+  if (y + rect.height > bounds.bottom) y = bounds.bottom - rect.height
+  if (y < bounds.top)                  y = bounds.top
 
-  if (y + rect.height + pad > vpH) y = Math.max(pad, vpH - rect.height - pad)
-  else y = Math.max(pad, y)
+  contextMenu.value.x = Math.round(x)
+  contextMenu.value.y = Math.round(y)
 
-  contextMenu.value.x = x
-  contextMenu.value.y = y
+  let align: 'center' | 'left' | 'right' = 'center'
+  const pill = el.querySelector('.reaction-pill') as HTMLElement | null
+  const pillW = pill?.offsetWidth || 228
+  const menuCenter = contextMenu.value.x + rect.width / 2
+  if (menuCenter + pillW / 2 > bounds.right - pad) align = 'right'
+  else if (menuCenter - pillW / 2 < bounds.left + pad) align = 'left'
+  contextMenu.value.pillAlign = align
+
 }
+
 
 
 
@@ -2258,18 +2416,17 @@ async function loadOlderOnce(): Promise<boolean> {
 
 
 function dedupeReactions(list: {emoji:string; count:number; mine?:boolean}[]) {
-  const map = new Map<string, {emoji:string; count:number; mine?:boolean}>();
+  const map = new Map<string, {emoji:string; count:number; mine?:boolean}>()
   for (const r of list) {
-    const key = r.emoji;
-    const ex = map.get(key);
-    if (!ex) map.set(key, { ...r });
-    else {
-      ex.count = r.count;                  
-      ex.mine = ex.mine || r.mine || false;
-    }
+    const key = normEmoji(r.emoji)
+    const ex = map.get(key)
+    if (!ex) map.set(key, { ...r })
+    else { ex.count = r.count; ex.mine = ex.mine || r.mine || false }
   }
-  return Array.from(map.values()).filter(r => r.count > 0);
+  return Array.from(map.values()).filter(r => r.count > 0)
 }
+
+
 
 
 
@@ -2562,6 +2719,8 @@ onMounted(async () => {
 })
 
 function wireSignalR() {
+  if (signalRWired) return
+  signalRWired = true
   onMessageReceived(async (message: any) => {
 
     const senderId = String(message.senderId ?? message.SenderId)
@@ -2787,25 +2946,36 @@ function wireSignalR() {
 })
 
 onReactionUpdated((p) => {
-  const m = messages.value.find(x => x.id === p.messageId);
-  if (!m) return;
+  if (reactionsWired) return
+  reactionsWired = true  
+  const m = messages.value.find(x => x.id === p.messageId)
+  if (!m) return
 
-  const list = m.reactions || (m.reactions = []);
+  const list = m.reactions || (m.reactions = [])
+  const pKey = normEmoji(p.emoji)
 
-  const idxs = list.map((r, i) => r.emoji === p.emoji ? i : -1).filter(i => i >= 0);
+  const idxs = list.map((r, i) => normEmoji(r.emoji) === pKey ? i : -1).filter(i => i >= 0)
 
   if (idxs.length === 0) {
-    list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' });
+    list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' })
   } else {
-
-    const first = list[idxs[0]];
-    first.count = p.count;
-    if (p.userId === myId.value) first.mine = (p.action === 'added');
-    for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1);
+    const first = list[idxs[0]]
+    first.emoji = p.emoji
+    first.count = p.count
+    if (p.userId === myId.value) first.mine = (p.action === 'added')
+    for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1)
   }
 
-  m.reactions = dedupeReactions(list);
-});
+  // Single-react policy: اگر من اضافه کردم، mine بقیه false
+  if (p.userId === myId.value && p.action === 'added') {
+    for (const r of list) if (normEmoji(r.emoji) !== pKey) r.mine = false
+  }
+
+  m.reactions = dedupeReactions(list)
+})
+
+
+
 
 
 
@@ -3118,6 +3288,8 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 .fade-leave-active { transition: opacity .10s ease, transform .10s ease; }
 .fade-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
 
+
+
 /* منوی سنجاق: از پایین به بالا پاپ شود */
 .clip-pop-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); transform-origin: bottom right; }
 .clip-pop-enter-active { transition: opacity .12s ease, transform .12s ease; }
@@ -3166,6 +3338,66 @@ function toAbsoluteFileUrl(url: string | null): string | null {
          transition;
 }
 
+/* قرص ایموجی */
+.reaction-pill {
+  @apply bg-gray-900 text-white/95 rounded-full px-2 py-1 z-20 flex items-center gap-1
+         ring-1 ring-black/10 backdrop-blur-sm;
+}
+
+/* دکمه ایموجی داخل قرص */
+.reaction-btn {
+  @apply text-base leading-none px-1.5 py-1 rounded-full transition;
+}
+.reaction-btn:hover { transform: translateY(-1px) scale(1.08); }
+
+/* دکمه more (chevron) اختیاری */
+.reaction-more {
+  @apply w-6 h-6 inline-grid place-items-center rounded-full bg-white/20 hover:bg-white/30 transition text-white;
+}
+
+/* انیمیشن پاپ/محو کوچک که در بقیه‌ٔ فایل هم استفاده کردی */
+.fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
+.fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
+.fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
+.fade-scale-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
+
+/* پاپ منو؛ بدون سایهٔ اضافه */
+.ctx-pop-enter-active,
+.ctx-pop-leave-active {
+  transition: transform 160ms cubic-bezier(.22,.61,.36,1), opacity 140ms ease;
+  transform-origin: var(--origin, top left);
+}
+.ctx-pop-enter-from { opacity: 0; transform: translateY(8px) scale(.98); }
+.ctx-pop-leave-to   { opacity: 0; transform: translateY(2px)  scale(.98); }
+
+/* قرص ایموجی نرم؛ بدون سایهٔ برجسته */
+.reaction-pill {
+  @apply bg-white/95 backdrop-blur rounded-full px-2 py-1
+         border border-[#456173]/10 flex items-center gap-1;
+}
+.reaction-btn {
+  @apply w-8 h-8 grid place-items-center rounded-full
+         hover:bg-[#11BFAE]/10 active:scale-95 transition;
+}
+.reaction-more {
+  @apply w-6 h-6 grid place-items-center rounded-full text-[#1B3C59]
+         hover:bg-black/5 transition;
+}
+
+/* آیتم‌ها همان قبلی، عرض کلی هم با min-w[168px] جمع‌وجور شد */
+.menu-item {
+  @apply w-full text-left px-3 py-2 text-[14px] text-[#1B3C59]
+         hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15
+         transition outline-none
+         focus-visible:ring-2 focus-visible:ring-[#11BFAE]/40;
+}
+.menu-item:first-child { position: relative; z-index: 0; overflow: hidden; border-top-left-radius: 1rem; border-top-right-radius: 1rem; }
+
+.menu-item + .menu-item {
+  border-top: 1px solid rgba(69,97,115,0.10);
+}
+
+
 
 :global(.ripple-ink){
   position: absolute;
@@ -3176,6 +3408,8 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   pointer-events:none;
   animation: ripple .5s ease-out forwards;
 }
+
+
 @keyframes ripple { to { transform: scale(4); opacity:0; } }
 
 </style>
