@@ -31,15 +31,28 @@
 
           <!-- Items -->
           <nav class="flex-1 overflow-y-auto">
-            <button class="menu-item" @click="$emit('action','profile')" v-ripple>My profile</button>
-            <button class="menu-item" @click="$emit('action','contacts')" v-ripple>Contacts</button>
-            <button class="menu-item" @click="$emit('action','saved')" v-ripple>Saved Messages</button>
-            <button class="menu-item" @click="$emit('action','settings')" v-ripple>Settings</button>
+            <button class="menu-item flex items-center gap-2" @click="$emit('action','profile')"  v-ripple>
+              <User class="w-4 h-4" /> <span>My profile</span>
+            </button>
+            <button class="menu-item flex items-center gap-2" @click="$emit('action','contacts')" v-ripple>
+              <Users class="w-4 h-4" /> <span>Contacts</span>
+            </button>
+            <button class="menu-item flex items-center gap-2" @click="$emit('action','saved')"    v-ripple>
+              <Bookmark class="w-4 h-4" /> <span>Saved Messages</span>
+            </button>
+            <button class="menu-item flex items-center gap-2" @click="$emit('action','settings')" v-ripple>
+              <Settings class="w-4 h-4" /> <span>Settings</span>
+            </button>
           </nav>
 
+
           <div class="p-3 text-left">
-            <button class="text-xs text-[#456173] hover:text-[#1B3C59]" @click="$emit('close')" v-ripple>Close</button>
+            <button class="text-xs text-[#456173] hover:text-[#1B3C59] inline-flex items-center gap-1.5"
+                    @click="$emit('close')" v-ripple>
+              <X class="w-3.5 h-3.5" /> <span>Close</span>
+            </button>
           </div>
+
         </aside>
       </transition>
     </div>
@@ -48,6 +61,7 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
+import { User, Users, Bookmark, Settings, X } from 'lucide-vue-next'
 
 defineProps<{ open: boolean, me?: { displayName?: string; username?: string; avatarUrl?: string } | null }>()
 defineEmits<{ (e:'close'):void; (e:'action', a:'profile'|'contacts'|'saved'|'settings'):void }>()

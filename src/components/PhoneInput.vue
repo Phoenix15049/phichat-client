@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { COUNTRIES, type Country } from '../data/countries'
+import { ChevronDown, Search, Phone as PhoneIcon } from 'lucide-vue-next'
 
 
 const props = defineProps<{
@@ -92,24 +93,15 @@ const vRipple = {
                transition"
       >
         <!-- country button (left) -->
-        <button
-          type="button"
-          class="px-3 flex items-center gap-2 border-r bg-[#F2F2F0] hover:bg-[#F2F2F0]/70
-                 text-[#1B3C59] disabled:opacity-50"
-          @click="toggle"
-          :disabled="disabled"
-          v-ripple
-        >
+        <button type="button" class="px-3 flex items-center gap-2 border-r bg-[#F2F2F0] hover:bg-[#F2F2F0]/70
+                                  text-[#1B3C59] disabled:opacity-50"
+                @click="toggle" :disabled="disabled" v-ripple>
           <span class="text-lg">{{ selected.flag }}</span>
           <span class="text-sm">+{{ selected.dial }}</span>
-          <svg class="w-4 h-4 text-[#456173] transition-transform"
-               :class="open ? 'rotate-180' : ''"
-               viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-                  clip-rule="evenodd" />
-          </svg>
+          <ChevronDown class="w-4 h-4 text-[#456173] transition-transform"
+                      :class="open ? 'rotate-180' : ''" />
         </button>
+
 
         <!-- national number input -->
         <input
@@ -126,16 +118,14 @@ const vRipple = {
       <transition name="dropdown">
         <div
           v-if="open"
-          class="absolute z-20 mt-2 w-full max-h-80 overflow-auto rounded-lg border bg-white shadow-xl ring-1 ring-black/5"
+          class="absolute z-20 mt-2 w-full max-h-80 overflow-auto rounded-lg border bg-white shadow-xl ring-1 ring-[#606060]"
         >
-          <div class="p-2 sticky top-0 bg-white border-b">
-            <input
-              v-model="q"
-              placeholder="Search country or code…"
-              class="pi-input w-full"
-              @keydown.stop
-            />
+          <div class="p-2 sticky top-0 bg-white border-b relative">
+            <Search class="w-4.2 h-4.2 text-[#456173] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input v-model="q" placeholder="Search country or code…"
+                  class="pi-input w-full pl-9" @keydown.stop />
           </div>
+
           <ul>
             <li v-for="c in filtered" :key="c.iso2">
               <button

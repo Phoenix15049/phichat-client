@@ -10,21 +10,16 @@
           :style="{ transform: mode === 'password' ? 'translateX(0)' : 'translateX(100%)' }"
         ></div>
         <button
-          class="relative z-10 flex-1 py-2 text-sm font-medium"
-          :class="mode === 'password' ? 'text-[#1B3C59]' : 'text-[#456173]'"
-          @click="mode = 'password'"
-          v-ripple
-        >
-          Password
+          class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
+          :class="mode === 'password' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'password'" v-ripple>
+          <Lock class="w-4 h-4" /><span>Password</span>
         </button>
         <button
-          class="relative z-10 flex-1 py-2 text-sm font-medium"
-          :class="mode === 'sms' ? 'text-[#1B3C59]' : 'text-[#456173]'"
-          @click="mode = 'sms'"
-          v-ripple
-        >
-          SMS code
+          class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
+          :class="mode === 'sms' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'sms'" v-ripple>
+          <MessageSquare class="w-4 h-4" /><span>SMS code</span>
         </button>
+
       </div>
 
       <!-- Sliding forms -->
@@ -40,10 +35,11 @@
             <input v-model="password" type="password" class="input" placeholder="••••••" required />
           </div>
 
-          <button :disabled="loading" class="btn-primary w-full" v-ripple>
-            <span v-if="!loading">Sign in</span>
-            <span v-else>Signing in…</span>
+          <button :disabled="loading" class="btn-primary w-full inline-flex items-center justify-center gap-2" v-ripple>
+            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>Sign in</span></template>
+            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>Signing in…</span></template>
           </button>
+
         </form>
 
         <!-- SMS mode -->
@@ -55,17 +51,19 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="btn-secondary flex-1"
-              :disabled="smsSending || cooldown > 0"
-              @click="sendCode"
-              v-ripple
-            >
-              <span v-if="cooldown === 0 && !smsSending">Send code</span>
-              <span v-else-if="smsSending">Sending…</span>
-              <span v-else>Resend in {{ cooldown }}s</span>
+            <button type="button" class="btn-secondary flex-1 inline-flex items-center justify-center gap-2"
+                    :disabled="smsSending || cooldown > 0" @click="sendCode" v-ripple>
+              <template v-if="cooldown === 0 && !smsSending">
+                <Send class="w-4 h-4" /><span>Send code</span>
+              </template>
+              <template v-else-if="smsSending">
+                <Loader2 class="w-4 h-4 animate-spin" /><span>Sending…</span>
+              </template>
+              <template v-else>
+                <Clock class="w-4 h-4" /><span>Resend in {{ cooldown }}s</span>
+              </template>
             </button>
+
             <input
               v-model.trim="smsCode"
               inputmode="numeric"
@@ -76,14 +74,18 @@
             />
           </div>
 
-          <button :disabled="loading" class="btn-primary w-full" v-ripple>
-            <span v-if="!loading">Sign in with SMS</span>
-            <span v-else>Signing in…</span>
+          <button :disabled="loading" class="btn-primary w-full inline-flex items-center justify-center gap-2" v-ripple>
+            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>Sign in with SMS</span></template>
+            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>Signing in…</span></template>
           </button>
+
         </form>
       </transition>
 
-      <p v-if="error" class="text-red-600 text-sm mt-4 text-center">{{ error }}</p>
+      <p v-if="error" class="text-red-600 text-sm mt-4 text-center inline-flex items-center justify-center gap-1.5">
+        <AlertCircle class="w-4 h-4" /> <span>{{ error }}</span>
+      </p>
+
 
       <div class="text-center mt-6">
         <RouterLink to="/register" class="text-[#11BFAE] hover:underline">Create a new account</RouterLink>
@@ -93,6 +95,10 @@
 </template>
 
 <script setup lang="ts">
+import {
+  Lock, MessageSquare, LogIn, Loader2, Send, Clock, AlertCircle, Phone
+} from 'lucide-vue-next'
+
 import { ref, onBeforeUnmount,onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { API, loginWithSms, requestSmsCode, storeTokenFromAuthResponse } from "../services/api";

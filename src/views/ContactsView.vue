@@ -10,15 +10,12 @@
         class="input flex-1"
       />
 
-      <button
-        class="btn-outline flex items-center gap-1"
-        :aria-pressed="sortAlpha"
-        @click="sortAlpha = !sortAlpha"
-        title="Sort A–Z"
-        v-ripple
-      >
-        <span class="text-sm">{{ sortAlpha ? 'A–Z' : 'A↔Z' }}</span>
+      <button class="btn-outline flex items-center gap-1" :aria-pressed="sortAlpha" @click="sortAlpha = !sortAlpha" title="Sort A–Z" v-ripple>
+        <ArrowUpAZ v-if="sortAlpha" class="w-4 h-4" />
+        <ArrowDownAZ v-else class="w-4 h-4" />
+        <span class="sr-only">Sort</span>
       </button>
+
 
       <div class="text-xs text-[#456173] whitespace-nowrap">
         {{ filteredContacts.length }} contacts
@@ -53,9 +50,14 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <button @click="openChat(c)" class="btn-text" v-ripple>Chat</button>
-          <button @click="onRemove(c)" class="btn-danger" v-ripple>Remove</button>
+          <button @click="openChat(c)" class="btn-text flex items-center gap-1.5" v-ripple>
+            <MessageSquare class="w-4 h-4" /> <span>Chat</span>
+          </button>
+          <button @click="onRemove(c)" class="btn-danger flex items-center gap-1.5" v-ripple>
+            <Trash2 class="w-4 h-4" /> <span>Remove</span>
+          </button>
         </div>
+
       </li>
     </transition-group>
 
@@ -63,8 +65,8 @@
 
     <!-- Sticky add button when embedded as modal content -->
     <div v-if="inModal" class="sticky bottom-0 left-0 right-0 bg-white/90 backdrop-blur border-t p-3">
-      <button class="btn-primary rounded-full shadow" @click="showAdd = true" v-ripple>
-        + Add contact
+      <button class="btn-primary rounded-full shadow flex items-center gap-2" @click="showAdd = true" v-ripple>
+        <UserPlus class="w-4 h-4" /> <span>Add contact</span>
       </button>
     </div>
   </div>
@@ -74,7 +76,9 @@
     <div class="p-5 w-[420px] max-w-full" dir="ltr">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-lg font-bold text-[#1B3C59]">Add contact</h2>
-        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple>✕</button>
+        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple aria-label="Close">
+          <X class="w-5 h-5" />
+        </button>
       </div>
 
       <form class="space-y-3" @submit.prevent="onAdd">
@@ -96,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import { X, MessageSquare, Trash2, ArrowUpAZ, ArrowDownAZ, UserPlus } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { getMyContacts, addContact, removeContact, getUserByUsername } from '../services/api'
 import ModalSheet from '../components/ModalSheet.vue'

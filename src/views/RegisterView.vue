@@ -13,25 +13,26 @@
 
           <div class="flex items-center gap-2">
             <button
-              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50"
-              :disabled="!phoneE164 || sending"
-              @click="sendCode"
-            >
-              {{ sending ? 'Sending…' : 'Send code' }}
+              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              :disabled="!phoneE164 || sending" @click="sendCode">
+              <template v-if="sending"><Loader2 class="w-4 h-4 animate-spin" /><span>Sending…</span></template>
+              <template v-else><Send class="w-4 h-4" /><span>Send code</span></template>
             </button>
-            <span v-if="smsSent" class="text-sm text-gray-600">Code sent</span>
+            <span v-if="smsSent" class="text-sm text-gray-600 inline-flex items-center gap-1.5">
+              <Check class="w-4 h-4" /><span>Code sent</span>
+            </span>
+
           </div>
 
           <div v-if="smsSent" class="mt-2 space-y-2">
             <input v-model="smsCode" class="input" placeholder="SMS code" />
-            <button
-              type="button"
-              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50"
-              :disabled="verifying || !smsCode || smsCode.length < 4"
-              @click="verifyCode"
-            >
-              {{ verifying ? 'Verifying…' : 'Verify & continue' }}
+            <button type="button"
+              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              :disabled="verifying || !smsCode || smsCode.length < 4" @click="verifyCode">
+              <template v-if="verifying"><Loader2 class="w-4 h-4 animate-spin" /><span>Verifying…</span></template>
+              <template v-else><ShieldCheck class="w-4 h-4" /><span>Verify & continue</span></template>
             </button>
+
           </div>
 
           <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
@@ -43,27 +44,38 @@
 
           <label class="text-sm text-[#456173]">Username</label>
           <input v-model="username" class="input" placeholder="e.g. ali_1370" />
-          <div
-            class="text-xs"
-            :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-red-600' : 'text-gray-500'"
-          >
-            <span v-if="uCheck.loading">Checking…</span>
-            <span v-else>{{ uCheck.msg }}</span>
+          <div class="text-xs inline-flex items-center gap-1.5"
+              :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-red-600' : 'text-gray-500'">
+            <template v-if="uCheck.loading">
+              <Loader2 class="w-3.5 h-3.5 animate-spin" /><span>Checking…</span>
+            </template>
+            <template v-else-if="uCheck.ok === true">
+              <Check class="w-3.5 h-3.5" /><span>Available</span>
+            </template>
+            <template v-else-if="uCheck.ok === false">
+              <XIcon class="w-3.5 h-3.5" /><span>Already taken</span>
+            </template>
+            <template v-else>
+              <span>{{ uCheck.msg }}</span>
+            </template>
           </div>
-
+          <div></div>
           <label class="text-sm text-[#456173]">Password</label>
           <input type="password" v-model="password" class="input" placeholder="At least 6 characters" />
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173]" @click="step = 1">Back</button>
+            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
+                    @click="step = 1">
+              <ArrowLeft class="w-4 h-4" /><span>Back</span>
+            </button>
             <button
-              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50"
+              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!username || uCheck.ok !== true || !password || password.length < 6"
-              @click="goStep3"
-            >
-              Next
+              @click="goStep3">
+              <ArrowRight class="w-4 h-4" /><span>Next</span>
             </button>
           </div>
+
 
           <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
         </div>
@@ -83,17 +95,23 @@
           </div>
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173]" @click="step = 2">Back</button>
+            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
+                    @click="step = 2">
+              <ArrowLeft class="w-4 h-4" /><span>Back</span>
+            </button>
             <button
-              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50"
-              :disabled="!firstName || loading"
-              @click="completeRegister"
-            >
-              {{ loading ? 'Saving…' : 'Finish' }}
+              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              :disabled="!firstName || loading" @click="completeRegister">
+              <template v-if="loading"><Loader2 class="w-4 h-4 animate-spin" /><span>Saving…</span></template>
+              <template v-else><Check class="w-4 h-4" /><span>Finish</span></template>
             </button>
           </div>
 
-          <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
+
+          <p v-if="error" class="text-xs text-red-600 mt-2 inline-flex items-center gap-1.5">
+            <AlertCircle class="w-4 h-4" /><span>{{ error }}</span>
+          </p>
+
         </div>
       </transition>
 
@@ -111,6 +129,9 @@
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import PhoneInput from "../components/PhoneInput.vue";
+import {
+  Phone, Send, Loader2, Check, ShieldCheck, ArrowRight, ArrowLeft, X as XIcon, AlertCircle
+} from 'lucide-vue-next'
 
 import {
   registerWithPhone,

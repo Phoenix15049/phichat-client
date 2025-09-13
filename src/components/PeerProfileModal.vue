@@ -34,56 +34,55 @@
 
         <button
           class="text-[#456173] hover:text-[#1B3C59] px-2 py-1 rounded hover:bg-[#F2F2F0]"
-          @click="$emit('close')"
-          v-ripple
-          aria-label="Close"
-        >✕</button>
+          @click="$emit('close')" v-ripple aria-label="Close">
+          <X class="w-5 h-5" />
+        </button>
+
       </div>
 
       <!-- Info -->
       <div class="mt-5 space-y-2 text-sm">
         <div v-if="user?.phoneNumber" class="flex items-center gap-2">
-          <span class="text-[#456173]">📞 Phone:</span>
+          <Phone class="w-4 h-4 text-[#456173]" />
           <span class="text-[#1B3C59]">{{ user.phoneNumber }}</span>
         </div>
         <div v-if="user?.bio" class="flex items-start gap-2">
-          <span class="text-[#456173] mt-0.5">💬 Bio:</span>
+          <FileText class="w-4 h-4 text-[#456173] mt-0.5" />
           <span class="text-[#1B3C59]">{{ user.bio }}</span>
         </div>
       </div>
 
+
       <!-- Actions -->
       <div class="mt-6 grid grid-cols-2 gap-2">
-        <button class="btn-primary" @click="$emit('send-message', user!.id)" v-ripple>
-          Message
+        <button class="btn-primary inline-flex items-center justify-center gap-2"
+                @click="$emit('send-message', user!.id)" v-ripple>
+          <MessageSquare class="w-4 h-4" /><span>Message</span>
         </button>
 
-        <button class="btn-outline" @click="$emit('share-contact', user!)" v-ripple>
-          Share contact
+        <button class="btn-outline inline-flex items-center justify-center gap-2"
+                @click="$emit('share-contact', user!)" v-ripple>
+          <Share2 class="w-4 h-4" /><span>Share contact</span>
         </button>
 
-        <button
-          v-if="isContact"
-          class="btn-danger"
-          @click="$emit('remove-contact', user!.id)"
-          v-ripple
-        >
-          Remove from contacts
+        <button v-if="isContact"
+                class="btn-danger inline-flex items-center justify-center gap-2"
+                @click="$emit('remove-contact', user!.id)" v-ripple>
+          <UserMinus class="w-4 h-4" /><span>Remove from contacts</span>
         </button>
 
-        <button
-          v-else
-          class="btn-outline"
-          @click="$emit('add-contact', user!.id)"
-          v-ripple
-        >
-          Add to contacts
+        <button v-else
+                class="btn-outline inline-flex items-center justify-center gap-2"
+                @click="$emit('add-contact', user!.id)" v-ripple>
+          <UserPlus class="w-4 h-4" /><span>Add to contacts</span>
         </button>
 
-        <button class="btn-disabled col-span-2" title="Coming soon" disabled>
-          Block user
+        <button class="btn-disabled col-span-2 inline-flex items-center justify-center gap-2"
+                title="Coming soon" disabled>
+          <Ban class="w-4 h-4" /><span>Block user</span>
         </button>
       </div>
+
     </div>
   </ModalSheet>
 </template>
@@ -91,6 +90,7 @@
 <script setup lang="ts">
 import ModalSheet from './ModalSheet.vue'
 import { defineProps, defineEmits } from 'vue'
+import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
 
 const props = defineProps<{
   open: boolean

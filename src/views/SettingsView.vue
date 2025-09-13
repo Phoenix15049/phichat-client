@@ -24,20 +24,17 @@
           </div>
         </div>
 
-        <label class="btn-outline cursor-pointer" v-ripple>
+        <label class="btn-outline cursor-pointer inline-flex items-center gap-1.5" v-ripple>
           <input type="file" accept="image/*" class="hidden" @change="onAvatarSelected" />
-          Change…
+          <ImageUp class="w-4 h-4" /> <span>Change</span>
         </label>
 
-        <button
-          v-if="avatarPreview && hadServerAvatar"
-          type="button"
-          class="btn-danger"
-          @click="clearAvatar"
-          v-ripple
-        >
-          Remove
+        <button v-if="avatarPreview && hadServerAvatar" type="button"
+                class="btn-danger inline-flex items-center gap-1.5"
+                @click="clearAvatar" v-ripple>
+          <Trash2 class="w-4 h-4" /> <span>Remove</span>
         </button>
+
       </div>
       <p class="text-xs text-[#456173]">JPG/PNG/WebP. A square image looks best.</p>
     </div>
@@ -56,8 +53,11 @@
       </button>
 
       <transition name="fade-up">
-        <span v-if="saved" class="text-green-600 text-sm">Saved ✔</span>
+        <span v-if="saved" class="text-green-600 text-sm inline-flex items-center gap-1.5">
+          <Check class="w-4 h-4" /> <span>Saved</span>
+        </span>
       </transition>
+
     </div>
 
     <!-- Divider -->
@@ -66,7 +66,10 @@
     <!-- Logout -->
     <div class="flex items-center justify-between">
       <div class="text-[#1B3C59] font-medium">Logout</div>
-      <button class="btn-outline" @click="openLogout = true" v-ripple>Log out…</button>
+      <button class="btn-outline inline-flex items-center gap-1.5" @click="openLogout = true" v-ripple>
+        <LogOut class="w-4 h-4" /> <span>Log out</span>
+      </button>
+
     </div>
 
     <!-- Confirm dialog -->
@@ -80,8 +83,14 @@
           <p class="text-sm text-gray-600 mb-4">Are you sure you want to log out?</p>
 
           <div class="flex items-center justify-end gap-2">
-            <button class="px-3 py-1.5 rounded border hover:bg-gray-50" @click="openLogout=false" v-ripple>Cancel</button>
-            <button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700" @click="doLogout" v-ripple>Log out</button>
+            <button class="px-3 py-1.5 rounded border hover:bg-gray-50 inline-flex items-center gap-1.5"
+                    @click="openLogout=false" v-ripple>
+              <X class="w-4 h-4" /> <span>Cancel</span>
+            </button>
+            <button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5"
+                    @click="doLogout" v-ripple>
+              <LogOut class="w-4 h-4" /> <span>Log out</span>
+            </button>
           </div>
         </div>
       </div>
@@ -95,6 +104,7 @@
 </template>
 
 <script setup lang="ts">
+import { ImageUp, Trash2, Check, LogOut, X } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { getMeProfile, updateMyProfile, uploadAvatar } from '../services/api'
 import { clearAuthLocal } from '../services/auth'

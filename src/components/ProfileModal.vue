@@ -4,12 +4,11 @@
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-bold text-[#1B3C59]">Profile</h2>
-        <button
-          class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]"
-          @click="$emit('close')"
-          v-ripple
-          aria-label="Close"
-        >✕</button>
+        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]"
+                @click="$emit('close')" v-ripple aria-label="Close">
+          <X class="w-5 h-5" />
+        </button>
+
       </div>
 
       <!-- Top row -->
@@ -36,7 +35,10 @@
 
       <!-- Actions -->
       <div class="mt-6 flex items-center justify-end gap-2">
-        <button class="btn-primary" @click="$emit('edit')" v-ripple>Edit profile</button>
+        <button class="btn-primary inline-flex items-center gap-2" @click="$emit('edit')" v-ripple>
+          <Pencil class="w-4 h-4" /><span>Edit profile</span>
+        </button>
+
       </div>
     </div>
   </ModalSheet>
@@ -44,6 +46,7 @@
 
 <script setup lang="ts">
 import ModalSheet from './ModalSheet.vue'
+import { X, Pencil } from 'lucide-vue-next'
 
 defineProps<{
   open: boolean,
