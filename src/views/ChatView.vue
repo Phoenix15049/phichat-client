@@ -2,7 +2,9 @@
   <div class="flex h-screen" dir="ltr">
     <div class="w-80 md:w-96 flex flex-col border-r border-gray-200">
       <div class="px-3 py-2 font-semibold text-gray-800 border-b border-gray-200 flex items-center justify-between">
-        <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true">☰</button>
+        <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true" aria-label="Open menu">
+          <Menu class="w-5 h-5" />
+        </button>
         <span>Chats</span>
         <span class="w-6"></span>
       </div>
@@ -109,8 +111,8 @@
             class="ml-2 px-2 py-1 rounded hover:bg-white/10"
             @click.stop="goBackChat"
             title="Back"
-            v-ripple
-          >←</button>
+            v-ripple aria-label="Back"
+          ><ArrowLeft class="w-5 h-5" /></button>
 
           <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
             <template v-if="isPeerTyping">
@@ -213,17 +215,19 @@
 
 
             <!-- متن -->
-            <div v-if="!msg.fileUrl && msg.plainText" class="whitespace-pre-wrap break-words select-text" data-text-selectable>
-              <template v-for="(p, i) in toParts(msg.plainText)" :key="i">
-                <span v-if="p.t === 'text'">{{ p.s }}</span>
-                <span
-                  v-else
-                  class="text-[#11BFAE] underline cursor-pointer"
-                  @click.stop="openMention(p.u)"
-                  data-text-selectable
-                >@{{ p.u }}</span>
-              </template>
-            </div>
+            <div v-if="!msg.fileUrl && msg.plainText"
+              dir="auto"
+              class="whitespace-pre-wrap break-words select-text text-start auto-dir"
+              data-text-selectable>
+            <template v-for="(p, i) in toParts(msg.plainText)" :key="i">
+              <span v-if="p.t === 'text'">{{ p.s }}</span>
+              <span v-else dir="ltr"
+                    class="text-[#c0fcff] underline cursor-pointer"
+                    @click.stop="openMention(p.u)"
+                    data-text-selectable>@{{ p.u }}</span>
+            </template>
+          </div>
+
 
             
             <div v-if="msg.fileUrl && isImageUrl(msg.fileUrl)" class="mt-1">
@@ -262,10 +266,11 @@
                 <button type="button"
                         class="w-8 h-8 rounded-full border flex items-center justify-center"
                         :class="msg.senderId === myId ? 'border-white/50 text-white' : 'border-gray-300 text-gray-600'"
-                        @click="downloadFile(msg)">
-                  <span v-if="downloading[fileKey(msg)]">⏬</span>
-                  <span v-else-if="downloaded[fileKey(msg)]">✅</span>
-                  <span v-else>⬇️</span>
+                        @click="downloadFile(msg)"
+                        aria-label="Download">
+                  <Loader2 v-if="downloading[fileKey(msg)]" class="w-4 h-4 animate-spin" />
+                  <Check   v-else-if="downloaded[fileKey(msg)]" class="w-4 h-4" />
+                  <Download v-else class="w-4 h-4" />
                 </button>
 
                 <div class="flex-1 min-w-0">
@@ -279,7 +284,9 @@
               </div>
 
               <!-- caption  -->
-              <div v-if="msg.fileUrl && msg.plainText" class="mt-1 whitespace-pre-wrap break-words">
+              <div v-if="msg.fileUrl && msg.plainText"
+                  dir="auto"
+                  class="mt-1 whitespace-pre-wrap break-words text-start auto-dir">
                 {{ msg.plainText }}
               </div>
             </div>
@@ -293,9 +300,9 @@
               <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
               <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(edited)</span>
               <span v-if="msg.senderId === myId">
-                <template v-if="msg.status === 'read'">✓✓</template>
-                <template v-else-if="msg.status === 'delivered'">✓</template>
-                <template v-else>…</template>
+                <CheckCheck v-if="msg.status === 'read'" class="w-3 h-3" />
+                <Check v-else-if="msg.status === 'delivered'" class="w-3 h-3" />
+                <Loader2 v-else class="w-3 h-3 animate-spin" />
               </span>
             </div>
             
@@ -395,14 +402,15 @@
       </div>
 
       <!-- Submission form -->
-      <form v-if="selectedUser" @submit.prevent="send" class="p-4 flex items-center gap-2 border border-gray-100 relative ">
+      <form v-if="selectedUser" @submit.prevent="send"
+      class="composer p-4 flex items-center gap-2 border border-gray-100 relative">
         
         <!-- Attach (paperclip) -->
         <div class="relative"
             @mouseenter="clipHover = true"
             @mouseleave="clipHover = false">
-          <button type="button" class="px-4 py-2 text-gray-500 hover:text-gray-700 border border-gray-200 " @click="openFilePicker" title="Attach">
-            📎
+          <button type="button" class="px-4 py-2 text-gray-500 hover:text-gray-700 border border-gray-200 " @click="openFilePicker" title="Attach" aria-label="Attach">
+            <Paperclip class="w-5 h-5" />
           </button>
 
           <!-- Pin menu -->
@@ -422,19 +430,27 @@
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
         <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
         
-        <input
+        <textarea
           v-model="text"
           ref="msgInput"
-          @input="onInputChanged"
-          @blur="onBlurInput"
+          rows="1"
+          dir="auto"
           placeholder="Write a message…"
-          class="flex-1 border rounded px-3 py-2"
+          class="flex-1 border rounded px-3 py-2 leading-6 text-start resize-none overflow-y-auto box-border will-change-[height]"
+          style="transition: height .14s ease"
+          @keydown.enter.exact.prevent="send"
+          @input="onComposerInput"
+          @blur="onBlurInput"
         />
+
+
+
+
         
-        <button
+        <button type="submit"
           class="bg-[#11BFAE] text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="!canSend"
-        >Send</button>
+        ><SendHorizontal /></button>
       </form>
 
       <!-- Context Menu -->
@@ -474,7 +490,7 @@
                             class="reaction-btn"
                             @click.stop="contextMenu.msg && applyReaction(contextMenu.msg, e)"
                             :title="e">{{ e }}</button>
-                    <button class="reaction-more" title="More">⌄</button>
+                    <button class="reaction-more" title="More" aria-label="More"><ChevronDown class="w-4 h-4" /></button>
                   </div>
                 </div>
               </transition>
@@ -517,7 +533,7 @@
         <div class="p-5 w-[480px] max-w-full" dir="ltr">
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-lg font-bold text-[#1B3C59]">Send as files</h3>
-            <button class="btn-ghost" @click="cancelFileSend" v-ripple>✕</button>
+            <button class="btn-ghost" @click="cancelFileSend" v-ripple aria-label="Close"><X class="w-5 h-5" /></button>
           </div>
 
           <!-- files list -->
@@ -527,7 +543,7 @@
               :key="i"
               class="flex items-center gap-3 p-3 rounded-lg bg-white ring-1 ring-[#456173]/15 hover:ring-[#11BFAE]/30 transition"
             >
-              <div class="w-10 h-10 rounded bg-[#1B3C59] grid place-items-center text-white">📄</div>
+              <div class="w-10 h-10 rounded bg-[#1B3C59] grid place-items-center text-white"><FileIcon class="w-5 h-5" /></div>
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-[#1B3C59] truncate">{{ f.name }}</div>
                 <div class="text-xs text-[#456173]">{{ humanFileSize(f.size) }}</div>
@@ -538,7 +554,11 @@
 
           <!-- caption -->
           <label class="block text-sm text-[#456173] mt-3 mb-1">Caption (optional, applies to all)</label>
-          <textarea v-model="pendingCaption" rows="3" class="input w-full min-h-[84px]" placeholder="Write a caption…"></textarea>
+          <textarea v-model="mediaCaption"
+          rows="3"
+          dir="auto"
+          class="input w-full min-h-[84px] text-start auto-dir"
+          placeholder="Write a caption…"></textarea>
 
           <!-- actions -->
           <div class="mt-4 flex items-center justify-between">
@@ -808,6 +828,12 @@ import {getMyContacts, addContact, removeContact,getUsersList } from '../service
 
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
+import {
+  Menu, ArrowLeft, Paperclip, X, Download, Check, CheckCheck, Loader2,
+  ChevronDown, File as FileIcon,SendHorizontal
+} from 'lucide-vue-next'
+
+
 type UiReaction = { emoji: string; count: number; mine?: boolean }
 
 type UiMessage = {
@@ -982,7 +1008,11 @@ const selectedLabel = computed(() => {
     || ('@' + su.username.replace(/^@/, ''))
 })
 
-const msgInput = ref<HTMLInputElement|null>(null)
+const msgInput = ref<HTMLTextAreaElement|null>(null)
+
+const MIN_ROWS = 1
+const MAX_ROWS = 6
+
 
 const canSend = computed(() =>
   !!selectedUser.value && (
@@ -1068,6 +1098,9 @@ let suppressHoverUntil = 0
 
 let signalRWired = false
 let reactionsWired = false
+
+let animRaf = 0
+let lastTargetH = -1
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
@@ -1075,6 +1108,78 @@ let reactionsWired = false
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
+onMounted(() => nextTick(() => autoGrow(undefined, { animate: false })))
+watch(selectedUser, () => nextTick(() => autoGrow(undefined, { animate: false })))
+
+
+
+function onComposerInput(e: Event) {
+  onInputChanged()
+  autoGrow(e.target as HTMLTextAreaElement, { animate: true })
+}
+
+
+function autoGrow(el?: HTMLTextAreaElement | null, opts?: { animate?: boolean }) {
+  const ta = el ?? msgInput.value
+  if (!ta) return
+
+  const cs = window.getComputedStyle(ta)
+  const line   = parseFloat(cs.lineHeight) || 24
+  const pad    = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+  const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
+
+  // باکس‌سایزت border-box هست؛ پس ارتفاع نهایی باید padding + border رو هم دربر بگیره
+  const minH = line * MIN_ROWS + pad + border
+  const maxH = line * MAX_ROWS + pad + border
+
+  // ارتفاع فعلی واقعی (با border) → offsetHeight پایدارتر از getBoundingClientRect
+  const prevH = ta.offsetHeight || minH
+
+  // برای اندازه‌گیری محتوا: height:auto و overflow:hidden
+  const prevOverflow = ta.style.overflowY
+  ta.style.overflowY = 'hidden'
+  ta.style.height = 'auto'
+
+  // scrollHeight شامل padding هست اما border نه؛ پس +border
+  const contentH = ta.scrollHeight + border
+  const targetH  = Math.max(minH, Math.min(contentH, maxH))
+
+  const delta = Math.abs(targetH - prevH)
+  const animate = (opts?.animate ?? true) && delta >= 1 // اختلاف‌های <1px انیمیشن نزن تا تیک نزنه
+
+  // اسکرول فقط وقتی از سقف رد شده
+  ta.style.overflowY = contentH > maxH ? 'auto' : (prevOverflow || 'hidden')
+
+  if (!animate) {
+    // بدون انیمیشن (ریزتغییرات)
+    const prevTr = ta.style.transition
+    ta.style.transition = 'none'
+    ta.style.height = `${Math.round(targetH)}px`
+    void ta.offsetHeight
+    ta.style.transition = prevTr
+  } else {
+    // انیمیشن نرم از ارتفاع فعلی → هدف
+    ta.style.height = `${prevH}px`
+    void ta.offsetHeight
+    ta.style.height = `${Math.round(targetH)}px`
+  }
+}
+
+
+
+
+function insertNewLine(e: KeyboardEvent) {
+  const target = e.target as HTMLTextAreaElement
+  const start = target.selectionStart
+  const end = target.selectionEnd
+
+  text.value = text.value.substring(0, start) + "\n" + text.value.substring(end)
+
+  nextTick(() => {
+    target.selectionStart = target.selectionEnd = start + 1
+  })
+}
+
 
 function normEmoji(e: string): string {
   return (e || '')
@@ -1084,7 +1189,7 @@ function normEmoji(e: string): string {
 
 function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
   if (selectionMode.value) return
-  if (isInTextSelectable(ev.target)) return  // روی متن/منشن دابل‌کلیک شده: ریپلای نکن
+  if (isInTextSelectable(ev.target)) return  
   startReplyFrom(m)
 }
 
@@ -3108,6 +3213,7 @@ async function send() {
 
 
 
+
   // edit-mode
   if (editingMessage.value && editingMessage.value.id) {
     const aesKey = await getOrLoadKey(selectedUser.value.id)
@@ -3191,11 +3297,13 @@ async function send() {
   text.value = ''
   selectedFile.value = null
 
-
   
   stopTyping(selectedUser.value.id).catch(() => {})
   text.value = ''
   selectedFile.value = null
+  await nextTick()
+  autoGrow(undefined, { animate: true })
+
 }
 
 
@@ -3409,8 +3517,17 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   animation: ripple .5s ease-out forwards;
 }
 
+.auto-dir { unicode-bidi: plaintext; }
+
+.text-start { text-align: start; }
+
+.composer textarea {
+  resize: none !important;
+  overflow-y: auto;
+}
+.composer textarea::-webkit-resizer { display: none; } 
+
 
 @keyframes ripple { to { transform: scale(4); opacity:0; } }
 
 </style>
-
