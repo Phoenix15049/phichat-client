@@ -1,6 +1,9 @@
 <template>
   <div class="flex h-screen" dir="ltr">
-    <div class="w-80 md:w-96 flex flex-col border-r border-gray-200">
+    <div
+      class="flex flex-col border-gray-200"
+      :class="isNarrow ? 'w-full border-r-0' : 'w-80 md:w-96 border-r'"
+      v-show="showListPane">
       <div class="px-3 py-2 font-semibold text-gray-800 border-b border-gray-200 flex items-center justify-between">
         <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true" aria-label="Open menu">
           <Menu class="w-5 h-5" />
@@ -57,7 +60,7 @@
                 {{ formatRelativeEn(conv.lastSentAt || null) }}
               </div>
             </div>
-            <div class="text-xs text-gray-500 flex items-center gap-1">
+            <div class="text-xs text-gray-500 flex items-center gap-1 ">
               <span class="truncate max-w-[12rem]">
                 <template v-if="conv.lastFileUrl">[Media]</template>
                 <template v-else>{{ conv.lastPreview || '' }}</template>
@@ -74,7 +77,8 @@
       </div>
     </div>
 
-    <div class="flex-1 flex flex-col">
+    <div class="flex-1 flex flex-col"
+     v-show="showChatPane">
 
 
     <div
@@ -86,7 +90,7 @@
       <transition name="slide-down" mode="out-in">
         <div v-if="selectionMode" key="sel" class="flex items-center gap-3">
           <button
-            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-1"
+            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-0.5"
             :disabled="!selectedCount"
             @click="openForwardPickerMulti"
             title="Group Forward"
@@ -105,39 +109,62 @@
           <button class="px-2 py-1 rounded hover:bg-white/10" @click.stop="clearSelection" v-ripple>Cancel</button>
         </div>
 
-        <div v-else key="norm" class="flex items-left">
+        <div v-else key="norm" class="flex items-center gap-3">
+          <!-- Back -->
           <button
-            v-if="chatNavStack.length"
-            class="ml-2 px-2 py-1 rounded hover:bg-white/10"
-            @click.stop="goBackChat"
+            v-if="(isNarrow && selectedUser) || chatNavStack.length"
+            class="ml-1 px-2 py-1 rounded hover:bg-white/10"
+            @click.stop="onHeaderBack"
             title="Back"
-            v-ripple aria-label="Back"
-          ><ArrowLeft class="w-5 h-5" /></button>
+            v-ripple aria-label="Back">
+            <ArrowLeft class="w-5 h-5" />
+          </button>
 
-          <div class="text-xs text-white/100 mt-0.5" v-if="selectedUser">
-            <template v-if="isPeerTyping">
-              <div class="text-lg font-semibold truncate">
-                {{ selectedLabel }}
+          <!-- Avatar -->
+          <div v-if="isNarrow && selectedUser" class="relative shrink-0" @click.stop="openPeerProfile()">
+            <div class="w-9 h-9 rounded-full overflow-hidden bg-white/10 grid place-items-center">
+              <img v-if="avatarById[selectedUser.id]"
+                  :src="avatarById[selectedUser.id]!"
+                  class="w-full h-full object-cover" />
+              <div v-else
+                  class="w-full h-full grid place-items-center text-sm font-semibold"
+                  :style="{ backgroundColor: colorFromString(displayById[selectedUser.id] || '@'+selectedUser.username) }">
+                <span class="text-white">
+                  {{ initialsOf(displayById[selectedUser.id] || selectedLabel) }}
+                </span>
               </div>
-              <div class="flex items-center gap-1 mt-0.5">
-                <span class="sr-only">typing</span>
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:0ms"></span>
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:120ms"></span>
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-white/90 animate-bounce" style="animation-delay:240ms"></span>
-              </div>
-            </template>
-            <template v-else-if="onlineIds.has(selectedUser.id)">
-              <div class="text-lg font-semibold truncate">
-                {{ selectedLabel }}
-              </div>
-              <div class="text-xs text-white/100 mt-0.5">{{ peerStatus }}</div>
-            </template>
-            <template v-else>
-              <div class="text-lg font-semibold truncate">
-                {{ selectedLabel }}
-              </div>
-              <div class="text-xs text-white/80 mt-0.5">{{ peerStatus }}</div>
-            </template>
+            </div>
+            
+          </div>
+
+          <!-- Title + status -->
+          <div v-if="selectedUser" class="min-w-0 select-none" @click.stop="openPeerProfile()">
+            <div class="truncate text-[15px] leading-5 font-semibold">
+              {{ selectedLabel }}
+            </div>
+
+            <!-- typing / online / last seen -->
+            <div class="flex items-center gap-2 leading-4">
+              <!-- typing (بنفش) -->
+              <template v-if="isPeerTyping">
+                <div class="flex items-center gap-1 text-[13px] text-[#A78BFA]">
+                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:0ms"></span>
+                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:120ms"></span>
+                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:240ms"></span>
+                  <span>typing</span>
+                </div>
+              </template>
+
+              <!-- online (سفید کامل) -->
+              <template v-else-if="onlineIds.has(selectedUser.id)">
+                <div class="text-[12px] text-white/100">Online</div>
+              </template>
+
+              <!-- last seen (سفید با شفافیت) -->
+              <template v-else>
+                <div class="text-[12px] text-white/70 truncate">{{ peerStatus }}</div>
+              </template>
+            </div>
           </div>
         </div>
       </transition>
@@ -210,9 +237,6 @@
                 {{ resolveForwardLabel(msg.forwardedFromSenderId) }}
               </button>
             </div>
-
-            
-
 
             <!-- متن -->
             <div v-if="!msg.fileUrl && msg.plainText"
@@ -402,58 +426,68 @@
       </div>
 
       <!-- Submission form -->
+      <!-- Submission form -->
       <form v-if="selectedUser" @submit.prevent="send"
-      class="composer p-4 flex items-center gap-2 border border-gray-100 relative">
-        
-        <!-- Attach (paperclip) -->
-        <div class="relative"
-            @mouseenter="clipHover = true"
-            @mouseleave="clipHover = false">
-          <button type="button" class="px-4 py-2 text-gray-500 hover:text-gray-700 border border-gray-200 " @click="openFilePicker" title="Attach" aria-label="Attach">
-            <Paperclip class="w-5 h-5" />
+        class="composer p-2 border-t border-gray-100">
+
+        <!-- کپسول سبک تلگرام -->
+        <div class="relative flex items-end gap-1 rounded-2xl bg-white ring-1 ring-[#456173]/15
+                    px-1 py-1 shadow-sm focus-within:ring-[#11BFAE]/40">
+
+          <!-- گیره (Attach) داخل کپسول -->
+          <div class="relative"
+              @mouseenter="clipHover = true"
+              @mouseleave="clipHover = false">
+            <button type="button"
+                    class="p-1 rounded-full text-[#456173] hover:text-[#1B3C59] hover:bg-black/5"
+                    @click="openFilePicker" title="Attach" aria-label="Attach">
+              <Paperclip class="w-6 h-6" />
+            </button>
+
+            <!-- Pin menu (بدون تغییر) -->
+            <transition name="clip-pop">
+              <div v-if="clipHover || menuHover"
+                  class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
+                  @mouseenter="menuHover = true"
+                  @mouseleave="menuHover = false">
+                <button type="button" class="block w-full text-left px-3 py-2 hover:bg-gray-50" @click="openFilePicker" v-ripple>
+                  File
+                </button>
+                <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker" v-ripple>
+                  Photo & Video
+                </button>
+              </div>
+            </transition>
+          </div>
+
+          <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
+          <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
+
+          <!-- textarea بدون باکس مستقل؛ داخل کپسول -->
+          <textarea
+            v-model="text"
+            ref="msgInput"
+            rows="1"
+            dir="auto"
+            placeholder="Write a message…"
+            class="tg-text tg-fade flex-1 min-w-0 bg-transparent border-0 pl-1 px-2 py-2 leading-6 resize-none
+                  overflow-y-auto box-border will-change-[height] outline-none placeholder:text-gray-400"
+            style="transition: height .14s ease;"
+            @keydown.enter.exact.prevent="send"
+            @input="onComposerInput"
+            @blur="onBlurInput"
+          />
+
+          <!-- دکمه ارسال گرد، داخل کپسول (هم‌رنگ برند) -->
+          <button type="submit"
+            class="tg-send w-10 h-10 rounded-full grid place-items-center
+                  bg-[#11BFAE] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="!canSend">
+            <SendHorizontal class="w-5 h-5" />
           </button>
-
-          <!-- Pin menu -->
-          <transition name="clip-pop">
-            <div v-if="clipHover || menuHover"
-                class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
-                @mouseenter="menuHover = true"
-                @mouseleave="menuHover = false">
-              <button type="button" class="block w-full text-left px-3 py-2 hover:bg-gray-50 " @click="openFilePicker" v-ripple>
-                File
-              </button>
-              <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker" v-ripple>Photo & Video</button>
-            </div>
-          </transition>
         </div>
-
-        <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
-        <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
-        
-        <textarea
-          v-model="text"
-          ref="msgInput"
-          rows="1"
-          dir="auto"
-          placeholder="Write a message…"
-          class="flex-1 border rounded px-3 py-2 leading-6 text-start resize-none overflow-y-auto box-border will-change-[height]"
-          style="transition: height .14s ease"
-          @keydown.enter.exact.prevent="send"
-          @input="onComposerInput"
-          @blur="onBlurInput"
-        />
-
-
-
-
-        
-        <button type="submit"
-          class="bg-[#11BFAE] text-white px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="!canSend"
-        ><SendHorizontal /></button>
       </form>
 
-      <!-- Context Menu -->
       <!-- Context Menu -->
       <transition name="fade">
         <div v-if="contextMenu.visible"
@@ -1101,6 +1135,10 @@ let reactionsWired = false
 
 let animRaf = 0
 let lastTargetH = -1
+
+const isNarrow = ref(false)
+const showListPane = computed(() => !isNarrow.value || !selectedUser.value)
+const showChatPane = computed(() => !isNarrow.value || !!selectedUser.value)
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
@@ -1108,6 +1146,22 @@ let lastTargetH = -1
 
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
+
+
+function onHeaderBack() {
+  if (chatNavStack.value.length) {
+    return goBackChat()
+  }
+  if (isNarrow.value && selectedUser.value) {
+    selectedUser.value = null
+    if (route.path !== '/chat') router.replace('/chat')
+  }
+}
+
+
+
+
+
 onMounted(() => nextTick(() => autoGrow(undefined, { animate: false })))
 watch(selectedUser, () => nextTick(() => autoGrow(undefined, { animate: false })))
 
@@ -1297,9 +1351,6 @@ function bubbleClasses(msg: UiMessage) {
     if (selOn) {
       base.push('ring-2', msg.senderId === myId.value ? 'ring-white/80' : 'ring-[#11BFAE]/50', 'shadow-md')
     }
-
-
-
   }
   return base
 }
@@ -2277,6 +2328,7 @@ function onWindowScroll() {
 }
 function onWindowResize() {
   if (contextMenu.value.visible) nextTick(() => clampMenuPosition())
+  isNarrow.value = window.innerWidth < 768
 }
 
 function clampMenuPosition() {
@@ -2694,10 +2746,19 @@ onBeforeUnmount(() => {
 
 })
 
+onMounted(() => {
+  isNarrow.value = window.innerWidth < 768
+  window.addEventListener('resize', onWindowResize)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResize)
+})
 
 onMounted(async () => {
   // myId from JWT
   resetState()
+
+  
 
   const token = getToken()
   if (!token || isJwtExpired(token)) {
@@ -3526,6 +3587,23 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   overflow-y: auto;
 }
 .composer textarea::-webkit-resizer { display: none; } 
+
+
+
+/* پنهان کردن اسکرول‌بار */
+.tg-text{
+  -ms-overflow-style: none;   /* IE/Edge legacy */
+  scrollbar-width: none;      /* Firefox */
+}
+.tg-text::-webkit-scrollbar{  /* Chrome/Safari */
+  width:0; height:0;
+}
+
+/* فید ملایم در لبهٔ بالا (caret و متن مشکلی ندارن) */
+.tg-fade{
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
+          mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
+}
 
 
 @keyframes ripple { to { transform: scale(4); opacity:0; } }
