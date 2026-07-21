@@ -13,16 +13,6 @@ API.interceptors.request.use(config => {
   return config
 })
 
-export async function getConversationWith(userId: string) {
-  const res = await API.get(`/messages/with/${userId}`)
-  return res.data
-}
-
-export async function getMyMessages() {
-  const res = await API.get('/messages')
-  return res.data
-}
-
 export async function getChatKey(userId: string): Promise<string | null> {
   try {
     const res = await API.get(`/keys/${userId}`)
@@ -41,10 +31,6 @@ export async function storeChatKey(payload: StoreChatKeyPayload) {
   })
 }
 
-export async function getUserList() {
-  const res = await API.get('/users/list')
-  return res.data
-}
 
 export async function getUserById(userId: string) {
   const res = await API.get(`/users/${userId}`)
@@ -175,12 +161,6 @@ export async function checkUsername(u: string) {
 }
 
 
-export async function updateDisplayName(displayName: string) {
-  await API.patch('/users/display-name', displayName, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-  })
-}
-
 export async function getMessageBrief(id: string) {
   const { data } = await API.get(`/messages/${id}/brief`)
   return data as {
@@ -204,10 +184,6 @@ export async function getUsersList() {
   return data as Array<{
     id: string; username: string; displayName?: string; avatarUrl?: string; lastSeenUtc?: string | null
   }>
-}
-
-export async function getOnlineUsers() {
-  return [] as string[]
 }
 
 export async function sendMessageWithFileFD(fd: FormData) {

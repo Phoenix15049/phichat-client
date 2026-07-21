@@ -55,9 +55,6 @@ export function onMessageReceived(cb: (msg: any) => void) {
     })
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
-export function offMessageReceived(cb: (msg: any) => void) {
-  connection?.off('ReceiveMessage', cb as any)
-}
 
 // Delivered({ messageId, receiverId, sentAt, clientId? })
 export function onDelivered(cb: (info: any) => void) {
@@ -121,9 +118,6 @@ export function onUserOnline(cb: (userId: string, at: string) => void) {
     })
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
-export function offUserOnline(cb: (userId: string, at: string) => void) {
-  connection?.off('UserOnline', cb as any)
-}
 
 // UserOffline(userId, at)
 export function onUserOffline(cb: (userId: string, at: string) => void) {
@@ -134,9 +128,6 @@ export function onUserOffline(cb: (userId: string, at: string) => void) {
     })
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
-export function offUserOffline(cb: (userId: string, at: string) => void) {
-  connection?.off('UserOffline', cb as any)
-}
 
 /* ---------------- Typing ---------------- */
 
@@ -146,20 +137,12 @@ export function onTyping(cb: (p: { SenderId: string; At?: string }) => void) {
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
 
-export function offTyping(cb: (payload: { SenderId: string; At: string }) => void) {
-  connection?.off('UserTyping', cb as any)
-}
-
 // UserStoppedTyping({ SenderId, At })
 export function onTypingStopped(cb: (p: { SenderId: string; At?: string }) => void) {
   const sub = (c: HubConnection) => c.on('UserStoppedTyping', (raw: any) => cb(normTyping(raw)))
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
 
-
-export function offTypingStopped(cb: (payload: { SenderId: string; At: string }) => void) {
-  connection?.off('UserStoppedTyping', cb as any)
-}
 
 // invoke typing from client
 export async function startTyping(receiverId: string) {
@@ -174,9 +157,6 @@ export function onUserLastSeen(cb: (userId: string, whenIso: string) => void) {
   if (connection) sub(connection); else pendingSubs.push(sub)
 }
 
-
-export type DeliveredPayload = { messageId: string; deliveredAtUtc: string };
-export type MessageReadPayload = { messageId: string; readAtUtc: string };
 
 export function onMessageEdited(cb: (p: { messageId: string; encryptedContent: string; updatedAtUtc?: string }) => void) {
   const sub = (c: HubConnection) => c.on('MessageEdited', (p: any) => cb(p));

@@ -13,11 +13,3 @@ export async function loadAESKey(userId: string): Promise<CryptoKey | null> {
   if (!base64) return null;
   return await importAESKey(base64);
 }
-
-export function hasAESKey(userId: string): boolean {
-  return localStorage.getItem(STORAGE_KEY_PREFIX + userId) !== null;
-}
-
-export function deleteAESKey(userId: string): void {
-  localStorage.removeItem(STORAGE_KEY_PREFIX + userId);
-}
