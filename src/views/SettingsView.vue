@@ -109,7 +109,6 @@ import { ref, onMounted } from 'vue'
 import { getMeProfile, updateMyProfile, uploadAvatar } from '../services/api'
 import { clearAuthLocal } from '../services/auth'
 import { useRouter } from 'vue-router'
-import ModalSheet from '../components/ModalSheet.vue'
 const displayName = ref<string>('')
 const avatarUrl   = ref<string>('')
 const bio         = ref<string>('')

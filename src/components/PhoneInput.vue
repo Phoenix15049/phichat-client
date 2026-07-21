@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { COUNTRIES, type Country } from '../data/countries'
-import { ChevronDown, Search, Phone as PhoneIcon } from 'lucide-vue-next'
+import { ChevronDown, Search} from 'lucide-vue-next'
 
 
 const props = defineProps<{

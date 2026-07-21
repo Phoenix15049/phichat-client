@@ -4,9 +4,6 @@ import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@micros
 let connection: HubConnection | null = null
 let started = false
 
-let deliveredHandler: ((p: DeliveredPayload) => void) | null = null;
-let readHandler: ((p: MessageReadPayload) => void) | null = null;
-
 // Handlers registered before connection starts are queued here
 const pendingSubs: Array<(c: HubConnection) => void> = []
 

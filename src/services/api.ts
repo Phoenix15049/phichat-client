@@ -1,7 +1,7 @@
 // src/services/api.ts
 import axios from 'axios'
 
-import { getToken, clearAuthLocal, setToken, ACCESS_TOKEN_KEY } from './auth'
+import { getToken, clearAuthLocal, setToken } from './auth'
 
 export const API = axios.create({
   baseURL: 'https://localhost:7146/api'
@@ -119,12 +119,6 @@ export interface LoginWithSmsRequest {
   code: string;
 }
 
-
-// helper to read token in both cases (camelCase/PascalCase)
-function extractToken(data: any): string | undefined {
-  return data?.token ?? data?.Token;
-}
-
 // --- ADD these API functions near other auth functions ---
 export async function registerWithPhone(payload: RegisterWithPhoneRequest) {
   const { data } = await API.post("/auth/register-phone", payload);
@@ -213,7 +207,6 @@ export async function getUsersList() {
 }
 
 export async function getOnlineUsers() {
-  // از SignalR می‌گیریم (invoke)، پس این تابع را در signalr.ts می‌سازیم نه اینجا
   return [] as string[]
 }
 

@@ -89,10 +89,10 @@
 
 <script setup lang="ts">
 import ModalSheet from './ModalSheet.vue'
-import { defineProps, defineEmits } from 'vue'
+
 import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
 
-const props = defineProps<{
+defineProps<{
   open: boolean
   user: {
     id: string

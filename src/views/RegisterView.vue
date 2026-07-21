@@ -130,7 +130,7 @@ import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import PhoneInput from "../components/PhoneInput.vue";
 import {
-  Phone, Send, Loader2, Check, ShieldCheck, ArrowRight, ArrowLeft, X as XIcon, AlertCircle
+  Send, Loader2, Check, ShieldCheck, ArrowRight, ArrowLeft, X as XIcon, AlertCircle
 } from 'lucide-vue-next'
 
 import {

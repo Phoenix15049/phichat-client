@@ -925,7 +925,6 @@ const messages = ref<UiMessage[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
 const unread = ref<Record<string, number>>({})
-const online = new Set<string>()
 const typing = new Set<string>()
 
 const isPeerTyping = ref(false)
@@ -943,9 +942,6 @@ const replyingTo = ref<UiMessage | null>(null)
 
 const conversations = ref<UiConversation[]>([])
 
-
-const msgElMap = new Map<string, HTMLElement>();
-
 const ACTIVE_UID_KEY = 'phi.activeUserId';
 
 const contextMenu = ref<{
@@ -960,8 +956,6 @@ const menuEl = ref<HTMLElement | null>(null)
 
 const quickEmojis = ['👍','❤️','😂','😮','😢','🔥','🙏','🎹']
 const reactionPickerFor = ref<string | null>(null)
-
-const forwardPickerFor = ref<{ msg: UiMessage | null, visible: boolean }>({ msg: null, visible: false })
 
 const forwardNames = reactive<Record<string, string>>({})
 const forwardHandles = reactive<Record<string, string>>({}) 
@@ -1070,7 +1064,6 @@ const peerStatus = computed(() => {
   return ls ? `Last seen ${formatRelativeEn(ls)}` : 'Last seen unknown'
 })
 
-const attachOpen = ref(false)
 const fileInput = ref<HTMLInputElement|null>(null)
 
 function openFilePicker() {
@@ -1127,14 +1120,11 @@ const hoverReactFor = ref<string|null>(null)
 let hoverReactTimer: number | null = null         
 const HOVER_REACT_DELAY = 1000   
 let hoverBarHideTimer: number | null = null
-let hoverSuppressUntil = 0
 let suppressHoverUntil = 0
+
 
 let signalRWired = false
 let reactionsWired = false
-
-let animRaf = 0
-let lastTargetH = -1
 
 const isNarrow = ref(false)
 const showListPane = computed(() => !isNarrow.value || !selectedUser.value)
@@ -1218,22 +1208,6 @@ function autoGrow(el?: HTMLTextAreaElement | null, opts?: { animate?: boolean })
     ta.style.height = `${Math.round(targetH)}px`
   }
 }
-
-
-
-
-function insertNewLine(e: KeyboardEvent) {
-  const target = e.target as HTMLTextAreaElement
-  const start = target.selectionStart
-  const end = target.selectionEnd
-
-  text.value = text.value.substring(0, start) + "\n" + text.value.substring(end)
-
-  nextTick(() => {
-    target.selectionStart = target.selectionEnd = start + 1
-  })
-}
-
 
 function normEmoji(e: string): string {
   return (e || '')
@@ -1486,7 +1460,6 @@ function isVideoUrl(url?: string|null) {
   return /\.(mp4|webm|ogg|mov|m4v)$/i.test(url.split('?')[0] || '')
 }
 function isImageFile(f: File){ return f.type.startsWith('image/') }
-function isVideoFile(f: File){ return f.type.startsWith('video/') }
 
 async function compressImageFile(file: File, maxDim = 1280, quality = 0.82): Promise<File> {
   const img = await new Promise<HTMLImageElement>((res, rej) => {
@@ -1609,8 +1582,6 @@ async function confirmSendFile() {
     const toEncrypt = caption ? caption : EMPTY_MSG_MARKER
     const captionEnc = await encryptAES(key, toEncrypt)
 
-    // برای هر فایل یک پیام pending بساز و ارسال کن
-    const sameChat = true  // چون در همین چت هستیم مودال را باز کرده‌ایم
     const nowIso = new Date().toISOString()
 
     for (const f of pendingFiles.value) {
@@ -1645,7 +1616,6 @@ async function confirmSendFile() {
     // آپدیت سایدبار (آخرین وضعیت گفتگو)
     const uid = selectedUser.value.id
     const convIdx = conversations.value.findIndex(c => c.peerId === uid)
-    const lastFile = pendingFiles.value[pendingFiles.value.length - 1]
     if (convIdx >= 0) {
       const c = conversations.value[convIdx]
       c.lastSentAt = nowIso
@@ -2054,11 +2024,6 @@ async function copySelectedText() {
   showToast('Copied')
 }
 
-async function deleteSelectedForMe() {
-  if (!selectedCount.value) return
-  openDeleteConfirmMulti()
-}
-
 function startSelectionFrom(m: UiMessage) {
   selectionMode.value = true
   selected.clear()
@@ -2248,15 +2213,6 @@ async function doForward(toPeerId: string) {
   }
 }
 
-
-function resolveUserName(userId?: string | null) {
-  if (!userId) return 'کاربر'
-  const conv = conversations.value.find(c => c.peerId === userId)
-  if (conv) return conv.displayName || '@' + conv.username
-  return 'کاربر'
-}
-
-
 function draftKey(peerId: string) {
   const uid = myId.value || 'me'
   return `phi.draft.${uid}.${peerId}`
@@ -2271,15 +2227,10 @@ function clearDraft(peerId: string) {
   try { localStorage.removeItem(draftKey(peerId)) } catch {}
 }
 
-function openReactionPicker(m: UiMessage) {
-  reactionPickerFor.value = m.id || m.clientId || null
-}
-
 async function applyReaction(m: UiMessage, emoji: string) {
   await toggleReaction(m, emoji)
   suppressHoverUntil = Date.now() + 700
   if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
-  hoverSuppressUntil = Date.now() + 800
   reactionPickerFor.value = null
   hoverReactFor.value = null
   contextMenu.value.visible = false
@@ -2462,34 +2413,6 @@ async function jumpToReplied(replyId: string) {
   }
 }
 
-async function jumpToMessage(targetId: string) {
-
-  let el = msgElMap.get(targetId);
-  if (!el) {
-
-    let tries = 0;
-    while (!el && hasMore.value && tries < 10) {
-      const loaded = await loadOlderOnce();
-      if (!loaded) break;
-      await nextTick();
-      el = msgElMap.get(targetId);
-      tries++;
-    }
-  }
-  if (el && scrollBox.value) {
-    
-    const container = scrollBox.value;
-    const top = el.offsetTop - 100;
-    container.scrollTo({ top, behavior: "smooth" });
-
-
-    el.classList.add("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
-    setTimeout(() => {
-      el.classList.remove("ring-2", "ring-yellow-400", "ring-offset-2", "ring-offset-transparent");
-    }, 1200);
-  }
-}
-
 
 async function loadOlderOnce(): Promise<boolean> {
   if (!selectedUser.value || !hasMore.value || loadingOlder.value) return false;
@@ -2499,7 +2422,8 @@ async function loadOlderOnce(): Promise<boolean> {
   loadingOlder.value = true;
   try {
     const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
-    const items: any[] = (page.items ?? page.Items ?? []).filter(m => !m.isDeleted)
+    const items: any[] = (page.items ?? page.Items ?? [])
+  .filter((m: any) => !m.isDeleted)
     hasMore.value = !!(page.hasMore ?? page.HasMore);
     oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
 
@@ -2584,15 +2508,6 @@ function dedupeReactions(list: {emoji:string; count:number; mine?:boolean}[]) {
 }
 
 
-
-
-
-
-function setMessageEl(key: string, el: Element | null) {
-  if (el) messageEls.set(key, el as HTMLElement)
-  else messageEls.delete(key)
-}
-
 function fmtHHmmLocal(iso?: string | null): string {
   const d = toDateSafe(iso);
   if (!d) return "";
@@ -2651,7 +2566,7 @@ function showDayHeader(index: number): boolean {
 
 
 
-async function onScrollLoadMore(e: Event) {
+async function onScrollLoadMore() {
   if (!selectedUser.value || !hasMore.value || loadingOlder.value) return;
   const el = scrollBox.value;
   if (!el) return;
@@ -2664,7 +2579,8 @@ async function onScrollLoadMore(e: Event) {
 
   try {
     const page = await getConversationPaged(selectedUser.value.id, before, 50);
-    const items: any[] = (page.items ?? page.Items ?? []).filter(m => !m.isDeleted)
+    const items: any[] = (page.items ?? page.Items ?? [])
+  .filter((m: any) => !m.isDeleted)
     hasMore.value = !!(page.hasMore ?? page.HasMore);
     oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
 
@@ -2953,7 +2869,6 @@ function wireSignalR() {
     }
 
     const raw = (message.encryptedText || message.encryptedContent || '') as string
-    const hasCipher = raw.trim().length > 0
 
     // ensure AES key
     let aesKey = await getOrLoadKey(message.senderId)
@@ -3249,11 +3164,6 @@ async function handleUserSelect(user: { id: string; username: string }) {
   Promise.allSettled(unreadIds.map(id => markAsRead(id))).catch(() => {})
 }
 
-function onFileSelected(e: Event) {
-  const input = e.target as HTMLInputElement
-  selectedFile.value = input.files && input.files[0] ? input.files[0] : null
-}
-
 async function send() {
   if (!selectedUser.value) return
 
@@ -3519,12 +3429,10 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 }
 .reaction-btn:hover { transform: translateY(-1px) scale(1.08); }
 
-/* دکمه more (chevron) اختیاری */
 .reaction-more {
   @apply w-6 h-6 inline-grid place-items-center rounded-full bg-white/20 hover:bg-white/30 transition text-white;
 }
 
-/* انیمیشن پاپ/محو کوچک که در بقیه‌ٔ فایل هم استفاده کردی */
 .fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
 .fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
 .fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
@@ -3553,7 +3461,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
          hover:bg-black/5 transition;
 }
 
-/* آیتم‌ها همان قبلی، عرض کلی هم با min-w[168px] جمع‌وجور شد */
 .menu-item {
   @apply w-full text-left px-3 py-2 text-[14px] text-[#1B3C59]
          hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15
@@ -3589,8 +3496,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 .composer textarea::-webkit-resizer { display: none; } 
 
 
-
-/* پنهان کردن اسکرول‌بار */
 .tg-text{
   -ms-overflow-style: none;   /* IE/Edge legacy */
   scrollbar-width: none;      /* Firefox */
@@ -3599,7 +3504,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   width:0; height:0;
 }
 
-/* فید ملایم در لبهٔ بالا (caret و متن مشکلی ندارن) */
 .tg-fade{
   -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
           mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);

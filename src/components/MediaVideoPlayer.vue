@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ src: string, caption?: string }>()
+defineProps<{ src: string, caption?: string }>()
 const emit  = defineEmits<{ (e:'close'): void }>()
 </script>
 

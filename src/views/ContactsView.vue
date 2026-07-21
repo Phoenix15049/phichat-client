@@ -105,7 +105,7 @@ import { ref, onMounted, computed } from 'vue'
 import { getMyContacts, addContact, removeContact, getUserByUsername } from '../services/api'
 import ModalSheet from '../components/ModalSheet.vue'
 
-const props = defineProps<{ inModal?: boolean }>()
+defineProps<{ inModal?: boolean }>()
 const emit = defineEmits<{ (e: 'open-chat', p: { id: string; username: string }): void }>()
 
 // state

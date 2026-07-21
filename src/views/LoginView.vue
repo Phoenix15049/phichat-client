@@ -96,7 +96,7 @@
 
 <script setup lang="ts">
 import {
-  Lock, MessageSquare, LogIn, Loader2, Send, Clock, AlertCircle, Phone
+  Lock, MessageSquare, LogIn, Loader2, Send, Clock, AlertCircle
 } from 'lucide-vue-next'
 
 import { ref, onBeforeUnmount,onMounted } from "vue";

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
-const props = defineProps<{ src: string, caption?: string }>()
+defineProps<{ src: string, caption?: string }>()
 const emit  = defineEmits<{ (e:'close'): void }>()
 const scale = ref(1)
 const ox = ref(0); const oy = ref(0)
