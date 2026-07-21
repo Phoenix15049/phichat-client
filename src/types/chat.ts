@@ -71,3 +71,55 @@ export type Contact = {
   contactUserId?: string
   peerId?: string
 }
+
+export type ServerReaction = {
+  emoji?: string
+  Emoji?: string
+  count?: number
+  Count?: number
+  mine?: boolean
+  Mine?: boolean
+}
+
+export type ServerMessage = {
+  id?: string
+  messageId?: string
+  MessageId?: string
+
+  senderId?: string
+  SenderId?: string
+
+  encryptedText?: string
+  EncryptedText?: string
+  encryptedContent?: string
+  EncryptedContent?: string
+
+  fileUrl?: string | null
+  FileUrl?: string | null
+
+  sentAt?: string
+  SentAt?: string
+  deliveredAtUtc?: string | null
+  DeliveredAtUtc?: string | null
+  readAtUtc?: string | null
+  ReadAtUtc?: string | null
+
+  replyToMessageId?: string | null
+  ReplyToMessageId?: string | null
+
+  isDeleted?: boolean
+  IsDeleted?: boolean
+  isRead?: boolean
+  IsRead?: boolean
+
+  updatedAtUtc?: string | null
+  UpdatedAtUtc?: string | null
+
+  reactions?: ServerReaction[]
+  Reactions?: ServerReaction[]
+
+  forwardedFromMessageId?: string | null
+  ForwardedFromMessageId?: string | null
+  forwardedFromSenderId?: string | null
+  ForwardedFromSenderId?: string | null
+}

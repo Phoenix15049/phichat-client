@@ -872,11 +872,16 @@ import { toAbsoluteServerUrl } from '../config/server'
 import type {
   ChatUser,
   Contact,
+  ServerMessage,
   UiConversation,
   UiMessage,
-  UiReaction,
   UserApiItem
 } from '../types/chat'
+
+import {
+  dedupeReactions,
+  mapServerMessage
+} from '../utils/messageMapper'
 
 
 function resolveReplyPreview(replyId?: string | null): string {
@@ -2406,57 +2411,40 @@ async function loadOlderOnce(): Promise<boolean> {
   loadingOlder.value = true;
   try {
     const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
-    const items: any[] = (page.items ?? page.Items ?? [])
-  .filter((m: any) => !m.isDeleted)
-    hasMore.value = !!(page.hasMore ?? page.HasMore);
-    oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
+    const items = (
+      page.items ??
+      page.Items ??
+      []
+    ) as ServerMessage[]
 
-    if (!items.length) return false;
+    const visibleItems = items.filter(
+      message => !message.isDeleted
+    )
+    hasMore.value = !!(page.hasMore ?? page.HasMore);
+    oldestId.value =
+      page.oldestId ??
+      page.OldestId ??
+      (visibleItems[0]?.messageId || null)
+
+    if (!visibleItems.length) return false
     
     const aesKey = await getOrLoadKey(selectedUser.value.id);
-    const older = await Promise.all(items.map(async (msg: any) => {
-      const raw = (msg.encryptedContent || "") as string;
-      let decrypted = "";
-      if (raw && raw.trim()) {
-        try { decrypted = (await decryptAES(aesKey, raw)) || "[رمزگشایی نشد]"; }
-        catch { decrypted = "[رمزگشایی نشد]"; }
-      }
-      
-      
-      const srvReacts = msg.reactions || msg.Reactions || []
-      let reactions: UiReaction[] = srvReacts.map((r:any) => ({
-        emoji: r.emoji || r.Emoji,
-        count: r.count ?? r.Count ?? 0,
-        mine: !!(r.mine ?? r.Mine)
-      }))
-      reactions = dedupeReactions(reactions);
+    const older = await Promise.all(
+      visibleItems.map(async message => {
+        const ui = await mapServerMessage(message, {
+          aesKey,
+          myId: myId.value,
+          cipherSource: 'content',
+          decryptFailureText: '[رمزگشایی نشد]'
+        })
 
-      const isMine = msg.senderId === myId.value;
-      const status: "delivered" | "read" | undefined = isMine
-        ? (msg.isRead ? "read" : "delivered")
-        : undefined;
+        if (ui.forwardedFromSenderId) {
+          cacheForwardName(ui.forwardedFromSenderId)
+        }
 
-      const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
-      if (fwdFrom) cacheForwardName(fwdFrom)
-
-
-      return {
-        id: msg.messageId,
-        senderId: msg.senderId,
-        plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : "",
-        fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
-        status,
-        sentAt: msg.sentAt,
-        deliveredAtUtc: msg.deliveredAtUtc || null,
-        readAtUtc: msg.readAtUtc || null,
-        replyToMessageId: msg.replyToMessageId || null,
-        isDeleted: !!msg.isDeleted,
-        updatedAtUtc: msg.updatedAtUtc || null,
-        reactions,
-        forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
-        forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
-      } as UiMessage;
-    }));
+        return ui
+      })
+    )
 
     messages.value = [...older, ...messages.value];
 
@@ -2476,19 +2464,6 @@ async function loadOlderOnce(): Promise<boolean> {
   } finally {
     loadingOlder.value = false;
   }
-}
-
-
-
-function dedupeReactions(list: {emoji:string; count:number; mine?:boolean}[]) {
-  const map = new Map<string, {emoji:string; count:number; mine?:boolean}>()
-  for (const r of list) {
-    const key = normEmoji(r.emoji)
-    const ex = map.get(key)
-    if (!ex) map.set(key, { ...r })
-    else { ex.count = r.count; ex.mine = ex.mine || r.mine || false }
-  }
-  return Array.from(map.values()).filter(r => r.count > 0)
 }
 
 
@@ -2563,57 +2538,39 @@ async function onScrollLoadMore() {
 
   try {
     const page = await getConversationPaged(selectedUser.value.id, before, 50);
-    const items: any[] = (page.items ?? page.Items ?? [])
-  .filter((m: any) => !m.isDeleted)
+    const items = (
+        page.items ??
+        page.Items ??
+        []
+      ) as ServerMessage[]
+
+      const visibleItems = items.filter(
+        message => !message.isDeleted
+      )
     hasMore.value = !!(page.hasMore ?? page.HasMore);
-    oldestId.value = page.oldestId ?? page.OldestId ?? (items[0]?.messageId || null);
+    oldestId.value =
+      page.oldestId ??
+      page.OldestId ??
+      (visibleItems[0]?.messageId || null)
 
-    if (items.length) {
+    if (visibleItems.length) {
       const aesKey = await getOrLoadKey(selectedUser.value.id);
-      const older = await Promise.all(items.map(async (msg: any) => {
-        const raw = (msg.encryptedContent || '') as string;
-        let decrypted = '';
-        if (raw && raw.trim()) {
-          try { decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'; }
-          catch { decrypted = '[رمزگشایی نشد]'; }
-        }
+      const older = await Promise.all(
+        visibleItems.map(async message => {
+          const ui = await mapServerMessage(message, {
+            aesKey,
+            myId: myId.value,
+            cipherSource: 'content',
+            decryptFailureText: '[رمزگشایی نشد]'
+          })
 
-        const srvReacts = msg.reactions || msg.Reactions || []
-        let reactions: UiReaction[] = srvReacts.map((r:any) => ({
-          emoji: r.emoji || r.Emoji,
-          count: r.count ?? r.Count ?? 0,
-          mine: !!(r.mine ?? r.Mine)
-        }))
-        reactions = dedupeReactions(reactions);
-        const isMine = msg.senderId === myId.value;
-        const status: 'delivered' | 'read' | undefined = isMine
-          ? (msg.isRead ? 'read' : 'delivered')
-          : undefined;
+          if (ui.forwardedFromSenderId) {
+            cacheForwardName(ui.forwardedFromSenderId)
+          }
 
-        
-        const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
-        if (fwdFrom) cacheForwardName(fwdFrom)
-
-
-        return {
-          id: msg.messageId,
-          senderId: msg.senderId,
-          plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
-          fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
-          status,
-          sentAt: msg.sentAt,
-          deliveredAtUtc: msg.deliveredAtUtc || null,
-          readAtUtc: msg.readAtUtc || null,
-          replyToMessageId: msg.replyToMessageId || msg.ReplyToMessageId || null,
-          isDeleted: !!msg.isDeleted,
-          updatedAtUtc: msg.updatedAtUtc || null,
-          reactions,
-          forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
-          forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
-
-
-        } as UiMessage;
-      }));
+          return ui
+        })
+      )
 
       messages.value = [...older, ...messages.value];
 
@@ -2799,12 +2756,16 @@ function wireSignalR() {
     }
     
     // unify fields
-    const isFromOtherPeer = selectedUser.value && message.senderId !== selectedUser.value.id
-    const isMyEcho = message.senderId === myId.value
+    const isFromOtherPeer =
+      selectedUser.value &&
+      senderId !== selectedUser.value.id
+
+    const isMyEcho =
+      senderId === myId.value
 
     if (!selectedUser.value || isFromOtherPeer || isMyEcho) {
       if (!isMyEcho) {
-        const sid = String(message.senderId)
+        const sid = senderId
         unread.value[sid] = (unread.value[sid] ?? 0) + 1
 
         // update sidebar conv
@@ -2852,33 +2813,28 @@ function wireSignalR() {
       return
     }
 
-    const raw = (message.encryptedText || message.encryptedContent || '') as string
+    const aesKey =
+      await getOrLoadKey(senderId)
 
-    // ensure AES key
-    let aesKey = await getOrLoadKey(message.senderId)
-    let decrypted = await decryptAES(aesKey, raw);
+    const ui = await mapServerMessage(
+      message as ServerMessage,
+      {
+        aesKey,
+        myId: myId.value,
+        cipherSource: 'text',
+        fallbackSentAt:
+          new Date().toISOString(),
 
-    if (!decrypted) {
-      const retryKey = await getOrLoadKey(message.senderId);
-      if (retryKey !== aesKey) {
-        decrypted = await decryptAES(retryKey, raw);
+        retryKey: () =>
+          getOrLoadKey(senderId)
       }
-    }
+    )
 
-    const ui: UiMessage = {
-      id: message.messageId || message.id || message.MessageId || null,
-      senderId: message.senderId,
-      plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
-      fileUrl: toAbsoluteFileUrl(message.fileUrl || null),
-      sentAt: message.sentAt || new Date().toISOString(),
-      deliveredAtUtc: message.deliveredAtUtc || null,
-      readAtUtc: message.readAtUtc || null,
-      replyToMessageId: message.replyToMessageId || message.ReplyToMessageId || null,
-      forwardedFromMessageId: message.forwardedFromMessageId || message.ForwardedFromMessageId || null,
-      forwardedFromSenderId:  message.forwardedFromSenderId  || message.ForwardedFromSenderId  || null,
-      
+    if (ui.forwardedFromSenderId) {
+      cacheForwardName(
+        ui.forwardedFromSenderId
+      )
     }
-    if (ui.forwardedFromSenderId) cacheForwardName(ui.forwardedFromSenderId)
 
     const el0 = scrollBox.value as HTMLElement | null
     const stick = !!el0 && isNearBottom(el0)
@@ -3058,74 +3014,46 @@ async function handleUserSelect(user: { id: string; username: string }) {
   const idx = conversations.value.findIndex(c => c.peerId === user.id)
   if (idx >= 0) conversations.value[idx].unreadCount = 0
   const page1 = await getConversationPaged(user.id, undefined, 50)
-  const history = page1.items ?? page1.Items ?? []
+  const history = (
+    page1.items ??
+    page1.Items ??
+    []
+  ) as ServerMessage[]
   hasMore.value = !!(page1.hasMore ?? page1.HasMore)
   oldestId.value = page1.oldestId ?? page1.OldestId ?? (history[0]?.messageId || null)
 
   const aesKey = await getOrLoadKey(user.id)
 
-  const prepared = await Promise.all(history.map(async (msg: any) => {
-    const raw = (msg.encryptedContent || '') as string
-    const hasCipher = raw.trim().length > 0
-
-    let decrypted = ''
-    if (hasCipher) {
-      try {
-        decrypted = (await decryptAES(aesKey, raw)) || '[رمزگشایی نشد]'
-      } catch {
-        decrypted = '[رمزگشایی نشد]'
-      }
-    }
-
+  if (history.length) {
     if (unread.value[user.id]) {
       unread.value[user.id] = 0
     }
 
-
-    const srvReacts = msg.reactions || msg.Reactions || []
-    let reactions: UiReaction[] = srvReacts.map((r:any) => ({
-      emoji: r.emoji || r.Emoji,
-      count: r.count ?? r.Count ?? 0,
-      mine: !!(r.mine ?? r.Mine)
-    }))
-    reactions = dedupeReactions(reactions);
-
-    const isMine = msg.senderId === myId.value
-    const status: 'delivered' | 'read' | undefined = isMine
-      ? (msg.isRead ? 'read' : 'delivered')
-      : undefined
-
-
     if (prevSelectedUserId) {
-    stopTyping(prevSelectedUserId).catch(() => {})
+      stopTyping(prevSelectedUserId)
+        .catch(() => {})
     }
+
     prevSelectedUserId = user.id
-
-    selectedUser.value = user
     isPeerTyping.value = false
-    const fwdFrom = msg.forwardedFromSenderId || msg.ForwardedFromSenderId
-    if (fwdFrom) cacheForwardName(fwdFrom)
+  }
 
-    return {
-      id: msg.messageId,
-      senderId: msg.senderId,
-      plainText: decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : '',
-      fileUrl: toAbsoluteFileUrl(msg.fileUrl || null),
-      status,
-      sentAt: msg.sentAt,
-      deliveredAtUtc: msg.deliveredAtUtc || null,
-      readAtUtc: msg.readAtUtc || null,
-      replyToMessageId: msg.replyToMessageId || null,
-      isDeleted: !!msg.isDeleted,
-      updatedAtUtc: msg.updatedAtUtc || null,
-      reactions,
-      forwardedFromMessageId: msg.forwardedFromMessageId || msg.ForwardedFromMessageId || null,
-      forwardedFromSenderId:  msg.forwardedFromSenderId  || msg.ForwardedFromSenderId  || null,
+  const prepared = await Promise.all(
+    history.map(async message => {
+      const ui = await mapServerMessage(message, {
+        aesKey,
+        myId: myId.value,
+        cipherSource: 'content',
+        decryptFailureText: '[رمزگشایی نشد]'
+      })
 
+      if (ui.forwardedFromSenderId) {
+        cacheForwardName(ui.forwardedFromSenderId)
+      }
 
-    } as UiMessage
-  }))
-
+      return ui
+    })
+  )
 
   messages.value = prepared
   await nextTick()
