@@ -1,10 +1,12 @@
 // src/services/api.ts
 import axios from 'axios'
-
+import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
 import { getToken, clearAuthLocal, setToken } from './auth'
+import type { Contact, UserApiItem } from '../types/chat'
+
 
 export const API = axios.create({
-  baseURL: 'https://localhost:7146/api'
+  baseURL: API_BASE_URL
 })
 
 API.interceptors.request.use(config => {
@@ -32,7 +34,9 @@ export async function storeChatKey(payload: StoreChatKeyPayload) {
 }
 
 
-export async function getUserById(userId: string) {
+export async function getUserById(
+  userId: string
+): Promise<UserApiItem> {
   const res = await API.get(`/users/${userId}`)
   return res.data
 }
@@ -40,15 +44,17 @@ export async function getUserById(userId: string) {
 export async function uploadEncryptedFile(formData: FormData): Promise<string> {
   const res = await API.post('/messages/upload', formData)
   const url: string = res.data.url
-  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+  return toAbsoluteServerUrl(url)
 }
 
-export async function getUserByUsername(username: string) {
+export async function getUserByUsername(
+  username: string
+): Promise<UserApiItem> {
   const { data } = await API.get(`/users/by-username/${encodeURIComponent(username)}`)
   return data
 }
 
-export async function getMeProfile() {
+export async function getMeProfile(): Promise<UserApiItem> {
   const { data } = await API.get('/users/me')
   return data
 }
@@ -58,9 +64,9 @@ export async function updateMyProfile(payload: { displayName?: string; avatarUrl
 }
 
 
-export async function getMyContacts() {
+export async function getMyContacts(): Promise<Contact[]> {
   const { data } = await API.get('/contacts')
-  return data as Array<{ contactId: string; username: string; displayName?: string; avatarUrl?: string }>
+  return data
 }
 
 export async function addContact(contactId: string) {
@@ -176,14 +182,12 @@ export async function getMessageBrief(id: string) {
 export async function uploadAvatar(formData: FormData): Promise<string> {
   const res = await API.post('/users/avatar', formData)
   const url: string = res.data.url
-  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+  return toAbsoluteServerUrl(url)
 }
 
-export async function getUsersList() {
+export async function getUsersList(): Promise<UserApiItem[]> {
   const { data } = await API.get('/users/list')
-  return data as Array<{
-    id: string; username: string; displayName?: string; avatarUrl?: string; lastSeenUtc?: string | null
-  }>
+  return data
 }
 
 export async function sendMessageWithFileFD(fd: FormData) {

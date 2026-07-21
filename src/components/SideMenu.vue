@@ -62,8 +62,10 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
 import { User, Users, Bookmark, Settings, X } from 'lucide-vue-next'
+import type { ChatUser } from '../types/chat'
 
-defineProps<{ open: boolean, me?: { displayName?: string; username?: string; avatarUrl?: string } | null }>()
+
+defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
 defineEmits<{ (e:'close'):void; (e:'action', a:'profile'|'contacts'|'saved'|'settings'):void }>()
 
 // Esc برای خارج‌ شدن وقتی فوکوس داخل دراور است

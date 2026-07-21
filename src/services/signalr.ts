@@ -1,6 +1,6 @@
 // src/services/signalr.ts
 import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@microsoft/signalr'
-
+import { CHAT_HUB_URL } from '../config/server'
 let connection: HubConnection | null = null
 let started = false
 
@@ -23,7 +23,9 @@ export async function connectToChatHub(token: string) {
   if (connection && (connection.state === HubConnectionState.Connected || started)) return
 
   connection = new HubConnectionBuilder()
-    .withUrl('https://localhost:7146/chat', { accessTokenFactory: () => token })
+    .withUrl(CHAT_HUB_URL, {
+      accessTokenFactory: () => token
+    })
     .withAutomaticReconnect()
     .build()
 

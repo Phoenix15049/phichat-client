@@ -89,20 +89,12 @@
 
 <script setup lang="ts">
 import ModalSheet from './ModalSheet.vue'
-
+import type { ChatUser } from '../types/chat'
 import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
 
 defineProps<{
   open: boolean
-  user: {
-    id: string
-    username: string
-    displayName?: string
-    avatarUrl?: string
-    bio?: string
-    lastSeenUtc?: string
-    phoneNumber?: string
-  } | null
+  user: ChatUser | null
   isContact: boolean
 }>()
 
@@ -132,7 +124,7 @@ function initials(name: string) {
   return parts.map(p => p[0]?.toUpperCase() ?? '').join('')
 }
 
-function fmtLastSeen(iso?: string) {
+function fmtLastSeen(iso?: string | null) {
   if (!iso) return 'Unknown'
   try {
     const d = new Date(iso)

@@ -47,10 +47,11 @@
 <script setup lang="ts">
 import ModalSheet from './ModalSheet.vue'
 import { X, Pencil } from 'lucide-vue-next'
+import type { ChatUser } from '../types/chat'
 
 defineProps<{
   open: boolean,
-  me?: { displayName?: string; username?: string; avatarUrl?: string } | null
+  me?: Partial<ChatUser> | null
 }>()
 
 defineEmits<{ (e:'close'):void; (e:'edit'):void }>()

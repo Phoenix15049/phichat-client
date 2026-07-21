@@ -867,37 +867,17 @@ import {
   ChevronDown, File as FileIcon,SendHorizontal
 } from 'lucide-vue-next'
 
+import { toAbsoluteServerUrl } from '../config/server'
 
-type UiReaction = { emoji: string; count: number; mine?: boolean }
+import type {
+  ChatUser,
+  Contact,
+  UiConversation,
+  UiMessage,
+  UiReaction,
+  UserApiItem
+} from '../types/chat'
 
-type UiMessage = {
-  id?: string
-  clientId?: string
-  senderId: string
-  plainText: string
-  fileUrl: string | null
-  status?: 'sending' | 'delivered' | 'read'
-  sentAt?: string
-  deliveredAtUtc?: string | null
-  readAtUtc?: string | null
-  replyToMessageId?: string | null
-  isDeleted?: boolean
-  updatedAtUtc?: string | null
-  reactions?: UiReaction[]
-  forwardedFromMessageId?: string | null
-  forwardedFromSenderId?: string | null
-}
-
-type UiConversation = {
-  peerId: string
-  username: string
-  displayName?: string | null
-  avatarUrl?: string | null
-  unreadCount: number
-  lastSentAt?: string | null
-  lastFileUrl?: string | null
-  lastPreview?: string | null
-}
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -920,7 +900,7 @@ const router = useRouter()
 const EMPTY_MSG_MARKER = '\u200B' 
 
 const myId = ref<string>('')
-const selectedUser = ref<{ id: string; username: string } | null>(null)
+const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const selectedFile = ref<File | null>(null)
@@ -1008,7 +988,7 @@ const forwardPicker = reactive<{
 const menuOpen = ref(false)
 const showProfile = ref(false)
 const showSettings = ref(false)
-const meProfile = ref<{ id?: string; username?: string; displayName?: string; avatarUrl?: string } | null>(null)
+const meProfile = ref<Partial<ChatUser> | null>(null)
 
 const chatNavStack = ref<Array<{ id: string; username: string }>>([])
  // label (DisplayName یا @username)
@@ -1025,8 +1005,8 @@ const replyPreviewCache = reactive<Record<string, string>>({})
 const pendingReplyFetch = new Set<string>()
 
 const showPeerProfile = ref(false)
-const peerProfile = ref<any|null>(null)
-const myContacts = ref<Array<{ contactId: string; username: string }>>([])
+const peerProfile = ref<UserApiItem | null>(null)
+const myContacts = ref<Contact[]>([])
 
 const selectedLabel = computed(() => {
   const su = selectedUser.value
@@ -1292,7 +1272,7 @@ function scrollToEndSmooth() {
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
 }
-function onConvDblClick(conv: any) {
+function onConvDblClick(conv: UiConversation) {
   // اگر همین چت بازه، فقط اسکرول کن
   if (selectedUser.value && selectedUser.value.id === conv.peerId) {
     scrollToEndSmooth()
@@ -1512,7 +1492,7 @@ function isNearBottom(el: HTMLElement, threshold = 400) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
 }
 
-function fileKey(m: any) {
+function fileKey(m: UiMessage) {
   return (m.id || m.clientId || '') as string
 }
 
@@ -1541,7 +1521,7 @@ async function ensureFileSize(url: string, k: string) {
   } catch {}
 }
 
-async function downloadFile(m: any) {
+async function downloadFile(m: UiMessage) {
   const k = fileKey(m)
   if (!m.fileUrl) return
   downloading[k] = true
@@ -1664,8 +1644,9 @@ async function openPeerProfile() {
 }
 
 const isPeerInContacts = computed(() => {
-  if (!peerProfile.value) return false
-  return myContacts.value.some(c => c.username === peerProfile.value.username)
+  const username = peerProfile.value?.username
+  return !!username &&
+    myContacts.value.some(c => c.username === username)
 })
 
 async function onPeerAddContact(id: string) {
@@ -1679,13 +1660,16 @@ async function onPeerRemoveContact(id: string) {
 }
 
 function onPeerSendMessage(id: string) {
-
-  handleUserSelect({ id, username: peerProfile.value.username })
+  if (!peerProfile.value) return
+  handleUserSelect({
+    id,
+    username: peerProfile.value.username
+  })
   if (route.path !== '/chat') router.replace('/chat')
   showPeerProfile.value = false
 }
 
-async function onPeerShareContact(u: any) {
+async function onPeerShareContact(u: ChatUser) {
   const text = u.displayName ? `${u.displayName} (@${u.username})` : `@${u.username}`
   await navigator.clipboard.writeText(text)
   showToast('Contact copied')
@@ -2515,7 +2499,7 @@ function fmtHHmmLocal(iso?: string | null): string {
 }
 
 
-function tooltipForMessage(msg: any): string {
+function tooltipForMessage(msg: UiMessage): string {
   const sent = formatAbsoluteEn(msg.sentAt); 
   const delivered = msg.deliveredAtUtc ? formatAbsoluteEn(msg.deliveredAtUtc) : null;
   const read = msg.readAtUtc ? formatAbsoluteEn(msg.readAtUtc) : null;
@@ -2527,7 +2511,7 @@ function tooltipForMessage(msg: any): string {
 
 
 
-async function selectConversation(conv: any) {
+async function selectConversation(conv: UiConversation) {
   chatNavStack.value = []
   await handleUserSelect({ id: conv.peerId, username: conv.username })
   if (route.path !== '/chat') router.replace('/chat')
@@ -3328,9 +3312,7 @@ async function getOrLoadKey(partnerId: string) {
 }
 
 function toAbsoluteFileUrl(url: string | null): string | null {
-  if (!url) return null
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  return `https://localhost:7146${url.startsWith('/') ? url : '/' + url}`
+  return url ? toAbsoluteServerUrl(url) : null
 }
 </script>
 

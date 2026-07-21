@@ -104,12 +104,14 @@ import { X, MessageSquare, Trash2, ArrowUpAZ, ArrowDownAZ, UserPlus } from 'luci
 import { ref, onMounted, computed } from 'vue'
 import { getMyContacts, addContact, removeContact, getUserByUsername } from '../services/api'
 import ModalSheet from '../components/ModalSheet.vue'
+import type { Contact } from '../types/chat'
+
 
 defineProps<{ inModal?: boolean }>()
 const emit = defineEmits<{ (e: 'open-chat', p: { id: string; username: string }): void }>()
 
 // state
-const contacts = ref<Array<{ contactId: string; username: string; displayName?: string; avatarUrl?: string }>>([])
+const contacts = ref<Contact[]>([])
 const usernameToAdd = ref('')
 const q = ref('')
 const showAdd = ref(false)
@@ -162,7 +164,7 @@ async function onAdd() {
   }
 }
 
-async function onRemove(c: { contactId: string }) {
+async function onRemove(c: Contact) {
   try {
     await removeContact(c.contactId)
     await load()
@@ -171,7 +173,7 @@ async function onRemove(c: { contactId: string }) {
   }
 }
 
-function openChat(c: any) {
+function openChat(c: Contact) {
   const id = c.userId || c.id || c.contactUserId || c.peerId || c.contactId
   const username = (c.username || '').replace(/^@/, '')
   if (!id || !username) return
