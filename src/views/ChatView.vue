@@ -588,11 +588,13 @@
 
           <!-- caption -->
           <label class="block text-sm text-[#456173] mt-3 mb-1">Caption (optional, applies to all)</label>
-          <textarea v-model="mediaCaption"
-          rows="3"
-          dir="auto"
-          class="input w-full min-h-[84px] text-start auto-dir"
-          placeholder="Write a caption…"></textarea>
+          <textarea
+            v-model="pendingCaption"
+            rows="3"
+            dir="auto"
+            class="input w-full min-h-[84px] text-start auto-dir"
+            placeholder="Write a caption…"
+          ></textarea>
 
           <!-- actions -->
           <div class="mt-4 flex items-center justify-between">
@@ -920,9 +922,11 @@ let prevSelectedUserId: string | null = null
 
 
 const scrollBox = ref<HTMLElement | null>(null)
+const loadingConversation = ref(false)
 const loadingOlder = ref(false)
 const hasMore = ref(true)
 const oldestId = ref<string | null>(null)
+let chatSessionId = 0
 const replyingTo = ref<UiMessage | null>(null)
 
 const conversations = ref<UiConversation[]>([])
@@ -2384,33 +2388,78 @@ function scrollToMessageEl(el: HTMLElement) {
 async function jumpToReplied(replyId: string) {
   let el = messageEls.get(replyId)
 
-  if (!el && typeof loadOlderOnce === 'function') {
+  if (!el) {
     for (let i = 0; i < 5 && !el; i++) {
-      const loaded = await loadOlderOnce()  
+      const loaded = await loadOlderMessages()
+
       await nextTick()
       el = messageEls.get(replyId)
+
       if (!loaded) break
     }
   }
 
   if (el) {
     scrollToMessageEl(el)
-    el.classList.add('ring-2','ring-yellow-400')
-    setTimeout(() => el && el.classList.remove('ring-2','ring-yellow-400'), 1000)
+
+    el.classList.add(
+      'ring-2',
+      'ring-yellow-400'
+    )
+
+    setTimeout(() => {
+      el?.classList.remove(
+        'ring-2',
+        'ring-yellow-400'
+      )
+    }, 1000)
   } else {
-    showToast('برای دیدن پیام قدیمی‌تر، کمی بالاتر بروید')
+    showToast(
+      'برای دیدن پیام قدیمی‌تر، کمی بالاتر بروید'
+    )
   }
 }
 
+function isActiveChat(
+  sessionId: number,
+  userId: string
+) {
+  return (
+    sessionId === chatSessionId &&
+    selectedUser.value?.id === userId
+  )
+}
 
-async function loadOlderOnce(): Promise<boolean> {
-  if (!selectedUser.value || !hasMore.value || loadingOlder.value) return false;
-  const el = scrollBox.value;
-  const prevHeight = el?.scrollHeight ?? 0;
-  
-  loadingOlder.value = true;
+async function loadOlderMessages(): Promise<boolean> {
+  const user = selectedUser.value
+
+  if (
+    !user ||
+    !hasMore.value ||
+    loadingConversation.value ||
+    loadingOlder.value
+  ) {
+    return false
+  }
+
+  const sessionId = chatSessionId
+  const el = scrollBox.value
+  const previousHeight = el?.scrollHeight ?? 0
+  const previousTop = el?.scrollTop ?? 0
+
+  loadingOlder.value = true
+
   try {
-    const page = await getConversationPaged(selectedUser.value.id, oldestId.value || undefined, 50);
+    const page = await getConversationPaged(
+      user.id,
+      oldestId.value || undefined,
+      50
+    )
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return false
+    }
+
     const items = (
       page.items ??
       page.Items ??
@@ -2418,51 +2467,94 @@ async function loadOlderOnce(): Promise<boolean> {
     ) as ServerMessage[]
 
     const visibleItems = items.filter(
-      message => !message.isDeleted
+      message =>
+        !(message.isDeleted ?? message.IsDeleted)
     )
-    hasMore.value = !!(page.hasMore ?? page.HasMore);
+
+    const first = visibleItems[0]
+
+    hasMore.value = !!(
+      page.hasMore ??
+      page.HasMore
+    )
+
     oldestId.value =
       page.oldestId ??
       page.OldestId ??
-      (visibleItems[0]?.messageId || null)
+      first?.messageId ??
+      first?.MessageId ??
+      first?.id ??
+      null
 
-    if (!visibleItems.length) return false
-    
-    const aesKey = await getOrLoadKey(selectedUser.value.id);
+    if (!visibleItems.length) {
+      return false
+    }
+
+    const aesKey = await getOrLoadKey(user.id)
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return false
+    }
+
     const older = await Promise.all(
       visibleItems.map(async message => {
-        const ui = await mapServerMessage(message, {
-          aesKey,
-          myId: myId.value,
-          cipherSource: 'content',
-          decryptFailureText: '[رمزگشایی نشد]'
-        })
+        const ui = await mapServerMessage(
+          message,
+          {
+            aesKey,
+            myId: myId.value,
+            cipherSource: 'content',
+            decryptFailureText:
+              '[رمزگشایی نشد]'
+          }
+        )
 
         if (ui.forwardedFromSenderId) {
-          cacheForwardName(ui.forwardedFromSenderId)
+          cacheForwardName(
+            ui.forwardedFromSenderId
+          )
         }
 
         return ui
       })
     )
 
-    messages.value = [...older, ...messages.value];
+    if (!isActiveChat(sessionId, user.id)) {
+      return false
+    }
 
-    for (const msg of messages.value) {
-      if (msg.fileUrl) {
-        const key = fileKey(msg)
-        if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
+    messages.value = [
+      ...older,
+      ...messages.value
+    ]
+
+    for (const msg of older) {
+      if (!msg.fileUrl) continue
+
+      const key = fileKey(msg)
+
+      if (!fileSizeMap[key]) {
+        ensureFileSize(msg.fileUrl, key)
       }
     }
 
-    await nextTick();
-    if (el) {
-      const newHeight = el.scrollHeight;
-      el.scrollTop = newHeight - prevHeight + el.scrollTop;
+    await nextTick()
+
+    if (
+      isActiveChat(sessionId, user.id) &&
+      el
+    ) {
+      el.scrollTop =
+        previousTop +
+        el.scrollHeight -
+        previousHeight
     }
-    return true;
+
+    return true
   } finally {
-    loadingOlder.value = false;
+    if (sessionId === chatSessionId) {
+      loadingOlder.value = false
+    }
   }
 }
 
@@ -2526,69 +2618,13 @@ function showDayHeader(index: number): boolean {
 
 
 async function onScrollLoadMore() {
-  if (!selectedUser.value || !hasMore.value || loadingOlder.value) return;
-  const el = scrollBox.value;
-  if (!el) return;
-  if (el.scrollTop > 80) return;
+  const el = scrollBox.value
 
-  loadingOlder.value = true;
-  const before = oldestId.value || undefined;
-
-  const prevHeight = el.scrollHeight;
-
-  try {
-    const page = await getConversationPaged(selectedUser.value.id, before, 50);
-    const items = (
-        page.items ??
-        page.Items ??
-        []
-      ) as ServerMessage[]
-
-      const visibleItems = items.filter(
-        message => !message.isDeleted
-      )
-    hasMore.value = !!(page.hasMore ?? page.HasMore);
-    oldestId.value =
-      page.oldestId ??
-      page.OldestId ??
-      (visibleItems[0]?.messageId || null)
-
-    if (visibleItems.length) {
-      const aesKey = await getOrLoadKey(selectedUser.value.id);
-      const older = await Promise.all(
-        visibleItems.map(async message => {
-          const ui = await mapServerMessage(message, {
-            aesKey,
-            myId: myId.value,
-            cipherSource: 'content',
-            decryptFailureText: '[رمزگشایی نشد]'
-          })
-
-          if (ui.forwardedFromSenderId) {
-            cacheForwardName(ui.forwardedFromSenderId)
-          }
-
-          return ui
-        })
-      )
-
-      messages.value = [...older, ...messages.value];
-
-      for (const msg of messages.value) {
-        if (msg.fileUrl) {
-          const key = fileKey(msg)
-          if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
-        }
-      }
-
-      await nextTick();
-      
-      const newHeight = el.scrollHeight;
-      el.scrollTop = newHeight - prevHeight;
-    }
-  } finally {
-    loadingOlder.value = false;
+  if (!el || el.scrollTop > 80) {
+    return
   }
+
+  await loadOlderMessages()
 }
 
 
@@ -2994,86 +3030,160 @@ onReactionUpdated((p) => {
 
   m.reactions = dedupeReactions(list)
 })
-
-
-
-
-
-
-
-
-
-
-
 }
 
-async function handleUserSelect(user: { id: string; username: string }) {
+async function handleUserSelect(
+  user: {
+    id: string
+    username: string
+  }
+) {
+  const sessionId = ++chatSessionId
+
   selectedUser.value = user
   messages.value = []
   text.value = loadDraft(user.id)
-  const idx = conversations.value.findIndex(c => c.peerId === user.id)
-  if (idx >= 0) conversations.value[idx].unreadCount = 0
-  const page1 = await getConversationPaged(user.id, undefined, 50)
-  const history = (
-    page1.items ??
-    page1.Items ??
-    []
-  ) as ServerMessage[]
-  hasMore.value = !!(page1.hasMore ?? page1.HasMore)
-  oldestId.value = page1.oldestId ?? page1.OldestId ?? (history[0]?.messageId || null)
 
-  const aesKey = await getOrLoadKey(user.id)
+  hasMore.value = true
+  oldestId.value = null
+  loadingOlder.value = false
+  loadingConversation.value = true
 
-  if (history.length) {
-    if (unread.value[user.id]) {
-      unread.value[user.id] = 0
-    }
-
-    if (prevSelectedUserId) {
-      stopTyping(prevSelectedUserId)
-        .catch(() => {})
-    }
-
-    prevSelectedUserId = user.id
-    isPeerTyping.value = false
-  }
-
-  const prepared = await Promise.all(
-    history.map(async message => {
-      const ui = await mapServerMessage(message, {
-        aesKey,
-        myId: myId.value,
-        cipherSource: 'content',
-        decryptFailureText: '[رمزگشایی نشد]'
-      })
-
-      if (ui.forwardedFromSenderId) {
-        cacheForwardName(ui.forwardedFromSenderId)
-      }
-
-      return ui
-    })
+  const idx = conversations.value.findIndex(
+    conversation =>
+      conversation.peerId === user.id
   )
 
-  messages.value = prepared
-  await nextTick()
-  const el = scrollBox.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (idx >= 0) {
+    conversations.value[idx].unreadCount = 0
+  }
 
-  for (const msg of messages.value) {
-      if (msg.fileUrl) {
-        const key = fileKey(msg)
-        if (!fileSizeMap[key]) ensureFileSize(msg.fileUrl, key)
+  try {
+    const page1 = await getConversationPaged(
+      user.id,
+      undefined,
+      50
+    )
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return
+    }
+
+    const history = (
+      page1.items ??
+      page1.Items ??
+      []
+    ) as ServerMessage[]
+
+    const first = history[0]
+
+    hasMore.value = !!(
+      page1.hasMore ??
+      page1.HasMore
+    )
+
+    oldestId.value =
+      page1.oldestId ??
+      page1.OldestId ??
+      first?.messageId ??
+      first?.MessageId ??
+      first?.id ??
+      null
+
+    const aesKey = await getOrLoadKey(user.id)
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return
+    }
+
+    if (history.length) {
+      if (unread.value[user.id]) {
+        unread.value[user.id] = 0
+      }
+
+      if (prevSelectedUserId) {
+        stopTyping(prevSelectedUserId)
+          .catch(() => {})
+      }
+
+      prevSelectedUserId = user.id
+      isPeerTyping.value = false
+    }
+
+    const prepared = await Promise.all(
+      history.map(async message => {
+        const ui = await mapServerMessage(
+          message,
+          {
+            aesKey,
+            myId: myId.value,
+            cipherSource: 'content',
+            decryptFailureText:
+              '[رمزگشایی نشد]'
+          }
+        )
+
+        if (ui.forwardedFromSenderId) {
+          cacheForwardName(
+            ui.forwardedFromSenderId
+          )
+        }
+
+        return ui
+      })
+    )
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return
+    }
+
+    messages.value = prepared
+
+    await nextTick()
+
+    if (!isActiveChat(sessionId, user.id)) {
+      return
+    }
+
+    const el = scrollBox.value
+
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+
+    for (const msg of prepared) {
+      if (!msg.fileUrl) continue
+
+      const key = fileKey(msg)
+
+      if (!fileSizeMap[key]) {
+        ensureFileSize(msg.fileUrl, key)
       }
     }
 
+    const unreadIds: string[] = history
+      .filter(
+        (message: any) =>
+          message.senderId === user.id &&
+          (
+            message.isRead === false ||
+            message.isRead === undefined
+          )
+      )
+      .map(
+        (message: any) =>
+          message.messageId
+      )
+      .filter(Boolean)
 
-  const unreadIds: string[] = history
-    .filter((m: any) => m.senderId === user.id && (m.isRead === false || m.isRead === undefined))
-    .map((m: any) => m.messageId)
-    .filter(Boolean)
-
-  Promise.allSettled(unreadIds.map(id => markAsRead(id))).catch(() => {})
+    Promise.allSettled(
+      unreadIds.map(id => markAsRead(id))
+    ).catch(() => {})
+  } finally {
+    if (isActiveChat(sessionId, user.id)) {
+      loadingConversation.value = false
+    }
+  }
 }
 
 async function send() {
