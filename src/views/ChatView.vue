@@ -830,7 +830,6 @@ import {
 } from '../services/crypto'
 import {
   getChatKey,
-  uploadEncryptedFile,
   getUserByUsername,
   storeChatKey,
   getConversationPaged,
@@ -874,6 +873,9 @@ import {
   mapServerMessage
 } from '../utils/messageMapper'
 
+import {
+  useMessageSelection
+} from '../composables/useMessageSelection'
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -899,7 +901,6 @@ const myId = ref<string>('')
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
-const selectedFile = ref<File | null>(null)
 const unread = ref<Record<string, number>>({})
 const typing = new Set<string>()
 
@@ -938,10 +939,6 @@ const reactionPickerFor = ref<string | null>(null)
 const forwardNames = reactive<Record<string, string>>({})
 const forwardHandles = reactive<Record<string, string>>({}) 
 
-const selectionMode = ref(false)
-const selected = reactive(new Set<string>())
-
-
 const toast = reactive({ show: false, text: '' })
 
 const confirmDel = reactive<{
@@ -959,17 +956,6 @@ const confirmDel = reactive<{
   canAll: false,
   forAll: false
 })
-
-const isDragSelecting = ref(false)     
-const dragPending = ref(false)         
-const dragMode = ref<'add' | 'remove'>('add')
-const dragVisited = reactive(new Set<string>())
-const startClientY = ref(0)
-const startClientX = ref(0)
-const lastMouseY = ref(0)
-let autoScrollTimer: number | null = null
-const DRAG_THRESHOLD = 16
-const dragStartMsg = ref<UiMessage | null>(null)
 
 const forwardPicker = reactive<{
   visible: boolean
@@ -1020,12 +1006,8 @@ const MIN_ROWS = 1
 const MAX_ROWS = 6
 
 
-const canSend = computed(() =>
-  !!selectedUser.value && (
-    (text.value && text.value.trim().length > 0) ||
-    !!selectedFile.value ||
-    !!editingMessage.value
-  )
+const canSend = computed(
+  () => !!selectedUser.value && !!text.value.trim()
 )
 
 const onlineIds = reactive(new Set<string>())
@@ -1268,6 +1250,150 @@ function scrollToEndSmooth() {
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
 }
+
+type OutgoingMessageInput = {
+  clientId?: string
+  plainText: string
+  fileUrl: string | null
+  sentAt?: string
+  replyToMessageId?: string | null
+  forwardedFromMessageId?: string | null
+  forwardedFromSenderId?: string | null
+  groupId?: string | null
+}
+
+async function appendOutgoingMessage(
+  peerId: string,
+  input: OutgoingMessageInput
+): Promise<UiMessage> {
+  const message: UiMessage = {
+    clientId:
+      input.clientId ?? crypto.randomUUID(),
+
+    senderId: myId.value,
+    plainText: input.plainText,
+    fileUrl: input.fileUrl,
+    status: 'sending',
+
+    sentAt:
+      input.sentAt ??
+      new Date().toISOString(),
+
+    replyToMessageId:
+      input.replyToMessageId ?? null,
+
+    forwardedFromMessageId:
+      input.forwardedFromMessageId ?? null,
+
+    forwardedFromSenderId:
+      input.forwardedFromSenderId ?? null,
+
+    groupId:
+      input.groupId ?? null
+  }
+
+  if (selectedUser.value?.id !== peerId) {
+    return message
+  }
+
+  messages.value.push(message)
+
+  if (message.forwardedFromSenderId) {
+    cacheForwardName(
+      message.forwardedFromSenderId
+    )
+  }
+
+  await nextTick()
+
+  if (selectedUser.value?.id === peerId) {
+    const el = scrollBox.value
+
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  }
+
+  return message
+}
+
+function updateConversationAfterSend(
+  peerId: string,
+  message: Pick<
+    UiMessage,
+    'plainText' | 'fileUrl' | 'sentAt'
+  >,
+  username?: string
+) {
+  const index = conversations.value.findIndex(
+    conversation =>
+      conversation.peerId === peerId
+  )
+
+  const sentAt =
+    message.sentAt ??
+    new Date().toISOString()
+
+  if (index < 0) {
+    if (!username) return
+
+    conversations.value.unshift({
+      peerId,
+      username,
+      displayName:
+        displayById[peerId] ?? null,
+
+      avatarUrl:
+        avatarById[peerId] ?? null,
+
+      unreadCount: 0,
+      lastSentAt: sentAt,
+      lastFileUrl: message.fileUrl,
+
+      lastPreview:
+        message.plainText ||
+        (message.fileUrl ? null : '')
+    })
+
+    return
+  }
+
+  const conversation =
+    conversations.value[index]
+
+  conversation.lastSentAt = sentAt
+  conversation.lastFileUrl = message.fileUrl
+
+  conversation.lastPreview =
+    message.plainText ||
+    (message.fileUrl ? null : '')
+
+  const [moved] =
+    conversations.value.splice(index, 1)
+
+  conversations.value.unshift(moved)
+}
+
+async function finishComposerSend(
+  peerId: string
+) {
+  clearDraft(peerId)
+  stopTyping(peerId).catch(() => {})
+
+  if (selectedUser.value?.id !== peerId) {
+    return
+  }
+
+  replyingTo.value = null
+  text.value = ''
+
+  await nextTick()
+
+  autoGrow(undefined, {
+    animate: true
+  })
+}
+
 function onConvDblClick(conv: UiConversation) {
   // اگر همین چت بازه، فقط اسکرول کن
   if (selectedUser.value && selectedUser.value.id === conv.peerId) {
@@ -1357,75 +1483,186 @@ function cancelMediaSend(){
   compressImages.value = true
 }
 
-async function confirmSendMedia(){
-  if (!selectedUser.value || !pendingMedia.value.length) return
-  sendingMedia.value = true
-  try{
-    const partnerId = selectedUser.value.id
-    const key = await getOrLoadKey(partnerId)
-    const caption = (mediaCaption.value || '').trim()
-    const hasCaption = !!caption
-    const encCaption = hasCaption ? await encryptAES(key, caption) : await encryptAES(key, EMPTY_MSG_MARKER)
+async function confirmSendMedia() {
+  const user = selectedUser.value
 
-    // غیرگروهی: مثل تلگرام اول کپشن به صورت متن جدا
-    if (!mediaGroupItems.value && hasCaption){
-      const cidTxt = crypto.randomUUID()
-      await sendMessage(partnerId, encCaption, undefined, cidTxt)
+  if (
+    !user ||
+    !pendingMedia.value.length
+  ) {
+    return
+  }
+
+  const partnerId = user.id
+
+  const replyId =
+    replyingTo.value?.id ?? null
+
+  sendingMedia.value = true
+
+  try {
+    const key =
+      await getOrLoadKey(partnerId)
+
+    const caption =
+      mediaCaption.value.trim()
+
+    const hasCaption =
+      caption.length > 0
+
+    const encryptedCaption =
+      await encryptAES(
+        key,
+        hasCaption
+          ? caption
+          : EMPTY_MSG_MARKER
+      )
+
+    let lastOutgoing:
+      UiMessage | null = null
+
+    if (
+      !mediaGroupItems.value &&
+      hasCaption
+    ) {
+      const captionMessage =
+        await appendOutgoingMessage(
+          partnerId,
+          {
+            plainText: caption,
+            fileUrl: null
+          }
+        )
+
+      await sendMessage(
+        partnerId,
+        encryptedCaption,
+        null,
+        captionMessage.clientId ?? null
+      )
+
+      lastOutgoing = captionMessage
     }
 
-    const gid = mediaGroupItems.value ? crypto.randomUUID() : null
-    const nowIso = new Date().toISOString()
+    const groupId =
+      mediaGroupItems.value
+        ? crypto.randomUUID()
+        : null
 
-    for (let i=0;i<pendingMedia.value.length;i++){
-      let f = pendingMedia.value[i]
-      if (compressImages.value && isImageFile(f)){
-        try { f = await compressImageFile(f) } catch {}
+    const sentAt =
+      new Date().toISOString()
+
+    for (
+      let index = 0;
+      index < pendingMedia.value.length;
+      index++
+    ) {
+      let file =
+        pendingMedia.value[index]
+
+      if (
+        compressImages.value &&
+        isImageFile(file)
+      ) {
+        try {
+          file =
+            await compressImageFile(file)
+        } catch {}
       }
 
-      const clientId = crypto.randomUUID()
+      const clientId =
+        crypto.randomUUID()
 
-      // optimistic bubble
-      messages.value.push({
-        clientId,
-        senderId: myId.value,
-        plainText: mediaGroupItems.value ? (i===0 ? caption : '') : '',
-        fileUrl: '(pending)',
-        status: 'sending',
-        sentAt: nowIso,
-        replyToMessageId: replyingTo.value?.id || null,
-        groupId: gid
-      } as UiMessage)
+      const plainText =
+        mediaGroupItems.value &&
+        index === 0
+          ? caption
+          : ''
 
-      await nextTick()
-      const el = scrollBox.value
-      if (el) el.scrollTop = el.scrollHeight
+      const mine =
+        await appendOutgoingMessage(
+          partnerId,
+          {
+            clientId,
+            plainText,
+            fileUrl: '(pending)',
+            sentAt,
+            replyToMessageId: replyId,
+            groupId
+          }
+        )
 
-      // ارسال
-      const fd = new FormData()
-      fd.append('receiverId', partnerId)
-      const enc = mediaGroupItems.value
-        ? (i===0 ? encCaption : await encryptAES(key, EMPTY_MSG_MARKER))
-        : await encryptAES(key, EMPTY_MSG_MARKER)
-      fd.append('encryptedText', enc)
-      fd.append('file', f)
-      if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
-      if (gid) fd.append('groupId', gid)
-      fd.append('clientId', clientId)
+      lastOutgoing = mine
 
-      await sendMessageWithFileFD(fd)
+      const formData = new FormData()
+
+      formData.append(
+        'receiverId',
+        partnerId
+      )
+
+      const encryptedText =
+        mediaGroupItems.value &&
+        index === 0
+          ? encryptedCaption
+          : await encryptAES(
+              key,
+              EMPTY_MSG_MARKER
+            )
+
+      formData.append(
+        'encryptedText',
+        encryptedText
+      )
+
+      formData.append('file', file)
+
+      if (replyId) {
+        formData.append(
+          'replyToMessageId',
+          replyId
+        )
+      }
+
+      if (groupId) {
+        formData.append(
+          'groupId',
+          groupId
+        )
+      }
+
+      formData.append(
+        'clientId',
+        clientId
+      )
+
+      await sendMessageWithFileFD(
+        formData
+      )
+    }
+
+    if (lastOutgoing) {
+      updateConversationAfterSend(
+        partnerId,
+        lastOutgoing,
+        user.username
+      )
     }
 
     showMediaModal.value = false
     pendingMedia.value = []
     mediaCaption.value = ''
     mediaGroupItems.value = false
-    replyingTo.value = null
+
+    if (
+      selectedUser.value?.id === partnerId
+    ) {
+      replyingTo.value = null
+    }
   } finally {
     sendingMedia.value = false
   }
 }
-
-
 
 function isImageUrl(url?: string|null) {
   if (!url) return false
@@ -1549,70 +1786,116 @@ function addAnotherFile() {
 }
 
 async function confirmSendFile() {
-  if (!selectedUser.value || pendingFiles.value.length === 0) return
+  const user = selectedUser.value
+
+  if (
+    !user ||
+    pendingFiles.value.length === 0
+  ) {
+    return
+  }
+
+  const partnerId = user.id
+
+  const replyId =
+    replyingTo.value?.id ?? null
+
   sendingFile.value = true
+
   try {
-    const key = await getOrLoadKey(selectedUser.value.id)
+    const key =
+      await getOrLoadKey(partnerId)
 
-    const caption = (pendingCaption.value || '').trim()
-    const toEncrypt = caption ? caption : EMPTY_MSG_MARKER
-    const captionEnc = await encryptAES(key, toEncrypt)
+    const caption =
+      pendingCaption.value.trim()
 
-    const nowIso = new Date().toISOString()
+    const encryptedCaption =
+      await encryptAES(
+        key,
+        caption || EMPTY_MSG_MARKER
+      )
 
-    for (const f of pendingFiles.value) {
-      const clientId = crypto.randomUUID()
+    const sentAt =
+      new Date().toISOString()
 
-      // 1) پیام pending در UI
-      messages.value.push({
-        clientId,
-        senderId: myId.value,
-        plainText: caption || '',
-        fileUrl: '(pending)',
-        status: 'sending',
-        sentAt: nowIso,
-        replyToMessageId: replyingTo.value?.id || null
-      } as UiMessage)
+    let lastOutgoing:
+      UiMessage | null = null
 
-      await nextTick()
-      const el = scrollBox.value
-      if (el) el.scrollTop = el.scrollHeight
+    for (const file of pendingFiles.value) {
+      const clientId =
+        crypto.randomUUID()
 
-      // 2) ارسال به سرور
-      const fd = new FormData()
-      fd.append('receiverId', selectedUser.value.id)
-      fd.append('encryptedText', captionEnc)
-      fd.append('file', f)
-      if (replyingTo.value?.id) fd.append('replyToMessageId', replyingTo.value.id)
-      fd.append('clientId', clientId)
+      const mine =
+        await appendOutgoingMessage(
+          partnerId,
+          {
+            clientId,
+            plainText: caption,
+            fileUrl: '(pending)',
+            sentAt,
+            replyToMessageId: replyId
+          }
+        )
 
-      await sendMessageWithFileFD(fd)
+      lastOutgoing = mine
+
+      const formData = new FormData()
+
+      formData.append(
+        'receiverId',
+        partnerId
+      )
+
+      formData.append(
+        'encryptedText',
+        encryptedCaption
+      )
+
+      formData.append('file', file)
+
+      if (replyId) {
+        formData.append(
+          'replyToMessageId',
+          replyId
+        )
+      }
+
+      formData.append(
+        'clientId',
+        clientId
+      )
+
+      await sendMessageWithFileFD(
+        formData
+      )
     }
 
-    // آپدیت سایدبار (آخرین وضعیت گفتگو)
-    const uid = selectedUser.value.id
-    const convIdx = conversations.value.findIndex(c => c.peerId === uid)
-    if (convIdx >= 0) {
-      const c = conversations.value[convIdx]
-      c.lastSentAt = nowIso
-      c.lastFileUrl = '(pending)'
-      c.lastPreview = caption || null
-      const [moved] = conversations.value.splice(convIdx, 1)
-      conversations.value.unshift(moved)
+    if (lastOutgoing) {
+      updateConversationAfterSend(
+        partnerId,
+        lastOutgoing,
+        user.username
+      )
     }
 
     showFileModal.value = false
     pendingFiles.value = []
     pendingCaption.value = ''
-    replyingTo.value = null
-  } catch (e) {
-    console.error('send file failed', e)
+
+    if (
+      selectedUser.value?.id === partnerId
+    ) {
+      replyingTo.value = null
+    }
+  } catch (error) {
+    console.error(
+      'send file failed',
+      error
+    )
   } finally {
     sendingFile.value = false
   }
 }
-
-
 
 
 function initialsOf(name: string) {
@@ -1789,104 +2072,6 @@ function openForwardPickerMulti() {
 }
 
 
-function applyDragOn(m: UiMessage) {
-  const k = getMsgKey(m)
-  if (dragVisited.has(k)) return
-  dragVisited.add(k)
-  if (dragMode.value === 'add') selected.add(k)
-  else selected.delete(k)
-}
-
-function onRowMouseDown(ev: MouseEvent, m: UiMessage) {
-
-  if (isInTextSelectable(ev.target)) return
-  if (!selectedUser.value) return
-  if (ev.button !== 0) return
-
-  ev.preventDefault()
-  ev.stopPropagation()
-
-  const k = getMsgKey(m)
-  const already = selected.has(k)
-  dragMode.value = already ? 'remove' : 'add'
-
-  dragStartMsg.value = m
-  dragPending.value = true
-  isDragSelecting.value = false
-  dragVisited.clear()
-  startClientY.value = ev.clientY
-  startClientX.value = ev.clientX
-  lastMouseY.value = ev.clientY
-
-  window.addEventListener('mouseup', endDragSelect)
-  window.addEventListener('mousemove', onDragMouseMove, { passive: true })
-}
-
-
-function onDragMouseMove(ev: MouseEvent) {
-  lastMouseY.value = ev.clientY
-
-  if (dragPending.value && !isDragSelecting.value) {
-    const dy = Math.abs(ev.clientY - startClientY.value)
-    const dx = Math.abs(ev.clientX - startClientX.value)
-    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-      if (!selectionMode.value) selectionMode.value = true
-      isDragSelecting.value = true
-      dragPending.value = false
-      startAutoScroll()
-
-      if (dragStartMsg.value) applyDragOn(dragStartMsg.value)
-    }
-  }
-}
-
-function onRowMouseEnter(m: UiMessage) {
-  if (!isDragSelecting.value) return
-  applyDragOn(m)
-}
-
-function endDragSelect() {
-  stopAutoScroll()
-  dragPending.value = false
-  isDragSelecting.value = false
-  dragVisited.clear()
-  window.removeEventListener('mouseup', endDragSelect)
-  window.removeEventListener('mousemove', onDragMouseMove)
-}
-
-function startAutoScroll() {
-  const el = scrollBox.value as HTMLElement | null
-  if (!el) return
-  stopAutoScroll()
-  autoScrollTimer = window.setInterval(() => {
-    if (!isDragSelecting.value) return
-    const rect = el.getBoundingClientRect()
-    const margin = 32
-    const speed = 12
-    if (lastMouseY.value < rect.top + margin) el.scrollTop -= speed
-    else if (lastMouseY.value > rect.bottom - margin) el.scrollTop += speed
-  }, 30)
-}
-function stopAutoScroll() {
-  if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null }
-}
-
-
-function onRowClick(ev: MouseEvent, m: UiMessage) {
-  if (isInTextSelectable(ev.target)) return
-
-  if (selectionMode.value) {
-    toggleSelect(m)
-  }
-}
-
-function isInTextSelectable(target: EventTarget | null) {
-  const el = target as HTMLElement | null
-  if (!el) return false
-  return !!el.closest('[data-text-selectable]')
-}
-
-
 function openDeleteConfirmSingle(msg: UiMessage, scopeDefault?: 'me'|'all') {
   confirmDel.visible = true
   confirmDel.mode = 'single'
@@ -1940,77 +2125,81 @@ function showToast(t: string) {
   setTimeout(() => { toast.show = false }, 1400)
 }
 
+const {
+  selectionMode,
+  selectedMessages,
+  selectedCount,
+  allSelectedAreMine,
+  getMsgKey,
+  isSelected,
+  toggleSelect,
+  clearSelection,
+  isInTextSelectable,
+  onRowMouseDown,
+  onRowMouseEnter,
+  onRowClick,
+  startSelectionFrom,
+  onKeydownSelection,
+  copySelectedText,
+  disposeSelection
+} = useMessageSelection({
+  messages,
+  myId,
+  scrollBox,
 
-type UiMsgKey = string
-function getMsgKey(m: UiMessage): UiMsgKey { return (m.id || m.clientId)! }
-function isSelected(m: UiMessage) { return selected.has(getMsgKey(m)) }
-function toggleSelect(m: UiMessage) {
-  const k = getMsgKey(m)
-  if (selected.has(k)) selected.delete(k); else selected.add(k)
-}
-function clearSelection() { selected.clear(); selectionMode.value = false }
+  canSelect: () =>
+    !!selectedUser.value,
 
-const selectedMessages = computed(() => messages.value.filter(m => selected.has(getMsgKey(m))))
-const selectedCount = computed(() => selected.size)
-const allSelectedAreMine = computed(() => selectedMessages.value.length > 0 && selectedMessages.value.every(m => m.senderId === myId.value))
+  closeMenu,
+  showToast
+})
 
-watch(selectedUser, () => clearSelection())
+watch(
+  selectedUser,
+  clearSelection
+)
 
-watch(selectedCount, (n) => {
-  if (n === 0 && selectionMode.value) {
+watch(selectedCount, count => {
+  if (
+    count === 0 &&
+    selectionMode.value
+  ) {
     selectionMode.value = false
   }
 })
 
-watch(messages, (list) => {
+watch(messages, list => {
   const ids = new Set(
-    list.map(m => m.forwardedFromSenderId).filter(Boolean) as string[]
+    list
+      .map(message =>
+        message.forwardedFromSenderId
+      )
+      .filter(Boolean) as string[]
   )
-  ids.forEach(id => { if (!forwardNames[id]) cacheForwardName(id) })
-}, { immediate: true, deep: true })
 
-
-
-function onKeydownSelection(e: KeyboardEvent) {
-  if (e.key === 'Escape' && selectionMode.value) clearSelection()
-}
-onMounted(() => window.addEventListener('keydown', onKeydownSelection))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydownSelection))
-
-async function writeClipboard(text: string) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text)
-      return
+  ids.forEach(id => {
+    if (!forwardNames[id]) {
+      cacheForwardName(id)
     }
-  } catch {}
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.style.position = 'fixed'
-  ta.style.opacity = '0'
-  document.body.appendChild(ta)
-  ta.select()
-  try { document.execCommand('copy') } catch {}
-  document.body.removeChild(ta)
-}
+  })
+}, {
+  immediate: true,
+  deep: true
+})
 
-async function copySelectedText() {
-  if (!selectedCount.value) return
-  const ordered = [...selectedMessages.value].sort((a,b) => (a.sentAt||'').localeCompare(b.sentAt||''))
-  const lines = ordered.map(m => (m.plainText || '').trim()).filter(Boolean)
-  if (lines.length === 0) return
-  await writeClipboard(lines.join('\n'))
-  clearSelection()
-  showToast('Copied')
-}
+onMounted(() => {
+  window.addEventListener(
+    'keydown',
+    onKeydownSelection
+  )
+})
 
-function startSelectionFrom(m: UiMessage) {
-  selectionMode.value = true
-  selected.clear()
-  toggleSelect(m)
-  closeMenu()
-}
-
+onBeforeUnmount(() => {
+  window.removeEventListener(
+    'keydown',
+    onKeydownSelection
+  )
+})
 
 async function cacheForwardName(userId: string) {
   if (forwardNames[userId] && forwardHandles[userId]) return
@@ -2076,120 +2265,211 @@ function openForwardPicker() { // single from context menu
   closeMenu()
 }
 
-async function doForward(toPeerId: string) {
+async function doForward(
+  toPeerId: string
+) {
   const mode = forwardPicker.mode
-  const srcSingle = forwardPicker.src
-  const srcList  = forwardPicker.srcList
+  const source = forwardPicker.src
+  const sources = forwardPicker.srcList
+
   forwardPicker.visible = false
 
   try {
-    const aesKey = await getOrLoadKey(toPeerId)
-    const sameChat = selectedUser.value && selectedUser.value.id === toPeerId
+    const aesKey =
+      await getOrLoadKey(toPeerId)
 
-    if (mode === 'single' && srcSingle) {
-      const src = srcSingle
-      const cipher = await encryptAES(aesKey, src.plainText || '')
-      const clientId = sameChat ? crypto.randomUUID() : null
+    const sameChat =
+      selectedUser.value?.id === toPeerId
 
-      if (sameChat) {
-        const mine: UiMessage = {
-          clientId: clientId || undefined,
-          senderId: myId.value,
-          plainText: src.plainText,
-          fileUrl: src.fileUrl || null,
-          status: 'sending',
-          sentAt: new Date().toISOString(),
-          forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
-          forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
-        }
-        messages.value.push(mine)
-        await nextTick()
-        const el = scrollBox.value
-        if (el) el.scrollTop = el.scrollHeight
-        if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
-      }
+    if (
+      mode === 'single' &&
+      source
+    ) {
+      const encrypted =
+        await encryptAES(
+          aesKey,
+          source.plainText || ''
+        )
+
+      const clientId = sameChat
+        ? crypto.randomUUID()
+        : null
+
+      const outgoing = sameChat
+        ? await appendOutgoingMessage(
+            toPeerId,
+            {
+              clientId:
+                clientId ?? undefined,
+
+              plainText:
+                source.plainText,
+
+              fileUrl:
+                source.fileUrl || null,
+
+              forwardedFromMessageId:
+                source
+                  .forwardedFromMessageId ||
+                source.id ||
+                null,
+
+              forwardedFromSenderId:
+                source
+                  .forwardedFromSenderId ||
+                source.senderId ||
+                null
+            }
+          )
+        : {
+            senderId: myId.value,
+            plainText: source.plainText,
+            fileUrl:
+              source.fileUrl || null,
+            sentAt:
+              new Date().toISOString()
+          }
 
       await sendMessage(
         toPeerId,
-        cipher,
-        src.fileUrl || null,
+        encrypted,
+        source.fileUrl || null,
         clientId,
         null,
-        src.forwardedFromMessageId || src.id || null
+        source.forwardedFromMessageId ||
+          source.id ||
+          null
       )
 
-      if (!sameChat) {
-        const nowIso = new Date().toISOString()
-        const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
-        if (idx >= 0) {
-          const c = conversations.value[idx]
-          c.lastSentAt = nowIso
-          c.lastFileUrl = src.fileUrl || null
-          c.lastPreview = src.plainText || (src.fileUrl ? null : '')
-          const [moved] = conversations.value.splice(idx, 1)
-          conversations.value.unshift(moved)
-        }
-      }
-    } else if (mode === 'multi' && srcList.length) {
+      updateConversationAfterSend(
+        toPeerId,
+        outgoing
+      )
 
-      const list = [...srcList].sort((a,b) => (a.sentAt||'').localeCompare(b.sentAt||''))
+      return
+    }
 
-      const clientMap = new Map<string, string>() // srcKey -> clientId
-      if (sameChat) {
-        for (const src of list) {
-          const clientId = crypto.randomUUID()
-          clientMap.set((src.id || src.clientId)!, clientId)
-          const mine: UiMessage = {
-            clientId,
-            senderId: myId.value,
-            plainText: src.plainText,
-            fileUrl: src.fileUrl || null,
-            status: 'sending',
-            sentAt: new Date().toISOString(),
-            forwardedFromMessageId: src.forwardedFromMessageId || src.id || null,
-            forwardedFromSenderId:  src.forwardedFromSenderId  || src.senderId || null,
-          }
-          messages.value.push(mine)
-          if (mine.forwardedFromSenderId) cacheForwardName(mine.forwardedFromSenderId)
-        }
-        await nextTick()
-        const el = scrollBox.value
-        if (el) el.scrollTop = el.scrollHeight
-      }
+    if (
+      mode !== 'multi' ||
+      !sources.length
+    ) {
+      return
+    }
 
-      for (const src of list) {
-        const cipher = await encryptAES(aesKey, src.plainText || '')
-        const srcKey = (src.id || src.clientId)!
-        const clientId = sameChat ? clientMap.get(srcKey) || null : null
-
-        await sendMessage(
-          toPeerId,
-          cipher,
-          src.fileUrl || null,
-          clientId,
-          null,
-          src.forwardedFromMessageId || src.id || null
+    const list = [...sources].sort(
+      (a, b) =>
+        (a.sentAt || '').localeCompare(
+          b.sentAt || ''
         )
-      }
+    )
 
-      clearSelection()
-      showToast('ارسال شد')
-      if (!sameChat) {
-        const last = list[list.length - 1]
-        const nowIso = new Date().toISOString()
-        const idx = conversations.value.findIndex(c => c.peerId === toPeerId)
-        if (idx >= 0) {
-          const c = conversations.value[idx]
-          c.lastSentAt = nowIso
-          c.lastFileUrl = last.fileUrl || null
-          c.lastPreview = last.plainText || (last.fileUrl ? null : '')
-          const [moved] = conversations.value.splice(idx, 1)
-          conversations.value.unshift(moved)
-        }
+    const clientIds =
+      new Map<string, string>()
+
+    let lastOutgoing:
+      UiMessage | null = null
+
+    if (sameChat) {
+      for (const sourceMessage of list) {
+        const sourceKey =
+          sourceMessage.id ||
+          sourceMessage.clientId
+
+        if (!sourceKey) continue
+
+        const clientId =
+          crypto.randomUUID()
+
+        clientIds.set(
+          sourceKey,
+          clientId
+        )
+
+        lastOutgoing =
+          await appendOutgoingMessage(
+            toPeerId,
+            {
+              clientId,
+
+              plainText:
+                sourceMessage.plainText,
+
+              fileUrl:
+                sourceMessage.fileUrl ||
+                null,
+
+              forwardedFromMessageId:
+                sourceMessage
+                  .forwardedFromMessageId ||
+                sourceMessage.id ||
+                null,
+
+              forwardedFromSenderId:
+                sourceMessage
+                  .forwardedFromSenderId ||
+                sourceMessage.senderId ||
+                null
+            }
+          )
       }
     }
-  } catch (e) {
-    console.warn('forward failed', e)
+
+    for (const sourceMessage of list) {
+      const encrypted =
+        await encryptAES(
+          aesKey,
+          sourceMessage.plainText || ''
+        )
+
+      const sourceKey =
+        sourceMessage.id ||
+        sourceMessage.clientId
+
+      const clientId =
+        sameChat && sourceKey
+          ? clientIds.get(sourceKey) ??
+            null
+          : null
+
+      await sendMessage(
+        toPeerId,
+        encrypted,
+        sourceMessage.fileUrl || null,
+        clientId,
+        null,
+        sourceMessage
+          .forwardedFromMessageId ||
+          sourceMessage.id ||
+          null
+      )
+    }
+
+    if (!lastOutgoing) {
+      const last =
+        list[list.length - 1]
+
+      lastOutgoing = {
+        senderId: myId.value,
+        plainText: last.plainText,
+        fileUrl:
+          last.fileUrl || null,
+        sentAt:
+          new Date().toISOString()
+      }
+    }
+
+    updateConversationAfterSend(
+      toPeerId,
+      lastOutgoing
+    )
+
+    clearSelection()
+    showToast('ارسال شد')
+  } catch (error) {
+    console.warn(
+      'forward failed',
+      error
+    )
   }
 }
 
@@ -2619,9 +2899,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('scroll', onWindowScroll, true)
   window.removeEventListener('resize', onWindowResize)
-  stopAutoScroll()
-  window.removeEventListener('mouseup', endDragSelect)
-  window.removeEventListener('mousemove', onDragMouseMove)
+  disposeSelection()
   signalR.dispose()
 
   if (typingTimer) {
@@ -2866,12 +3144,6 @@ function wireSignalR() {
     const stick = !!el0 && isNearBottom(el0)
 
     messages.value.push(ui)
-
-    if (ui.senderId === myId.value) {
-      console.log("IF STATE")
-      const idx = messages.value.findIndex(x => x.fileUrl === '(pending)')
-      if (idx !== -1) messages.value.splice(idx, 1)
-    }
 
     if (ui.fileUrl) {
       const key = fileKey(ui)
@@ -3202,116 +3474,83 @@ async function handleUserSelect(
 }
 
 async function send() {
-  if (!selectedUser.value) return
+  const user = selectedUser.value
+  const draft = text.value
 
-  if (!selectedFile.value && (!text.value || !text.value.trim())) {
-    return
-  }
+  if (!user || !draft.trim()) return
 
-  const aesKey = await getOrLoadKey(selectedUser.value.id)
+  const aesKey =
+    await getOrLoadKey(user.id)
 
+  if (
+    editingMessage.value &&
+    editingMessage.value.id
+  ) {
+    const encrypted = await encryptAES(
+      aesKey,
+      draft.trim() || EMPTY_MSG_MARKER
+    )
 
-  let fileUrl: string | null = null
-  if (selectedFile.value) {
-    const fd = new FormData()
-    fd.append('file', selectedFile.value)
-    const uploadedUrl = await uploadEncryptedFile(fd)
-    fileUrl = toAbsoluteFileUrl(uploadedUrl)
-  }
+    const previousDraft =
+      prevDraftBeforeEdit.value
 
-
-
-
-  // edit-mode
-  if (editingMessage.value && editingMessage.value.id) {
-    const aesKey = await getOrLoadKey(selectedUser.value.id)
-    const encrypted = await encryptAES(aesKey, text.value.trim() || EMPTY_MSG_MARKER)
-    const back = prevDraftBeforeEdit.value
     try {
-      await editMessage(editingMessage.value.id, encrypted)
-      editingMessage.value.plainText = text.value.trim()
-      editingMessage.value.updatedAtUtc = new Date().toISOString()
+      await editMessage(
+        editingMessage.value.id,
+        encrypted
+      )
+
+      editingMessage.value.plainText =
+        draft.trim()
+
+      editingMessage.value.updatedAtUtc =
+        new Date().toISOString()
+
       editingMessage.value = null
-      text.value = back  
-    } catch(e) {
-      console.warn('edit failed', e)
+      text.value = previousDraft
+    } catch (error) {
+      console.warn(
+        'edit failed',
+        error
+      )
     }
+
     return
   }
 
+  const replyId =
+    replyingTo.value?.id ?? null
 
+  const encrypted = await encryptAES(
+    aesKey,
+    draft
+  )
 
+  const mine =
+    await appendOutgoingMessage(
+      user.id,
+      {
+        plainText: draft,
+        fileUrl: null,
+        replyToMessageId: replyId
+      }
+    )
 
-  const toEncrypt = (text.value && text.value.trim().length > 0) ? text.value : EMPTY_MSG_MARKER
-  const encrypted = await encryptAES(aesKey, toEncrypt)
-
-  const clientId = crypto.randomUUID()
-  const mine: UiMessage = {
-    clientId,
-    senderId: myId.value,
-    plainText: (toEncrypt === EMPTY_MSG_MARKER) ? '' : text.value,
-    fileUrl: fileUrl,
-    status: 'sending',
-    sentAt: new Date().toISOString(),
-    replyToMessageId: replyingTo.value?.id || null,
-
-  }
-  messages.value.push(mine)
-
-  await nextTick();
-  const el = scrollBox.value;
-  if (el) el.scrollTop = el.scrollHeight;
-  
-  const uid = selectedUser.value.id
-  const convIdx = conversations.value.findIndex(c => c.peerId === uid)
-  const nowIso = new Date().toISOString()
-  if (convIdx >= 0) {
-    const c = conversations.value[convIdx]
-    c.lastSentAt = nowIso
-    c.lastFileUrl = mine.fileUrl
-    c.lastPreview = mine.plainText || (mine.fileUrl ? null : '')
-    const [moved] = conversations.value.splice(convIdx, 1)
-    conversations.value.unshift(moved)
-  } else {
-    conversations.value.unshift({
-      peerId: uid,
-      username: selectedUser.value.username,
-      displayName: displayById[uid] ?? null,   // ← اضافه شد
-      avatarUrl: avatarById[uid] ?? null,
-      unreadCount: 0,
-      lastSentAt: nowIso,
-      lastFileUrl: mine.fileUrl,
-      lastPreview: mine.plainText || ''
-    } as UiConversation)
-  }
-
-
-
-
+  updateConversationAfterSend(
+    user.id,
+    mine,
+    user.username
+  )
 
   await sendMessage(
-    selectedUser.value.id,
+    user.id,
     encrypted,
-    fileUrl || null,
-    clientId,
-    replyingTo.value?.id ?? null 
+    null,
+    mine.clientId ?? null,
+    replyId
   )
-  replyingTo.value = null
 
-  if (selectedUser.value) clearDraft(selectedUser.value.id)
-
-  if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
-  // reset inputs
-  text.value = ''
-  selectedFile.value = null
-
-  
-  stopTyping(selectedUser.value.id).catch(() => {})
-  text.value = ''
-  selectedFile.value = null
-  await nextTick()
-  autoGrow(undefined, { animate: true })
-
+  await finishComposerSend(user.id)
 }
 
 

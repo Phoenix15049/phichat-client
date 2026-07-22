@@ -41,12 +41,6 @@ export async function getUserById(
   return res.data
 }
 
-export async function uploadEncryptedFile(formData: FormData): Promise<string> {
-  const res = await API.post('/messages/upload', formData)
-  const url: string = res.data.url
-  return toAbsoluteServerUrl(url)
-}
-
 export async function getUserByUsername(
   username: string
 ): Promise<UserApiItem> {

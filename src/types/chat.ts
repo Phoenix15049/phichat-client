@@ -22,6 +22,7 @@ export type UiMessage = {
   reactions?: UiReaction[]
   forwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
+  groupId?: string | null
 }
 
 export type UiConversation = {
@@ -122,4 +123,5 @@ export type ServerMessage = {
   ForwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
   ForwardedFromSenderId?: string | null
+
 }
