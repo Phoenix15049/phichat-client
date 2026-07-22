@@ -798,7 +798,6 @@
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
-import { disconnectFromChatHub } from '../services/signalr'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
@@ -812,23 +811,13 @@ import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } fro
 import { getMessageBrief,sendMessageWithFileFD } from '../services/api'
 import {
   connectToChatHub,
-  onMessageReceived,
+  createChatHubSubscriptionScope,
+  disconnectFromChatHub,
   sendMessage,
-  onDelivered,
-  onMessageRead,
   markAsRead,
   startTyping,
   stopTyping,
-  onTyping,
-  onTypingStopped,
-  onUserOnline,
-  onUserOffline,
-  onMessageEdited,
-  onMessageDeleted,
-  onReactionUpdated,
-  fetchOnlineUsers,
-  onOnlineSnapshot,
-  onUserLastSeen
+  fetchOnlineUsers
 } from '../services/signalr'
 import {
   encryptAES,
@@ -1111,9 +1100,7 @@ const HOVER_REACT_DELAY = 1000
 let hoverBarHideTimer: number | null = null
 let suppressHoverUntil = 0
 
-
-let signalRWired = false
-let reactionsWired = false
+const signalR = createChatHubSubscriptionScope()
 
 const isNarrow = ref(false)
 const showListPane = computed(() => !isNarrow.value || !selectedUser.value)
@@ -2635,6 +2622,12 @@ onBeforeUnmount(() => {
   stopAutoScroll()
   window.removeEventListener('mouseup', endDragSelect)
   window.removeEventListener('mousemove', onDragMouseMove)
+  signalR.dispose()
+
+  if (typingTimer) {
+    window.clearTimeout(typingTimer)
+    typingTimer = null
+  }
   disconnectFromChatHub().catch(()=>{})
 
 })
@@ -2734,29 +2727,6 @@ onMounted(async () => {
     }
   }
 
-  const handleOnline  = (userId: string) => onlineIds.add(userId)
-  const handleOffline = (userId: string, when?: string) => {
-    onlineIds.delete(userId)
-    if (when) lastSeenMap[userId] = when
-  }
-
-  const handleTyping = (p: { SenderId: string }) => typing.add(p.SenderId)
-  const handleTypingStopped = (p: { SenderId: string }) => typing.delete(p.SenderId)
-
-  
-
-  onUserOnline(handleOnline)
-  onUserOffline(handleOffline as any)
-  onOnlineSnapshot((ids) => {
-    onlineIds.clear()
-    ids.forEach(id => onlineIds.add(id))
-  })
-
-  onUserLastSeen((uid, whenIso) => {
-    lastSeenMap[uid] = whenIso
-  })
-  onTyping(handleTyping)
-  onTypingStopped(handleTypingStopped)
   
   watch(selectedUser, async (su) => {
     if (!su) return
@@ -2778,9 +2748,29 @@ onMounted(async () => {
 })
 
 function wireSignalR() {
-  if (signalRWired) return
-  signalRWired = true
-  onMessageReceived(async (message: any) => {
+  signalR.dispose()
+
+  signalR.onUserOnline(userId => {
+    onlineIds.add(userId)
+  })
+
+  signalR.onUserOffline((userId, when) => {
+    onlineIds.delete(userId)
+
+    if (when) {
+      lastSeenMap[userId] = when
+    }
+  })
+
+  signalR.onOnlineSnapshot(ids => {
+    onlineIds.clear()
+    ids.forEach(id => onlineIds.add(id))
+  })
+
+  signalR.onUserLastSeen((userId, whenIso) => {
+    lastSeenMap[userId] = whenIso
+  })
+  signalR.onMessageReceived(async (message: any) => {
 
     const senderId = String(message.senderId ?? message.SenderId)
     await ensurePeerCached(senderId)
@@ -2899,7 +2889,7 @@ function wireSignalR() {
 })
 
 
-  onDelivered(async (info: any) => {
+  signalR.onDelivered(async (info: any) => {
     const cid = info.clientId ?? info.ClientId
     let m = cid ? messages.value.find(x => x.clientId === cid) : undefined
 
@@ -2947,7 +2937,7 @@ function wireSignalR() {
 
 
 
-  onMessageRead((info: any) => {
+  signalR.onMessageRead((info: any) => {
     const m = messages.value.find(x => x.id === info.messageId)
     if (m) {
       m.status = 'read'
@@ -2956,24 +2946,50 @@ function wireSignalR() {
   })
 
 
-  onTyping((p) => {
-    const selId = selectedUser.value?.id
-    console.log('onTyping payload=', p, 'selectedUser=', selId)
-    if (!selId || String(p.SenderId) !== String(selId)) return
+  signalR.onTyping(p => {
+    typing.add(p.SenderId)
+
+    const selectedId = selectedUser.value?.id
+
+    if (
+      !selectedId ||
+      String(p.SenderId) !== String(selectedId)
+    ) {
+      return
+    }
+
     isPeerTyping.value = true
-    if (typingTimer) window.clearTimeout(typingTimer)
-    typingTimer = window.setTimeout(() => { isPeerTyping.value = false }, TYPING_IDLE_MS)
+
+    if (typingTimer) {
+      window.clearTimeout(typingTimer)
+    }
+
+    typingTimer = window.setTimeout(() => {
+      isPeerTyping.value = false
+    }, TYPING_IDLE_MS)
   })
 
-  onTypingStopped((p) => {
-    const selId = selectedUser.value?.id
-    console.log('onTypingStopped payload=', p, 'selectedUser=', selId)
-    if (!selId || String(p.SenderId) !== String(selId)) return
+  signalR.onTypingStopped(p => {
+    typing.delete(p.SenderId)
+
+    const selectedId = selectedUser.value?.id
+
+    if (
+      !selectedId ||
+      String(p.SenderId) !== String(selectedId)
+    ) {
+      return
+    }
+
     isPeerTyping.value = false
-    if (typingTimer) { window.clearTimeout(typingTimer); typingTimer = null }
+
+    if (typingTimer) {
+      window.clearTimeout(typingTimer)
+      typingTimer = null
+    }
   })
 
-  onMessageEdited(async (p) => {
+  signalR.onMessageEdited(async (p) => {
     const m = messages.value.find(x => x.id === p.messageId)
     if (!m) return
     try {
@@ -2987,7 +3003,7 @@ function wireSignalR() {
     }
   })
 
-  onMessageDeleted((p) => {
+  signalR.onMessageDeleted((p) => {
     const i = messages.value.findIndex(x => x.id === p.messageId)
     if (i < 0) return
     // if (p.scope === 'all') {
@@ -3002,35 +3018,34 @@ function wireSignalR() {
     messages.value.splice(i, 1)
 })
 
-onReactionUpdated((p) => {
-  if (reactionsWired) return
-  reactionsWired = true  
-  const m = messages.value.find(x => x.id === p.messageId)
-  if (!m) return
+  signalR.onReactionUpdated(p => {
 
-  const list = m.reactions || (m.reactions = [])
-  const pKey = normEmoji(p.emoji)
+    const m = messages.value.find(x => x.id === p.messageId)
+    if (!m) return
 
-  const idxs = list.map((r, i) => normEmoji(r.emoji) === pKey ? i : -1).filter(i => i >= 0)
+    const list = m.reactions || (m.reactions = [])
+    const pKey = normEmoji(p.emoji)
 
-  if (idxs.length === 0) {
-    list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' })
-  } else {
-    const first = list[idxs[0]]
-    first.emoji = p.emoji
-    first.count = p.count
-    if (p.userId === myId.value) first.mine = (p.action === 'added')
-    for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1)
+    const idxs = list.map((r, i) => normEmoji(r.emoji) === pKey ? i : -1).filter(i => i >= 0)
+
+    if (idxs.length === 0) {
+      list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' })
+    } else {
+      const first = list[idxs[0]]
+      first.emoji = p.emoji
+      first.count = p.count
+      if (p.userId === myId.value) first.mine = (p.action === 'added')
+      for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1)
+    }
+
+    // Single-react policy: اگر من اضافه کردم، mine بقیه false
+    if (p.userId === myId.value && p.action === 'added') {
+      for (const r of list) if (normEmoji(r.emoji) !== pKey) r.mine = false
+    }
+
+    m.reactions = dedupeReactions(list)
+  })
   }
-
-  // Single-react policy: اگر من اضافه کردم، mine بقیه false
-  if (p.userId === myId.value && p.action === 'added') {
-    for (const r of list) if (normEmoji(r.emoji) !== pKey) r.mine = false
-  }
-
-  m.reactions = dedupeReactions(list)
-})
-}
 
 async function handleUserSelect(
   user: {

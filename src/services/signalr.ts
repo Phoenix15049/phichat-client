@@ -1,83 +1,269 @@
-// src/services/signalr.ts
-import { HubConnectionBuilder, HubConnection, HubConnectionState } from '@microsoft/signalr'
+import {
+  HubConnectionBuilder,
+  HubConnectionState
+} from '@microsoft/signalr'
+import type { HubConnection } from '@microsoft/signalr'
 import { CHAT_HUB_URL } from '../config/server'
-let connection: HubConnection | null = null
-let started = false
 
-// Handlers registered before connection starts are queued here
-const pendingSubs: Array<(c: HubConnection) => void> = []
+type Handler<TArgs extends unknown[]> = (
+  ...args: TArgs
+) => void | Promise<void>
 
-function normTyping(p: any): { SenderId: string; At?: string } {
-  const sid = p?.SenderId ?? p?.senderId ?? p?.userId ?? p?.UserId
-  return { SenderId: String(sid ?? ''), At: p?.At ?? p?.at }
+type TypingPayload = {
+  SenderId: string
+  At?: string
 }
 
-function flushPending() {
-  if (!connection) return
-  for (const sub of pendingSubs) sub(connection)
-  pendingSubs.length = 0
+type EditedPayload = {
+  messageId: string
+  encryptedContent: string
+  updatedAtUtc?: string
+}
+
+type DeletedPayload = {
+  messageId: string
+  scope: 'me' | 'all'
+}
+
+type ReactionPayload = {
+  messageId: string
+  emoji: string
+  count: number
+  userId: string
+  action: 'added' | 'removed'
+}
+
+let connection: HubConnection | null = null
+let connectPromise: Promise<void> | null = null
+
+const messageReceivedHandlers = new Set<Handler<[any]>>()
+const deliveredHandlers = new Set<Handler<[any]>>()
+const messageReadHandlers = new Set<Handler<[any]>>()
+const onlineSnapshotHandlers = new Set<Handler<[string[]]>>()
+const userOnlineHandlers = new Set<Handler<[string, string]>>()
+const userOfflineHandlers = new Set<Handler<[string, string]>>()
+const typingHandlers = new Set<Handler<[TypingPayload]>>()
+const typingStoppedHandlers = new Set<Handler<[TypingPayload]>>()
+const userLastSeenHandlers = new Set<Handler<[string, string]>>()
+const messageEditedHandlers = new Set<Handler<[EditedPayload]>>()
+const messageDeletedHandlers = new Set<Handler<[DeletedPayload]>>()
+const reactionUpdatedHandlers = new Set<Handler<[ReactionPayload]>>()
+
+function subscribe<TArgs extends unknown[]>(
+  handlers: Set<Handler<TArgs>>,
+  handler: Handler<TArgs>
+) {
+  handlers.add(handler)
+  return () => handlers.delete(handler)
+}
+
+function createScopeMethod<TArgs extends unknown[]>(
+  unsubscribers: Array<() => void>,
+  handlers: Set<Handler<TArgs>>
+) {
+  return (handler: Handler<TArgs>) => {
+    unsubscribers.push(subscribe(handlers, handler))
+  }
+}
+
+function dispatch<TArgs extends unknown[]>(
+  handlers: Set<Handler<TArgs>>,
+  ...args: TArgs
+) {
+  for (const handler of handlers) {
+    void Promise.resolve(handler(...args)).catch(() => {})
+  }
+}
+
+function normalizeTyping(payload: any): TypingPayload {
+  const senderId =
+    payload?.SenderId ??
+    payload?.senderId ??
+    payload?.userId ??
+    payload?.UserId
+
+  return {
+    SenderId: String(senderId ?? ''),
+    At: payload?.At ?? payload?.at
+  }
+}
+
+function bindConnection(current: HubConnection) {
+  current.on('ReceiveMessage', payload =>
+    dispatch(messageReceivedHandlers, payload)
+  )
+
+  current.on('Delivered', payload =>
+    dispatch(deliveredHandlers, payload)
+  )
+
+  current.on('MessageRead', payload =>
+    dispatch(messageReadHandlers, payload)
+  )
+
+  current.on('OnlineSnapshot', ids =>
+    dispatch(onlineSnapshotHandlers, ids)
+  )
+
+  current.on('UserOnline', (userId, at) =>
+    dispatch(userOnlineHandlers, userId, at)
+  )
+
+  current.on('UserOffline', (userId, at) =>
+    dispatch(userOfflineHandlers, userId, at)
+  )
+
+  current.on('UserTyping', payload =>
+    dispatch(
+      typingHandlers,
+      normalizeTyping(payload)
+    )
+  )
+
+  current.on('UserStoppedTyping', payload =>
+    dispatch(
+      typingStoppedHandlers,
+      normalizeTyping(payload)
+    )
+  )
+
+  current.on('UserLastSeen', (userId, whenIso) =>
+    dispatch(
+      userLastSeenHandlers,
+      userId,
+      whenIso
+    )
+  )
+
+  current.on('MessageEdited', payload =>
+    dispatch(messageEditedHandlers, payload)
+  )
+
+  current.on('MessageDeleted', payload =>
+    dispatch(messageDeletedHandlers, payload)
+  )
+
+  current.on('ReactionUpdated', payload =>
+    dispatch(reactionUpdatedHandlers, payload)
+  )
+}
+
+export function createChatHubSubscriptionScope() {
+  const unsubscribers: Array<() => void> = []
+
+  return {
+    onMessageReceived: createScopeMethod(
+      unsubscribers,
+      messageReceivedHandlers
+    ),
+
+    onDelivered: createScopeMethod(
+      unsubscribers,
+      deliveredHandlers
+    ),
+
+    onMessageRead: createScopeMethod(
+      unsubscribers,
+      messageReadHandlers
+    ),
+
+    onOnlineSnapshot: createScopeMethod(
+      unsubscribers,
+      onlineSnapshotHandlers
+    ),
+
+    onUserOnline: createScopeMethod(
+      unsubscribers,
+      userOnlineHandlers
+    ),
+
+    onUserOffline: createScopeMethod(
+      unsubscribers,
+      userOfflineHandlers
+    ),
+
+    onTyping: createScopeMethod(
+      unsubscribers,
+      typingHandlers
+    ),
+
+    onTypingStopped: createScopeMethod(
+      unsubscribers,
+      typingStoppedHandlers
+    ),
+
+    onUserLastSeen: createScopeMethod(
+      unsubscribers,
+      userLastSeenHandlers
+    ),
+
+    onMessageEdited: createScopeMethod(
+      unsubscribers,
+      messageEditedHandlers
+    ),
+
+    onMessageDeleted: createScopeMethod(
+      unsubscribers,
+      messageDeletedHandlers
+    ),
+
+    onReactionUpdated: createScopeMethod(
+      unsubscribers,
+      reactionUpdatedHandlers
+    ),
+
+    dispose() {
+      for (const unsubscribe of unsubscribers.splice(0)) {
+        unsubscribe()
+      }
+    }
+  }
 }
 
 export async function connectToChatHub(token: string) {
-  // idempotent connect
-  if (connection && (connection.state === HubConnectionState.Connected || started)) return
+  if (
+    connection?.state === HubConnectionState.Connected
+  ) {
+    return
+  }
 
-  connection = new HubConnectionBuilder()
+  if (connectPromise) {
+    return connectPromise
+  }
+
+  if (connection) {
+    try {
+      await connection.stop()
+    } catch {}
+  }
+
+  const next = new HubConnectionBuilder()
     .withUrl(CHAT_HUB_URL, {
       accessTokenFactory: () => token
     })
     .withAutomaticReconnect()
     .build()
 
-  connection.onclose(err => console.warn('SignalR closed', err))
-  connection.onreconnecting(err => console.warn('SignalR reconnecting', err))
-  connection.onreconnected(id => {
-    console.log('SignalR reconnected', id)
-    // handlers remain, but flush queued subs (if any)
-    flushPending()
+  bindConnection(next)
+  connection = next
+
+  const pending = next.start().then(async () => {
+    if (connection !== next) {
+      await next.stop()
+    }
   })
 
-  await connection.start()
-  started = true
-  
-  console.log('✅ Connected to SignalR')
-  connection.on('UserTyping',  (raw: any) => console.debug('🌐 core UserTyping', normTyping(raw)))
-  connection.on('UserStoppedTyping', (raw: any) => console.debug('🌐 core UserStoppedTyping', normTyping(raw)))
-  flushPending()
+  connectPromise = pending
+
+  try {
+    await pending
+  } finally {
+    if (connectPromise === pending) {
+      connectPromise = null
+    }
+  }
 }
 
-/* ---------------- Messages ---------------- */
-
-// ReceiveMessage(payload)
-export function onMessageReceived(cb: (msg: any) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('ReceiveMessage', (m: any) => {
-      // console.debug('🔔 ReceiveMessage', m)
-      cb(m)
-    })
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-// Delivered({ messageId, receiverId, sentAt, clientId? })
-export function onDelivered(cb: (info: any) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('Delivered', (i: any) => {
-      // console.debug('🔔 Delivered', i)
-      cb(i)
-    })
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-export function onMessageRead(cb: (info: any) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('MessageRead', (i: any) => {
-      // console.debug('🔔 MessageRead', i)
-      cb(i)
-    })
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-// Send a message via hub
 export async function sendMessage(
   receiverId: string,
   encryptedText: string,
@@ -86,103 +272,63 @@ export async function sendMessage(
   replyToMessageId?: string | null,
   forwardedFromMessageId?: string | null
 ) {
-  if (!connection) throw new Error('SignalR not connected')
+  if (!connection) {
+    throw new Error('SignalR not connected')
+  }
+
   await connection.invoke('SendMessage', {
     receiverId,
     encryptedText,
     fileUrl: fileUrl ?? null,
     clientId: clientId ?? null,
     replyToMessageId: replyToMessageId ?? null,
-    forwardedFromMessageId: forwardedFromMessageId ?? null
+    forwardedFromMessageId:
+      forwardedFromMessageId ?? null
   })
 }
 
-// Mark a message as read
 export async function markAsRead(messageId: string) {
-  if (!connection) throw new Error('SignalR not connected')
-  await connection.invoke('MarkMessageAsRead', messageId)
+  if (!connection) {
+    throw new Error('SignalR not connected')
+  }
+
+  await connection.invoke(
+    'MarkMessageAsRead',
+    messageId
+  )
 }
 
-/* ---------------- Presence ---------------- */
-
-// OnlineSnapshot(string[])
-export function onOnlineSnapshot(cb: (ids: string[]) => void) {
-  const sub = (c: HubConnection) => c.on('OnlineSnapshot', (ids: string[]) => cb(ids))
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-// UserOnline(userId, at)
-export function onUserOnline(cb: (userId: string, at: string) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('UserOnline', (uid: string, at: string) => {
-      // console.debug('🔔 UserOnline', uid, at)
-      cb(uid, at)
-    })
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-// UserOffline(userId, at)
-export function onUserOffline(cb: (userId: string, at: string) => void) {
-  const sub = (c: HubConnection) =>
-    c.on('UserOffline', (uid: string, at: string) => {
-      // console.debug('🔔 UserOffline', uid, at)
-      cb(uid, at)
-    })
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-/* ---------------- Typing ---------------- */
-
-// UserTyping({ SenderId, At })
-export function onTyping(cb: (p: { SenderId: string; At?: string }) => void) {
-  const sub = (c: HubConnection) => c.on('UserTyping', (raw: any) => cb(normTyping(raw)))
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-// UserStoppedTyping({ SenderId, At })
-export function onTypingStopped(cb: (p: { SenderId: string; At?: string }) => void) {
-  const sub = (c: HubConnection) => c.on('UserStoppedTyping', (raw: any) => cb(normTyping(raw)))
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-
-// invoke typing from client
 export async function startTyping(receiverId: string) {
-  await connection?.invoke('StartTyping', receiverId)
+  await connection?.invoke(
+    'StartTyping',
+    receiverId
+  )
 }
+
 export async function stopTyping(receiverId: string) {
-  await connection?.invoke('StopTyping', receiverId)
-}
-
-export function onUserLastSeen(cb: (userId: string, whenIso: string) => void) {
-  const sub = (c: HubConnection) => c.on('UserLastSeen', (id: string, when: string) => cb(id, when))
-  if (connection) sub(connection); else pendingSubs.push(sub)
-}
-
-
-export function onMessageEdited(cb: (p: { messageId: string; encryptedContent: string; updatedAtUtc?: string }) => void) {
-  const sub = (c: HubConnection) => c.on('MessageEdited', (p: any) => cb(p));
-  if (connection) sub(connection); else pendingSubs.push(sub);
-}
-
-export function onMessageDeleted(cb: (p: { messageId: string; scope: 'me'|'all' }) => void) {
-  const sub = (c: HubConnection) => c.on('MessageDeleted', (p: any) => cb(p));
-  if (connection) sub(connection); else pendingSubs.push(sub);
-}
-
-
-export function onReactionUpdated(cb: (p: { messageId:string; emoji:string; count:number; userId:string; action:'added'|'removed' }) => void) {
-  const sub = (c: HubConnection) => c.on('ReactionUpdated', (p:any) => cb(p));
-  if (connection) sub(connection); else pendingSubs.push(sub);
+  await connection?.invoke(
+    'StopTyping',
+    receiverId
+  )
 }
 
 export async function fetchOnlineUsers(): Promise<string[]> {
-  if (!connection) throw new Error('SignalR not connected')
-  return await connection.invoke<string[]>('GetOnlineUsers')
+  if (!connection) {
+    throw new Error('SignalR not connected')
+  }
+
+  return connection.invoke<string[]>(
+    'GetOnlineUsers'
+  )
 }
 
 export async function disconnectFromChatHub() {
-  try { await connection?.stop(); } catch {}
-  connection = null;
-  started = false;
+  const current = connection
+
+  connection = null
+  connectPromise = null
+
+  try {
+    await current?.stop()
+  } catch {}
 }
