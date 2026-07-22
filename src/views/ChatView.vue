@@ -877,6 +877,11 @@ import {
   useMessageSelection
 } from '../composables/useMessageSelection'
 
+import {
+  useMessageContext
+} from '../composables/useMessageContext'
+
+
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
 
@@ -917,21 +922,10 @@ const loadingOlder = ref(false)
 const hasMore = ref(true)
 const oldestId = ref<string | null>(null)
 let chatSessionId = 0
-const replyingTo = ref<UiMessage | null>(null)
 
 const conversations = ref<UiConversation[]>([])
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
-
-const contextMenu = ref<{
-  visible: boolean; x: number; y: number;
-  msg: UiMessage | null;
-  pillAlign: 'center' | 'left' | 'right';
-}>({ visible:false, x:0, y:0, msg:null, pillAlign:'center' })
-
-const editingMessage = ref<UiMessage | null>(null)
-
-const menuEl = ref<HTMLElement | null>(null)
 
 const quickEmojis = ['👍','❤️','😂','😮','😢','🔥','🙏','🎹']
 const reactionPickerFor = ref<string | null>(null)
@@ -1002,6 +996,36 @@ const selectedLabel = computed(() => {
 
 const msgInput = ref<HTMLTextAreaElement|null>(null)
 
+const {
+  contextMenu,
+  menuEl,
+  replyingTo,
+  editingMessage,
+
+  openMenu,
+  closeMenu,
+  repositionMenu,
+
+  startReplyFrom,
+  doReply,
+
+  doEdit,
+  cancelEdit,
+  completeEdit,
+
+  isMine,
+  canEdit,
+  resetMessageContext
+} = useMessageContext({
+  myId,
+  selectedUser,
+  text,
+  msgInput,
+  scrollBox,
+  startTyping,
+  stopTyping
+})
+
 const MIN_ROWS = 1
 const MAX_ROWS = 6
 
@@ -1041,8 +1065,6 @@ const fileSizeMap = reactive<Record<string, number>>({})
 
 const clipHover = ref(false)
 const menuHover = ref(false)
-
-const prevDraftBeforeEdit = ref('')
 
 const mediaInput = ref<HTMLInputElement|null>(null)
 const pendingMedia = ref<File[]>([])
@@ -1238,7 +1260,7 @@ function resetState() {
   typing.clear?.()
 
   text.value = ''
-  replyingTo.value = null
+  resetMessageContext()
   showFileModal.value = false
   showMediaModal.value = false
   pendingFiles.value = []
@@ -1909,11 +1931,6 @@ function colorFromString(s: string) {
   return `hsl(${h % 360} 65% 55%)`
 }
 
-function startReplyFrom(m: UiMessage) {
-  replyingTo.value = m
-  nextTick(() => msgInput.value?.focus())
-}
-
 async function openPeerProfile() {
   if (!selectedUser.value) return
   const u = await getUserByUsername(selectedUser.value.username.replace(/^@/,''))
@@ -2493,7 +2510,7 @@ async function applyReaction(m: UiMessage, emoji: string) {
   if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
   reactionPickerFor.value = null
   hoverReactFor.value = null
-  contextMenu.value.visible = false
+  closeMenu()
 }
 
 
@@ -2538,96 +2555,10 @@ function onWindowScroll() {
   closeMenu()
 }
 function onWindowResize() {
-  if (contextMenu.value.visible) nextTick(() => clampMenuPosition())
-  isNarrow.value = window.innerWidth < 768
+  repositionMenu()
+  isNarrow.value =
+    window.innerWidth < 768
 }
-
-function clampMenuPosition() {
-  const el = menuEl.value
-  if (!el) return
-
-  const pad = 8
-  const box = scrollBox.value?.getBoundingClientRect()
-  const bounds = box
-    ? { left: box.left + pad, top: box.top + pad, right: box.right - pad, bottom: box.bottom - pad }
-    : { left: pad, top: pad, right: window.innerWidth - pad, bottom: window.innerHeight - pad }
-
-  const rect = el.getBoundingClientRect()
-  let x = contextMenu.value.x
-  let y = contextMenu.value.y
-
-  if (x + rect.width > bounds.right) x = bounds.right - rect.width
-  if (x < bounds.left)               x = bounds.left
-  if (y + rect.height > bounds.bottom) y = bounds.bottom - rect.height
-  if (y < bounds.top)                  y = bounds.top
-
-  contextMenu.value.x = Math.round(x)
-  contextMenu.value.y = Math.round(y)
-
-  let align: 'center' | 'left' | 'right' = 'center'
-  const pill = el.querySelector('.reaction-pill') as HTMLElement | null
-  const pillW = pill?.offsetWidth || 228
-  const menuCenter = contextMenu.value.x + rect.width / 2
-  if (menuCenter + pillW / 2 > bounds.right - pad) align = 'right'
-  else if (menuCenter - pillW / 2 < bounds.left + pad) align = 'left'
-  contextMenu.value.pillAlign = align
-
-}
-
-
-
-
-
-
-function openMenu(e: MouseEvent, m: UiMessage) {
-  if (contextMenu.value.visible) {
-    closeMenu()
-    return
-  }
-  contextMenu.value.msg = m
-  contextMenu.value.visible = true
-  contextMenu.value.x = e.clientX
-  contextMenu.value.y = e.clientY
-  nextTick(() => clampMenuPosition())
-}
-
-
-function closeMenu() {
-  contextMenu.value.visible = false
-  contextMenu.value.msg = null
-}
-function doReply() {
-  const m = contextMenu.value.msg
-  closeMenu()
-  if (m) startReplyFrom(m)
-}
-function doEdit() {
-  const m = contextMenu.value.msg
-  closeMenu()
-  if (!m) return
-  editingMessage.value = m
-  prevDraftBeforeEdit.value = text.value
-  text.value = m.plainText || ''
-  replyingTo.value = null
-  nextTick(() => {
-    const el = msgInput.value as HTMLInputElement | null
-    el?.focus()
-    try { el?.setSelectionRange?.(el.value.length, el.value.length) } catch {}
-  })
-  if (selectedUser.value) startTyping(selectedUser.value.id).catch(()=>{})
-}
-
-function cancelEdit() {
-  editingMessage.value = null
-  text.value = prevDraftBeforeEdit.value
-  if (!text.value.trim() && selectedUser.value) {
-    stopTyping(selectedUser.value.id).catch(()=>{})
-  }
-}
-
-function isMine(m?: UiMessage|null) { return !!m && m.senderId === myId.value }
-function canEdit(m?: UiMessage|null) { return isMine(m) && !m?.fileUrl && !m?.isDeleted }
-
 
 function loadAESKeyScoped(partnerId: string) {
   try {
@@ -3486,13 +3417,12 @@ async function send() {
     editingMessage.value &&
     editingMessage.value.id
   ) {
-    const encrypted = await encryptAES(
-      aesKey,
-      draft.trim() || EMPTY_MSG_MARKER
-    )
-
-    const previousDraft =
-      prevDraftBeforeEdit.value
+    const encrypted =
+      await encryptAES(
+        aesKey,
+        draft.trim() ||
+          EMPTY_MSG_MARKER
+      )
 
     try {
       await editMessage(
@@ -3500,21 +3430,13 @@ async function send() {
         encrypted
       )
 
-      editingMessage.value.plainText =
-        draft.trim()
-
-      editingMessage.value.updatedAtUtc =
-        new Date().toISOString()
-
-      editingMessage.value = null
-      text.value = previousDraft
+      completeEdit(draft.trim())
     } catch (error) {
       console.warn(
         'edit failed',
         error
       )
     }
-
     return
   }
 
