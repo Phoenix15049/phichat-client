@@ -835,7 +835,7 @@ import {
   getConversationPaged,
   getConversations,
   editMessage,
-  addReaction, removeReaction,getUserById,
+  getUserById,
   getMeProfile
 } from '../services/api'
 import {
@@ -868,7 +868,6 @@ import type {
 } from '../types/chat'
 
 import {
-  dedupeReactions,
   mapServerMessage
 } from '../utils/messageMapper'
 
@@ -883,6 +882,10 @@ import {
 import {
   useMessageDelete
 } from '../composables/useMessageDelete'
+
+import {
+  useMessageReactions
+} from '../composables/useMessageReactions'
 
 
 function resolveReplyPreview(replyId?: string | null): string {
@@ -929,9 +932,6 @@ let chatSessionId = 0
 const conversations = ref<UiConversation[]>([])
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
-
-const quickEmojis = ['👍','❤️','😂','😮','😢','🔥','🙏','🎹']
-const reactionPickerFor = ref<string | null>(null)
 
 const forwardNames = reactive<Record<string, string>>({})
 const forwardHandles = reactive<Record<string, string>>({}) 
@@ -1085,12 +1085,6 @@ const vRipple = {
   }
 }
 
-const hoverReactFor = ref<string|null>(null)   
-let hoverReactTimer: number | null = null         
-const HOVER_REACT_DELAY = 1000   
-let hoverBarHideTimer: number | null = null
-let suppressHoverUntil = 0
-
 const signalR = createChatHubSubscriptionScope()
 
 const isNarrow = ref(false)
@@ -1176,48 +1170,11 @@ function autoGrow(el?: HTMLTextAreaElement | null, opts?: { animate?: boolean })
   }
 }
 
-function normEmoji(e: string): string {
-  return (e || '')
-    .replace(/\uFE0F/g, '')                 
-    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '');
-}
 
 function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
   if (selectionMode.value) return
   if (isInTextSelectable(ev.target)) return  
   startReplyFrom(m)
-}
-
-
-function keepHoverBar() {
-  if (hoverBarHideTimer) { clearTimeout(hoverBarHideTimer); hoverBarHideTimer = null }
-}
-
-function hideHoverBarSoon() {
-  if (hoverBarHideTimer) { clearTimeout(hoverBarHideTimer) }
-  hoverBarHideTimer = window.setTimeout(() => {
-    hoverReactFor.value = null
-    hoverBarHideTimer = null
-  }, 300) // کمی مهلت برای رسیدن ماوس به قرص
-}
-
-
-function onBubbleHoverStart(m: UiMessage) {
-  if (Date.now() < suppressHoverUntil) return
-  if (selectionMode.value || contextMenu.value.visible) return
-  clearBubbleHoverTimer()
-  keepHoverBar()
-  hoverReactTimer = window.setTimeout(() => {
-    hoverReactFor.value = getMsgKey(m)
-  }, HOVER_REACT_DELAY)
-}
-
-function onBubbleHoverEnd() {
-  clearBubbleHoverTimer()
-  hideHoverBarSoon()   
-}
-function clearBubbleHoverTimer() {
-  if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
 }
 
 async function ensurePeerCached(uid: string) {
@@ -2127,12 +2084,31 @@ const {
   showToast
 })
 
+const {
+  quickEmojis,
+  reactionPickerFor,
+  hoverReactFor,
 
+  applyReaction,
+  keepHoverBar,
+  hideHoverBarSoon,
+  onBubbleHoverStart,
+  onBubbleHoverEnd,
 
-watch(
-  selectedUser,
-  clearSelection
-)
+  handleReactionUpdated,
+  resetReactionUi,
+  disposeReactions
+} = useMessageReactions({
+  messages,
+  myId,
+  getMsgKey,
+  closeMenu
+})
+
+watch(selectedUser, () => {
+  clearSelection()
+  resetReactionUi()
+})
 
 watch(selectedCount, count => {
   if (
@@ -2462,49 +2438,6 @@ function clearDraft(peerId: string) {
   try { localStorage.removeItem(draftKey(peerId)) } catch {}
 }
 
-async function applyReaction(m: UiMessage, emoji: string) {
-  await toggleReaction(m, emoji)
-  suppressHoverUntil = Date.now() + 700
-  if (hoverReactTimer) { clearTimeout(hoverReactTimer); hoverReactTimer = null }
-  reactionPickerFor.value = null
-  hoverReactFor.value = null
-  closeMenu()
-}
-
-
-
-async function toggleReaction(m: UiMessage, emoji: string) {
-  if (!m.id) return
-  const list = m.reactions || (m.reactions = [])
-  m.reactions = dedupeReactions(list)
-
-  const eKey = normEmoji(emoji)
-
-  const prevMine = m.reactions.find(r => r.mine && normEmoji(r.emoji) !== eKey)
-  if (prevMine) {
-    prevMine.mine = false
-    prevMine.count = Math.max(0, prevMine.count - 1)
-    if (prevMine.count === 0) m.reactions = m.reactions.filter(r => r !== prevMine)
-    removeReaction(m.id, prevMine.emoji).catch(() => {})
-  }
-
-  const cur = m.reactions.find(r => normEmoji(r.emoji) === eKey)
-  if (cur?.mine) {
-    cur.mine = false
-    cur.count = Math.max(0, cur.count - 1)
-    if (cur.count === 0) m.reactions = m.reactions.filter(r => r !== cur)
-    try { await removeReaction(m.id, emoji) } catch {}
-  } else {
-    if (cur) { cur.mine = true; cur.count += 1 }
-    else m.reactions.push({ emoji, count: 1, mine: true })
-    m.reactions = dedupeReactions(m.reactions)
-    try { await addReaction(m.id, emoji) } catch {}
-  }
-}
-
-
-
-
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') closeMenu()
@@ -2789,6 +2722,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', onWindowScroll, true)
   window.removeEventListener('resize', onWindowResize)
   disposeSelection()
+  disposeReactions()
   signalR.dispose()
 
   if (typingTimer) {
@@ -3179,33 +3113,9 @@ function wireSignalR() {
     messages.value.splice(i, 1)
 })
 
-  signalR.onReactionUpdated(p => {
-
-    const m = messages.value.find(x => x.id === p.messageId)
-    if (!m) return
-
-    const list = m.reactions || (m.reactions = [])
-    const pKey = normEmoji(p.emoji)
-
-    const idxs = list.map((r, i) => normEmoji(r.emoji) === pKey ? i : -1).filter(i => i >= 0)
-
-    if (idxs.length === 0) {
-      list.push({ emoji: p.emoji, count: p.count, mine: p.userId === myId.value && p.action === 'added' })
-    } else {
-      const first = list[idxs[0]]
-      first.emoji = p.emoji
-      first.count = p.count
-      if (p.userId === myId.value) first.mine = (p.action === 'added')
-      for (let k = idxs.length - 1; k >= 1; k--) list.splice(idxs[k], 1)
-    }
-
-    // Single-react policy: اگر من اضافه کردم، mine بقیه false
-    if (p.userId === myId.value && p.action === 'added') {
-      for (const r of list) if (normEmoji(r.emoji) !== pKey) r.mine = false
-    }
-
-    m.reactions = dedupeReactions(list)
-  })
+  signalR.onReactionUpdated(
+    handleReactionUpdated
+  )
   }
 
 async function handleUserSelect(
