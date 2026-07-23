@@ -835,7 +835,6 @@ import {
   getConversationPaged,
   getConversations,
   editMessage,
-  deleteMessage,
   addReaction, removeReaction,getUserById,
   getMeProfile
 } from '../services/api'
@@ -880,6 +879,10 @@ import {
 import {
   useMessageContext
 } from '../composables/useMessageContext'
+
+import {
+  useMessageDelete
+} from '../composables/useMessageDelete'
 
 
 function resolveReplyPreview(replyId?: string | null): string {
@@ -934,22 +937,6 @@ const forwardNames = reactive<Record<string, string>>({})
 const forwardHandles = reactive<Record<string, string>>({}) 
 
 const toast = reactive({ show: false, text: '' })
-
-const confirmDel = reactive<{
-  visible: boolean
-  mode: 'single' | 'multi'
-  msg: UiMessage | null
-  count: number
-  canAll: boolean
-  forAll: boolean
-}>({
-  visible: false,
-  mode: 'single',
-  msg: null,
-  count: 0,
-  canAll: false,
-  forAll: false
-})
 
 const forwardPicker = reactive<{
   visible: boolean
@@ -2089,53 +2076,6 @@ function openForwardPickerMulti() {
 }
 
 
-function openDeleteConfirmSingle(msg: UiMessage, scopeDefault?: 'me'|'all') {
-  confirmDel.visible = true
-  confirmDel.mode = 'single'
-  confirmDel.msg = msg
-  confirmDel.count = 1
-  confirmDel.canAll = isMine(msg)
-  confirmDel.forAll = scopeDefault === 'all' && confirmDel.canAll
-}
-
-function openDeleteConfirmMulti() {
-  confirmDel.visible = true
-  confirmDel.mode = 'multi'
-  confirmDel.msg = null
-  confirmDel.count = selectedCount.value
-  confirmDel.canAll = allSelectedAreMine.value
-  confirmDel.forAll = false
-}
-
-function cancelDelete() {
-  confirmDel.visible = false
-}
-
-async function confirmDelete() {
-  try {
-    if (confirmDel.mode === 'single' && confirmDel.msg?.id) {
-      const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
-      await deleteMessage(confirmDel.msg.id, scope)
-      const i = messages.value.findIndex(x => x.id === confirmDel.msg!.id)
-      if (i >= 0) messages.value.splice(i, 1)
-    } else if (confirmDel.mode === 'multi') {
-      const scope = (confirmDel.forAll && confirmDel.canAll) ? 'all' : 'me'
-      const ids = selectedMessages.value.map(m => m.id!).filter(Boolean)
-      await Promise.all(ids.map(id => deleteMessage(id, scope).catch(()=>{})))
-      for (const id of ids) {
-        const i = messages.value.findIndex(x => x.id === id)
-        if (i >= 0) messages.value.splice(i, 1)
-      }
-      clearSelection()
-    }
-    showToast('Deleted')
-  } catch (e) {
-    console.warn('confirmDelete failed', e)
-  } finally {
-    confirmDel.visible = false
-  }
-}
-
 function showToast(t: string) {
   toast.text = t
   toast.show = true
@@ -2170,6 +2110,24 @@ const {
   closeMenu,
   showToast
 })
+
+const {
+  confirmDel,
+  openDeleteConfirmSingle,
+  openDeleteConfirmMulti,
+  cancelDelete,
+  confirmDelete
+} = useMessageDelete({
+  messages,
+  selectedMessages,
+  selectedCount,
+  allSelectedAreMine,
+  isMine,
+  clearSelection,
+  showToast
+})
+
+
 
 watch(
   selectedUser,
