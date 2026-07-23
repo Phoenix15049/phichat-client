@@ -887,6 +887,10 @@ import {
   useMessageReactions
 } from '../composables/useMessageReactions'
 
+import {
+  useMessageForward
+} from '../composables/useMessageForward'
+
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -933,22 +937,7 @@ const conversations = ref<UiConversation[]>([])
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
 
-const forwardNames = reactive<Record<string, string>>({})
-const forwardHandles = reactive<Record<string, string>>({}) 
-
 const toast = reactive({ show: false, text: '' })
-
-const forwardPicker = reactive<{
-  visible: boolean
-  mode: 'single' | 'multi'
-  src: UiMessage | null
-  srcList: UiMessage[]
-}>({
-  visible: false,
-  mode: 'single',
-  src: null,
-  srcList: []
-})
 
 const menuOpen = ref(false)
 const showProfile = ref(false)
@@ -2024,15 +2013,6 @@ async function goSavedMessages() {
 }
 
 
-function openForwardPickerMulti() { 
-  if (!selectedCount.value) return
-  forwardPicker.visible = true
-  forwardPicker.mode = 'multi'
-  forwardPicker.src = null
-  forwardPicker.srcList = [...selectedMessages.value]
-}
-
-
 function showToast(t: string) {
   toast.text = t
   toast.show = true
@@ -2105,6 +2085,50 @@ const {
   closeMenu
 })
 
+const {
+  forwardPicker,
+  openForwardPicker,
+  openForwardPickerMulti,
+  doForward,
+  cacheForwardName,
+  resolveForwardLabel,
+  openForwardUser
+} = useMessageForward({
+  messages,
+  conversations,
+  selectedUser,
+  selectedMessages,
+  selectedCount,
+  myId,
+
+  getContextMessage: () =>
+    contextMenu.value.msg,
+
+  closeMenu,
+  clearSelection,
+  showToast,
+  getOrLoadKey,
+  appendOutgoingMessage,
+  updateConversationAfterSend,
+
+  openUserChat: async user => {
+    const current = currentChatRef()
+
+    if (
+      current &&
+      current.id !== user.id
+    ) {
+      chatNavStack.value.push(current)
+    }
+
+    await handleUserSelect(user)
+
+    if (route.path !== '/chat') {
+      router.replace('/chat')
+    }
+  }
+})
+
 watch(selectedUser, () => {
   clearSelection()
   resetReactionUi()
@@ -2119,24 +2143,6 @@ watch(selectedCount, count => {
   }
 })
 
-watch(messages, list => {
-  const ids = new Set(
-    list
-      .map(message =>
-        message.forwardedFromSenderId
-      )
-      .filter(Boolean) as string[]
-  )
-
-  ids.forEach(id => {
-    if (!forwardNames[id]) {
-      cacheForwardName(id)
-    }
-  })
-}, {
-  immediate: true,
-  deep: true
-})
 
 onMounted(() => {
   window.addEventListener(
@@ -2151,278 +2157,6 @@ onBeforeUnmount(() => {
     onKeydownSelection
   )
 })
-
-async function cacheForwardName(userId: string) {
-  if (forwardNames[userId] && forwardHandles[userId]) return
-
-  const inConv = conversations.value.find(c => c.peerId === userId)
-  if (inConv) {
-    const handle = (inConv.username || '').replace(/^@/, '')
-    const label  = inConv.displayName || (handle ? '@' + handle : '')
-    if (label)  forwardNames[userId]   = label
-    if (handle) forwardHandles[userId] = handle
-  }
-
-  try {
-    const u = await getUserById(userId)
-    console.log("DISPLAY")
-    console.log(u?.DisplayName)
-    console.log("ID")
-    console.log(u?.id)
-    const handleRaw = (u?.username ?? u?.Username ?? '')
-    const handle    = handleRaw.replace(/^@/, '')
-
-    const display =
-      (u?.displayName ?? u?.DisplayName) ??
-      ([u?.firstName ?? u?.FirstName, u?.lastName ?? u?.LastName]
-        .filter(Boolean).join(' ').trim() || undefined) ??
-      (u?.name ?? u?.Name)
-
-    const label = (display && display.trim()) || (handle ? '@' + handle : '')
-    if (label)  forwardNames[userId]   = label
-    if (handle) forwardHandles[userId] = handle
-  } catch {
-  }
-}
-
-
-function resolveForwardLabel(userId: string) {
-  return forwardNames[userId] || (forwardHandles[userId] ? '@' + forwardHandles[userId] : 'کاربر')
-}
-
-async function openForwardUser(userId: string) {
-  try {
-    const u = await getUserById(userId)
-    if (!u?.id || !u?.username) {
-      showToast('Username not found')
-      return
-    }
-    const cur = currentChatRef?.()
-    if (cur && cur.id !== u.id) chatNavStack.value.push(cur)
-
-    await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
-    if (route.path !== '/chat') router.replace('/chat')
-  } catch {
-    showToast('Username not found')
-  }
-}
-
-function openForwardPicker() { // single from context menu
-  if (!contextMenu.value.msg) return
-  forwardPicker.visible = true
-  forwardPicker.mode = 'single'
-  forwardPicker.src = contextMenu.value.msg
-  forwardPicker.srcList = []
-  closeMenu()
-}
-
-async function doForward(
-  toPeerId: string
-) {
-  const mode = forwardPicker.mode
-  const source = forwardPicker.src
-  const sources = forwardPicker.srcList
-
-  forwardPicker.visible = false
-
-  try {
-    const aesKey =
-      await getOrLoadKey(toPeerId)
-
-    const sameChat =
-      selectedUser.value?.id === toPeerId
-
-    if (
-      mode === 'single' &&
-      source
-    ) {
-      const encrypted =
-        await encryptAES(
-          aesKey,
-          source.plainText || ''
-        )
-
-      const clientId = sameChat
-        ? crypto.randomUUID()
-        : null
-
-      const outgoing = sameChat
-        ? await appendOutgoingMessage(
-            toPeerId,
-            {
-              clientId:
-                clientId ?? undefined,
-
-              plainText:
-                source.plainText,
-
-              fileUrl:
-                source.fileUrl || null,
-
-              forwardedFromMessageId:
-                source
-                  .forwardedFromMessageId ||
-                source.id ||
-                null,
-
-              forwardedFromSenderId:
-                source
-                  .forwardedFromSenderId ||
-                source.senderId ||
-                null
-            }
-          )
-        : {
-            senderId: myId.value,
-            plainText: source.plainText,
-            fileUrl:
-              source.fileUrl || null,
-            sentAt:
-              new Date().toISOString()
-          }
-
-      await sendMessage(
-        toPeerId,
-        encrypted,
-        source.fileUrl || null,
-        clientId,
-        null,
-        source.forwardedFromMessageId ||
-          source.id ||
-          null
-      )
-
-      updateConversationAfterSend(
-        toPeerId,
-        outgoing
-      )
-
-      return
-    }
-
-    if (
-      mode !== 'multi' ||
-      !sources.length
-    ) {
-      return
-    }
-
-    const list = [...sources].sort(
-      (a, b) =>
-        (a.sentAt || '').localeCompare(
-          b.sentAt || ''
-        )
-    )
-
-    const clientIds =
-      new Map<string, string>()
-
-    let lastOutgoing:
-      UiMessage | null = null
-
-    if (sameChat) {
-      for (const sourceMessage of list) {
-        const sourceKey =
-          sourceMessage.id ||
-          sourceMessage.clientId
-
-        if (!sourceKey) continue
-
-        const clientId =
-          crypto.randomUUID()
-
-        clientIds.set(
-          sourceKey,
-          clientId
-        )
-
-        lastOutgoing =
-          await appendOutgoingMessage(
-            toPeerId,
-            {
-              clientId,
-
-              plainText:
-                sourceMessage.plainText,
-
-              fileUrl:
-                sourceMessage.fileUrl ||
-                null,
-
-              forwardedFromMessageId:
-                sourceMessage
-                  .forwardedFromMessageId ||
-                sourceMessage.id ||
-                null,
-
-              forwardedFromSenderId:
-                sourceMessage
-                  .forwardedFromSenderId ||
-                sourceMessage.senderId ||
-                null
-            }
-          )
-      }
-    }
-
-    for (const sourceMessage of list) {
-      const encrypted =
-        await encryptAES(
-          aesKey,
-          sourceMessage.plainText || ''
-        )
-
-      const sourceKey =
-        sourceMessage.id ||
-        sourceMessage.clientId
-
-      const clientId =
-        sameChat && sourceKey
-          ? clientIds.get(sourceKey) ??
-            null
-          : null
-
-      await sendMessage(
-        toPeerId,
-        encrypted,
-        sourceMessage.fileUrl || null,
-        clientId,
-        null,
-        sourceMessage
-          .forwardedFromMessageId ||
-          sourceMessage.id ||
-          null
-      )
-    }
-
-    if (!lastOutgoing) {
-      const last =
-        list[list.length - 1]
-
-      lastOutgoing = {
-        senderId: myId.value,
-        plainText: last.plainText,
-        fileUrl:
-          last.fileUrl || null,
-        sentAt:
-          new Date().toISOString()
-      }
-    }
-
-    updateConversationAfterSend(
-      toPeerId,
-      lastOutgoing
-    )
-
-    clearSelection()
-    showToast('ارسال شد')
-  } catch (error) {
-    console.warn(
-      'forward failed',
-      error
-    )
-  }
-}
 
 function draftKey(peerId: string) {
   const uid = myId.value || 'me'
