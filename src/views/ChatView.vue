@@ -808,7 +808,7 @@ import PeerProfileModal from '../components/PeerProfileModal.vue'
 import SettingsView from './SettingsView.vue'
 
 import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
-import { getMessageBrief,sendMessageWithFileFD } from '../services/api'
+import { getMessageBrief} from '../services/api'
 import {
   connectToChatHub,
   createChatHubSubscriptionScope,
@@ -895,6 +895,9 @@ import {
   useMessageFiles
 } from '../composables/useMessageFiles'
 
+import {
+  useMessageMedia
+} from '../composables/useMessageMedia'
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -1031,19 +1034,14 @@ const peerStatus = computed(() => {
 const clipHover = ref(false)
 const menuHover = ref(false)
 
-const mediaInput = ref<HTMLInputElement|null>(null)
-const pendingMedia = ref<File[]>([])
-const showMediaModal = ref(false)
-const sendingMedia = ref(false)
-const mediaCaption = ref('')
-const mediaGroupItems = ref(false)
-const compressImages = ref(true) 
-const showImageViewer = ref(false)
-const viewerImageSrc = ref<string>(''); const viewerCaption = ref<string>('')
-const showVideoPlayer = ref(false)
-const playerVideoSrc = ref<string>(''); const playerCaption = ref<string>('')
 
-const allImagesSelected = computed(() => pendingMedia.value.length>0 && pendingMedia.value.every(isImageFile))
+const showImageViewer = ref(false)
+const viewerImageSrc = ref<string>('');
+const viewerCaption = ref<string>('')
+const showVideoPlayer = ref(false)
+const playerVideoSrc = ref<string>('');
+const playerCaption = ref<string>('')
+
 
 const vRipple = {
   mounted(el: HTMLElement) {
@@ -1184,9 +1182,7 @@ function resetState() {
   text.value = ''
   resetMessageContext()
   cancelFileSend()
-
-  showMediaModal.value = false
-  pendingMedia.value = []
+  cancelMediaSend()
 }
 
 function scrollToEndSmooth() {
@@ -1385,10 +1381,6 @@ function timeColorClass(msg: UiMessage) {
 }
 
 
-function objUrl(f: File) {
-
-  return (window.URL || globalThis.URL).createObjectURL(f)
-}
 
 
 function openImage(msg: UiMessage){
@@ -1403,239 +1395,14 @@ function openVideo(msg: UiMessage){
 }
 
 
-function openMediaPicker(){ mediaInput.value?.click() }
-
-function onMediaChosen(e: Event){
-  const el = e.target as HTMLInputElement
-  const list = el.files ? Array.from(el.files) : []
-  if (list.length){
-    pendingMedia.value.push(...list)
-    showMediaModal.value = true
-  }
-  el.value = ''
-}
-function addAnotherMedia(){ mediaInput.value?.click() }
-function removePendingMedia(i:number){
-  pendingMedia.value.splice(i,1)
-  if (!pendingMedia.value.length){ cancelMediaSend() }
-}
-function cancelMediaSend(){
-  showMediaModal.value = false
-  pendingMedia.value = []
-  mediaCaption.value = ''
-  mediaGroupItems.value = false
-  compressImages.value = true
-}
-
-async function confirmSendMedia() {
-  const user = selectedUser.value
-
-  if (
-    !user ||
-    !pendingMedia.value.length
-  ) {
-    return
-  }
-
-  const partnerId = user.id
-
-  const replyId =
-    replyingTo.value?.id ?? null
-
-  sendingMedia.value = true
-
-  try {
-    const key =
-      await getOrLoadKey(partnerId)
-
-    const caption =
-      mediaCaption.value.trim()
-
-    const hasCaption =
-      caption.length > 0
-
-    const encryptedCaption =
-      await encryptAES(
-        key,
-        hasCaption
-          ? caption
-          : EMPTY_MSG_MARKER
-      )
-
-    let lastOutgoing:
-      UiMessage | null = null
-
-    if (
-      !mediaGroupItems.value &&
-      hasCaption
-    ) {
-      const captionMessage =
-        await appendOutgoingMessage(
-          partnerId,
-          {
-            plainText: caption,
-            fileUrl: null
-          }
-        )
-
-      await sendMessage(
-        partnerId,
-        encryptedCaption,
-        null,
-        captionMessage.clientId ?? null
-      )
-
-      lastOutgoing = captionMessage
-    }
-
-    const groupId =
-      mediaGroupItems.value
-        ? crypto.randomUUID()
-        : null
-
-    const sentAt =
-      new Date().toISOString()
-
-    for (
-      let index = 0;
-      index < pendingMedia.value.length;
-      index++
-    ) {
-      let file =
-        pendingMedia.value[index]
-
-      if (
-        compressImages.value &&
-        isImageFile(file)
-      ) {
-        try {
-          file =
-            await compressImageFile(file)
-        } catch {}
-      }
-
-      const clientId =
-        crypto.randomUUID()
-
-      const plainText =
-        mediaGroupItems.value &&
-        index === 0
-          ? caption
-          : ''
-
-      const mine =
-        await appendOutgoingMessage(
-          partnerId,
-          {
-            clientId,
-            plainText,
-            fileUrl: '(pending)',
-            sentAt,
-            replyToMessageId: replyId,
-            groupId
-          }
-        )
-
-      lastOutgoing = mine
-
-      const formData = new FormData()
-
-      formData.append(
-        'receiverId',
-        partnerId
-      )
-
-      const encryptedText =
-        mediaGroupItems.value &&
-        index === 0
-          ? encryptedCaption
-          : await encryptAES(
-              key,
-              EMPTY_MSG_MARKER
-            )
-
-      formData.append(
-        'encryptedText',
-        encryptedText
-      )
-
-      formData.append('file', file)
-
-      if (replyId) {
-        formData.append(
-          'replyToMessageId',
-          replyId
-        )
-      }
-
-      if (groupId) {
-        formData.append(
-          'groupId',
-          groupId
-        )
-      }
-
-      formData.append(
-        'clientId',
-        clientId
-      )
-
-      await sendMessageWithFileFD(
-        formData
-      )
-    }
-
-    if (lastOutgoing) {
-      updateConversationAfterSend(
-        partnerId,
-        lastOutgoing,
-        user.username
-      )
-    }
-
-    showMediaModal.value = false
-    pendingMedia.value = []
-    mediaCaption.value = ''
-    mediaGroupItems.value = false
-
-    if (
-      selectedUser.value?.id === partnerId
-    ) {
-      replyingTo.value = null
-    }
-  } finally {
-    sendingMedia.value = false
-  }
-}
-
 function isImageUrl(url?: string|null) {
   if (!url) return false
   return /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(url.split('?')[0] || '')
 }
+
 function isVideoUrl(url?: string|null) {
   if (!url) return false
   return /\.(mp4|webm|ogg|mov|m4v)$/i.test(url.split('?')[0] || '')
-}
-function isImageFile(f: File){ return f.type.startsWith('image/') }
-
-async function compressImageFile(file: File, maxDim = 1280, quality = 0.82): Promise<File> {
-  const img = await new Promise<HTMLImageElement>((res, rej) => {
-    const i = new Image()
-    i.onload = () => res(i); i.onerror = rej
-    i.src = URL.createObjectURL(file)
-  })
-  const w = img.naturalWidth, h = img.naturalHeight
-  let nw = w, nh = h
-  if (w > h && w > maxDim) { nw = maxDim; nh = Math.round(h * maxDim / w) }
-  else if (h >= w && h > maxDim) { nh = maxDim; nw = Math.round(w * maxDim / h) }
-
-  const canvas = document.createElement('canvas')
-  canvas.width = nw; canvas.height = nh
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(img, 0, 0, nw, nh)
-
-  const blob: Blob = await new Promise(res => canvas.toBlob(b => res(b!), 'image/jpeg', quality))
-  return new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })
 }
 
 
@@ -1950,7 +1717,33 @@ const {
   updateConversationAfterSend
 })
 
+const {
+  mediaInput,
+  pendingMedia,
+  showMediaModal,
+  sendingMedia,
+  mediaCaption,
+  mediaGroupItems,
+  compressImages,
+  allImagesSelected,
 
+  openMediaPicker,
+  onMediaChosen,
+  addAnotherMedia,
+  removePendingMedia,
+  cancelMediaSend,
+  confirmSendMedia,
+
+  isImageFile,
+  objUrl,
+  disposeMedia
+} = useMessageMedia({
+  selectedUser,
+  replyingTo,
+  getOrLoadKey,
+  appendOutgoingMessage,
+  updateConversationAfterSend
+})
 
 watch(selectedUser, () => {
   clearSelection()
@@ -2280,6 +2073,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onWindowResize)
   disposeSelection()
   disposeReactions()
+  disposeMedia()
   signalR.dispose()
 
   if (typingTimer) {
