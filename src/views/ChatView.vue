@@ -813,14 +813,12 @@ import {
   connectToChatHub,
   createChatHubSubscriptionScope,
   disconnectFromChatHub,
-  sendMessage,
   markAsRead,
   startTyping,
   stopTyping,
   fetchOnlineUsers
 } from '../services/signalr'
 import {
-  encryptAES,
   decryptAES,
   importAESKey,
   generateAESKey,
@@ -834,7 +832,6 @@ import {
   storeChatKey,
   getConversationPaged,
   getConversations,
-  editMessage,
   getUserById,
   getMeProfile
 } from '../services/api'
@@ -898,6 +895,10 @@ import {
 import {
   useMessageMedia
 } from '../composables/useMessageMedia'
+
+import {
+  useChatComposer
+} from '../composables/useChatComposer'
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -1009,13 +1010,6 @@ const {
   stopTyping
 })
 
-const MIN_ROWS = 1
-const MAX_ROWS = 6
-
-
-const canSend = computed(
-  () => !!selectedUser.value && !!text.value.trim()
-)
 
 const onlineIds = reactive(new Set<string>())
 const lastSeenMap = reactive<Record<string, string | null>>({})
@@ -1085,66 +1079,6 @@ function onHeaderBack() {
   }
 }
 
-
-
-
-
-onMounted(() => nextTick(() => autoGrow(undefined, { animate: false })))
-watch(selectedUser, () => nextTick(() => autoGrow(undefined, { animate: false })))
-
-
-
-function onComposerInput(e: Event) {
-  onInputChanged()
-  autoGrow(e.target as HTMLTextAreaElement, { animate: true })
-}
-
-
-function autoGrow(el?: HTMLTextAreaElement | null, opts?: { animate?: boolean }) {
-  const ta = el ?? msgInput.value
-  if (!ta) return
-
-  const cs = window.getComputedStyle(ta)
-  const line   = parseFloat(cs.lineHeight) || 24
-  const pad    = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
-  const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
-
-  // باکس‌سایزت border-box هست؛ پس ارتفاع نهایی باید padding + border رو هم دربر بگیره
-  const minH = line * MIN_ROWS + pad + border
-  const maxH = line * MAX_ROWS + pad + border
-
-  // ارتفاع فعلی واقعی (با border) → offsetHeight پایدارتر از getBoundingClientRect
-  const prevH = ta.offsetHeight || minH
-
-  // برای اندازه‌گیری محتوا: height:auto و overflow:hidden
-  const prevOverflow = ta.style.overflowY
-  ta.style.overflowY = 'hidden'
-  ta.style.height = 'auto'
-
-  // scrollHeight شامل padding هست اما border نه؛ پس +border
-  const contentH = ta.scrollHeight + border
-  const targetH  = Math.max(minH, Math.min(contentH, maxH))
-
-  const delta = Math.abs(targetH - prevH)
-  const animate = (opts?.animate ?? true) && delta >= 1 // اختلاف‌های <1px انیمیشن نزن تا تیک نزنه
-
-  // اسکرول فقط وقتی از سقف رد شده
-  ta.style.overflowY = contentH > maxH ? 'auto' : (prevOverflow || 'hidden')
-
-  if (!animate) {
-    // بدون انیمیشن (ریزتغییرات)
-    const prevTr = ta.style.transition
-    ta.style.transition = 'none'
-    ta.style.height = `${Math.round(targetH)}px`
-    void ta.offsetHeight
-    ta.style.transition = prevTr
-  } else {
-    // انیمیشن نرم از ارتفاع فعلی → هدف
-    ta.style.height = `${prevH}px`
-    void ta.offsetHeight
-    ta.style.height = `${Math.round(targetH)}px`
-  }
-}
 
 
 function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
@@ -1314,25 +1248,6 @@ function updateConversationAfterSend(
   conversations.value.unshift(moved)
 }
 
-async function finishComposerSend(
-  peerId: string
-) {
-  clearDraft(peerId)
-  stopTyping(peerId).catch(() => {})
-
-  if (selectedUser.value?.id !== peerId) {
-    return
-  }
-
-  replyingTo.value = null
-  text.value = ''
-
-  await nextTick()
-
-  autoGrow(undefined, {
-    animate: true
-  })
-}
 
 function onConvDblClick(conv: UiConversation) {
   // اگر همین چت بازه، فقط اسکرول کن
@@ -1745,6 +1660,43 @@ const {
   updateConversationAfterSend
 })
 
+const {
+  canSend,
+  loadDraft,
+  autoGrow,
+  onComposerInput,
+  onBlurInput,
+  send
+} = useChatComposer({
+  myId,
+  selectedUser,
+  text,
+  msgInput,
+  editingMessage,
+  replyingTo,
+  getOrLoadKey,
+  appendOutgoingMessage,
+  updateConversationAfterSend,
+  completeEdit
+})
+
+onMounted(() => {
+  nextTick(() => {
+    autoGrow(undefined, {
+      animate: false
+    })
+  })
+})
+
+watch(selectedUser, () => {
+  nextTick(() => {
+    autoGrow(undefined, {
+      animate: false
+    })
+  })
+})
+
+
 watch(selectedUser, () => {
   clearSelection()
   resetReactionUi()
@@ -1773,20 +1725,6 @@ onBeforeUnmount(() => {
     onKeydownSelection
   )
 })
-
-function draftKey(peerId: string) {
-  const uid = myId.value || 'me'
-  return `phi.draft.${uid}.${peerId}`
-}
-function loadDraft(peerId: string): string {
-  try { return localStorage.getItem(draftKey(peerId)) || '' } catch { return '' }
-}
-function saveDraft(peerId: string, text: string) {
-  try { localStorage.setItem(draftKey(peerId), text) } catch {}
-}
-function clearDraft(peerId: string) {
-  try { localStorage.removeItem(draftKey(peerId)) } catch {}
-}
 
 
 function onKeydown(e: KeyboardEvent) {
@@ -2621,99 +2559,6 @@ async function handleUserSelect(
       loadingConversation.value = false
     }
   }
-}
-
-async function send() {
-  const user = selectedUser.value
-  const draft = text.value
-
-  if (!user || !draft.trim()) return
-
-  const aesKey =
-    await getOrLoadKey(user.id)
-
-  if (
-    editingMessage.value &&
-    editingMessage.value.id
-  ) {
-    const encrypted =
-      await encryptAES(
-        aesKey,
-        draft.trim() ||
-          EMPTY_MSG_MARKER
-      )
-
-    try {
-      await editMessage(
-        editingMessage.value.id,
-        encrypted
-      )
-
-      completeEdit(draft.trim())
-    } catch (error) {
-      console.warn(
-        'edit failed',
-        error
-      )
-    }
-    return
-  }
-
-  const replyId =
-    replyingTo.value?.id ?? null
-
-  const encrypted = await encryptAES(
-    aesKey,
-    draft
-  )
-
-  const mine =
-    await appendOutgoingMessage(
-      user.id,
-      {
-        plainText: draft,
-        fileUrl: null,
-        replyToMessageId: replyId
-      }
-    )
-
-  updateConversationAfterSend(
-    user.id,
-    mine,
-    user.username
-  )
-
-  await sendMessage(
-    user.id,
-    encrypted,
-    null,
-    mine.clientId ?? null,
-    replyId
-  )
-
-  await finishComposerSend(user.id)
-}
-
-
-function onInputChanged() {
-  if (!selectedUser.value) return
-  const now = Date.now()
-  const last = (onInputChanged as any)._last || 0
-  if (now - last > 900) {
-    console.log('➡️ startTyping()', selectedUser.value.id)
-    startTyping(selectedUser.value.id).catch(()=>{})
-    ;(onInputChanged as any)._last = now
-  }
-  if (!text.value.trim()) {
-    console.log('➡️ stopTyping() (empty text)')
-    stopTyping(selectedUser.value.id).catch((e)=>console.warn('stopTyping error', e))
-  }
-  if (selectedUser.value) saveDraft(selectedUser.value.id, text.value)
-}
-
-function onBlurInput() {
-  console.log('➡️ stopTyping() (blur)')
-  if (selectedUser.value) stopTyping(selectedUser.value.id).catch(()=>{})
 }
 
 
