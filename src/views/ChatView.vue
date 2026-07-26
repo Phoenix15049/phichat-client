@@ -1,85 +1,21 @@
 <template>
   <div class="flex h-screen" dir="ltr">
-    <div
-      class="flex flex-col border-gray-200"
-      :class="isNarrow ? 'w-full border-r-0' : 'w-80 md:w-96 border-r'"
-      v-show="showListPane">
-      <div class="px-3 py-2 font-semibold text-gray-800 border-b border-gray-200 flex items-center justify-between">
-        <button class="px-2 py-1 rounded hover:bg-gray-100" @click="menuOpen = true" aria-label="Open menu">
-          <Menu class="w-5 h-5" />
-        </button>
-        <span>Chats</span>
-        <span class="w-6"></span>
-      </div>
-
-
-      <div class="flex-1 overflow-y-auto">
-        <button
-          v-for="conv in conversations"
-          :key="conv.peerId"
-          v-ripple
-          @click.stop="onConvDblClick(conv)"
-          @dblclick.stop="onConvDblClick(conv)"
-          class="relative overflow-hidden w-full px-3 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 flex gap-3 items-center text-left"
-          :class="{ 'bg-[#11BFAE]/10': selectedUser && selectedUser.id === conv.peerId }"
-        >
-
-        <span
-          v-if="selectedUser && selectedUser.id === conv.peerId"
-          class="absolute left-0 top-0 h-full w-[3px] bg-[#11BFAE] rounded-r">
-        </span>
-
-          <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
-            <span class="text-sm">
-
-            <div class="relative w-10 h-10 overflow-hidden flex items-center justify-center">
-
-              <!-- online dot -->
-              <span v-if="onlineIds.has(conv.peerId)"
-                      class="absolute bottom-0 right-0 w-2.5 h-2.5 z-10 bg-green-500 rounded-full ring-2 ring-white"></span>
-
-              <div class="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
-                  :style="!avatarById[conv.peerId] ? { backgroundColor: colorFromString(displayById[conv.peerId] || conv.username) } : {}">
-                <img v-if="avatarById[conv.peerId]" :src="avatarById[conv.peerId]!" class="w-full h-full object-cover" />
-                <span v-else class="text-white text-sm">
-                  {{ initialsOf(displayById[conv.peerId] || conv.displayName || conv.username) }}
-                </span>
-
-              </div>
-            </div>
-              
-            </span>
-          </div>
-          <div class="flex-1">
-            <div class="flex items-center justify-between">
-              <div class="font-medium truncate max-w-[10rem]"
-                :class="(selectedUser && selectedUser.id === conv.peerId) ? 'text-[#1B3C59]' : 'text-gray-900'">
-                {{ conv.displayName || '@' + conv.username }}
-              </div>
-              <div class="text-[11px] text-gray-500 whitespace-nowrap">
-                {{ formatRelativeEn(conv.lastSentAt || null) }}
-              </div>
-            </div>
-            <div class="text-xs text-gray-500 flex items-center gap-1 ">
-              <span class="truncate max-w-[12rem]">
-                <template v-if="conv.lastFileUrl">[Media]</template>
-                <template v-else>{{ conv.lastPreview || '' }}</template>
-              </span>
-              <span
-                v-if="conv.unreadCount > 0"
-                class="ml-2 inline-flex items-center justify-center rounded-full bg-[#11BFAE] text-white text-[11px] min-w-[18px] px-1"
-              >
-                {{ conv.unreadCount }}
-              </span>
-            </div>
-          </div>
-        </button>
-      </div>
-    </div>
+    <ChatConversationList
+      v-show="showListPane"
+      :conversations="conversations"
+      :selected-user-id="
+        selectedUser?.id ?? null
+      "
+      :is-narrow="isNarrow"
+      :online-ids="onlineIds"
+      :avatar-by-id="avatarById"
+      :display-by-id="displayById"
+      @open-menu="menuOpen = true"
+      @select="onConvDblClick"
+    />
 
     <div class="flex-1 flex flex-col"
      v-show="showChatPane">
-
 
     <div
       class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
@@ -849,7 +785,7 @@ import {getMyContacts, addContact, removeContact,getUsersList } from '../service
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 import {
-  Menu, ArrowLeft, Paperclip, X, Download, Check, CheckCheck, Loader2,
+  ArrowLeft, Paperclip, X, Download, Check, CheckCheck, Loader2,
   ChevronDown, File as FileIcon,SendHorizontal
 } from 'lucide-vue-next'
 
@@ -899,6 +835,8 @@ import {
 import {
   useChatComposer
 } from '../composables/useChatComposer'
+
+import ChatConversationList from '../components/ChatConversationList.vue'
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
