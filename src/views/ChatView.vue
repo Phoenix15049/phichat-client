@@ -891,6 +891,10 @@ import {
   useMessageForward
 } from '../composables/useMessageForward'
 
+import {
+  useMessageFiles
+} from '../composables/useMessageFiles'
+
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -1023,21 +1027,6 @@ const peerStatus = computed(() => {
   const ls = lastSeenMap[su.id]
   return ls ? `Last seen ${formatRelativeEn(ls)}` : 'Last seen unknown'
 })
-
-const fileInput = ref<HTMLInputElement|null>(null)
-
-function openFilePicker() {
-  fileInput.value?.click()
-}
-
-const pendingFiles = ref<File[]>([]) 
-const pendingCaption = ref('')
-const showFileModal = ref(false)
-const sendingFile = ref(false)
-
-const downloaded = reactive<Record<string, boolean>>({})
-const downloading = reactive<Record<string, boolean>>({})
-const fileSizeMap = reactive<Record<string, number>>({})
 
 const clipHover = ref(false)
 const menuHover = ref(false)
@@ -1194,9 +1183,9 @@ function resetState() {
 
   text.value = ''
   resetMessageContext()
-  showFileModal.value = false
+  cancelFileSend()
+
   showMediaModal.value = false
-  pendingFiles.value = []
   pendingMedia.value = []
 }
 
@@ -1650,208 +1639,9 @@ async function compressImageFile(file: File, maxDim = 1280, quality = 0.82): Pro
 }
 
 
-function onFilesChosen(e: Event) {
-  const el = e.target as HTMLInputElement
-  const list = el.files ? Array.from(el.files) : []
-  if (list.length) {
-    // به لیست موجود اضافه کن (بارهای بعدی هم قابل افزودن است)
-    pendingFiles.value.push(...list)
-    showFileModal.value = true
-  }
-  // اجازه انتخاب دوباره همان فایل‌ها
-  el.value = ''
-}
-
-
-
-function removePendingFile(i: number) {
-  pendingFiles.value.splice(i, 1)
-  if (pendingFiles.value.length === 0) {
-    // اگر همه حذف شد، مودال را ببند
-    showFileModal.value = false
-    pendingCaption.value = ''
-  }
-}
-
-
-
-
 function isNearBottom(el: HTMLElement, threshold = 400) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
 }
-
-function fileKey(m: UiMessage) {
-  return (m.id || m.clientId || '') as string
-}
-
-function fileNameFromUrl(url: string) {
-  try {
-    const p = url.split('/').pop() || ''
-    const i = p.indexOf('_')
-    return decodeURIComponent(i >= 0 ? p.slice(i + 1) : p)
-  } catch { return 'file' }
-}
-
-function humanFileSize(n: number) {
-  if (!n) return ''
-  const units = ['B','KB','MB','GB']
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
-  return `${n.toFixed( (i===0)?0:1 )} ${units[i]}`
-}
-
-async function ensureFileSize(url: string, k: string) {
-  if (fileSizeMap[k]) return
-  try {
-    const res = await fetch(url, { method: 'HEAD' })
-    const len = parseInt(res.headers.get('content-length') || '0', 10)
-    if (len > 0) fileSizeMap[k] = len
-  } catch {}
-}
-
-async function downloadFile(m: UiMessage) {
-  const k = fileKey(m)
-  if (!m.fileUrl) return
-  downloading[k] = true
-  try {
-    // try get size once
-    ensureFileSize(m.fileUrl, k)
-
-    const a = document.createElement('a')
-    a.href = m.fileUrl
-    a.download = fileNameFromUrl(m.fileUrl)
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    downloaded[k] = true
-  } finally {
-    downloading[k] = false
-  }
-}
-
-
-function cancelFileSend() {
-  showFileModal.value = false
-  pendingFiles.value = []
-  pendingCaption.value = ''
-}
-
-function addAnotherFile() {
-  fileInput.value?.click()
-}
-
-async function confirmSendFile() {
-  const user = selectedUser.value
-
-  if (
-    !user ||
-    pendingFiles.value.length === 0
-  ) {
-    return
-  }
-
-  const partnerId = user.id
-
-  const replyId =
-    replyingTo.value?.id ?? null
-
-  sendingFile.value = true
-
-  try {
-    const key =
-      await getOrLoadKey(partnerId)
-
-    const caption =
-      pendingCaption.value.trim()
-
-    const encryptedCaption =
-      await encryptAES(
-        key,
-        caption || EMPTY_MSG_MARKER
-      )
-
-    const sentAt =
-      new Date().toISOString()
-
-    let lastOutgoing:
-      UiMessage | null = null
-
-    for (const file of pendingFiles.value) {
-      const clientId =
-        crypto.randomUUID()
-
-      const mine =
-        await appendOutgoingMessage(
-          partnerId,
-          {
-            clientId,
-            plainText: caption,
-            fileUrl: '(pending)',
-            sentAt,
-            replyToMessageId: replyId
-          }
-        )
-
-      lastOutgoing = mine
-
-      const formData = new FormData()
-
-      formData.append(
-        'receiverId',
-        partnerId
-      )
-
-      formData.append(
-        'encryptedText',
-        encryptedCaption
-      )
-
-      formData.append('file', file)
-
-      if (replyId) {
-        formData.append(
-          'replyToMessageId',
-          replyId
-        )
-      }
-
-      formData.append(
-        'clientId',
-        clientId
-      )
-
-      await sendMessageWithFileFD(
-        formData
-      )
-    }
-
-    if (lastOutgoing) {
-      updateConversationAfterSend(
-        partnerId,
-        lastOutgoing,
-        user.username
-      )
-    }
-
-    showFileModal.value = false
-    pendingFiles.value = []
-    pendingCaption.value = ''
-
-    if (
-      selectedUser.value?.id === partnerId
-    ) {
-      replyingTo.value = null
-    }
-  } catch (error) {
-    console.error(
-      'send file failed',
-      error
-    )
-  } finally {
-    sendingFile.value = false
-  }
-}
-
 
 function initialsOf(name: string) {
   const t = (name || '').trim()
@@ -2128,6 +1918,39 @@ const {
     }
   }
 })
+
+const {
+  fileInput,
+  pendingFiles,
+  pendingCaption,
+  showFileModal,
+  sendingFile,
+
+  downloaded,
+  downloading,
+  fileSizeMap,
+
+  openFilePicker,
+  onFilesChosen,
+  removePendingFile,
+  cancelFileSend,
+  addAnotherFile,
+  confirmSendFile,
+
+  fileKey,
+  fileNameFromUrl,
+  humanFileSize,
+  ensureFileSize,
+  downloadFile
+} = useMessageFiles({
+  selectedUser,
+  replyingTo,
+  getOrLoadKey,
+  appendOutgoingMessage,
+  updateConversationAfterSend
+})
+
+
 
 watch(selectedUser, () => {
   clearSelection()
