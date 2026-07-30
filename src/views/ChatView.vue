@@ -436,67 +436,18 @@
         </div>
       </transition>
 
+      <ChatFileSendModal
+        v-model:caption="pendingCaption"
+        :open="showFileModal"
+        :files="pendingFiles"
+        :sending="sendingFile"
+        :human-file-size="humanFileSize"
+        @close="cancelFileSend"
+        @remove-file="removePendingFile"
+        @add-more="addAnotherFile"
+        @send="confirmSendFile"
+      />
 
-
-
-
-        <!-- File Send Modal -->
-      <!-- File Send Modal -->
-      <ModalSheet :open="showFileModal" @close="cancelFileSend">
-        <div class="p-5 w-[480px] max-w-full" dir="ltr">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-lg font-bold text-[#1B3C59]">Send as files</h3>
-            <button class="btn-ghost" @click="cancelFileSend" v-ripple aria-label="Close"><X class="w-5 h-5" /></button>
-          </div>
-
-          <!-- files list -->
-          <div class="space-y-2 max-h-64 overflow-y-auto">
-            <div
-              v-for="(f, i) in pendingFiles"
-              :key="i"
-              class="flex items-center gap-3 p-3 rounded-lg bg-white ring-1 ring-[#456173]/15 hover:ring-[#11BFAE]/30 transition"
-            >
-              <div class="w-10 h-10 rounded bg-[#1B3C59] grid place-items-center text-white"><FileIcon class="w-5 h-5" /></div>
-              <div class="flex-1 min-w-0">
-                <div class="font-medium text-[#1B3C59] truncate">{{ f.name }}</div>
-                <div class="text-xs text-[#456173]">{{ humanFileSize(f.size) }}</div>
-              </div>
-              <button class="btn-danger" @click="removePendingFile(i)" v-ripple>Remove</button>
-            </div>
-          </div>
-
-          <!-- caption -->
-          <label class="block text-sm text-[#456173] mt-3 mb-1">Caption (optional, applies to all)</label>
-          <textarea
-            v-model="pendingCaption"
-            rows="3"
-            dir="auto"
-            class="input w-full min-h-[84px] text-start auto-dir"
-            placeholder="Write a caption…"
-          ></textarea>
-
-          <!-- actions -->
-          <div class="mt-4 flex items-center justify-between">
-            <button class="btn-ghost" @click="cancelFileSend" v-ripple>Cancel</button>
-            <div class="flex items-center gap-2">
-              <button class="btn-outline" @click="addAnotherFile" v-ripple>Add more</button>
-              <button class="btn-primary"
-                      :disabled="sendingFile || pendingFiles.length===0"
-                      @click="confirmSendFile"
-                      v-ripple>
-                {{ sendingFile ? 'Sending…' : `Send (${pendingFiles.length})` }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </ModalSheet>
-
-
-
-
-
-
-      
       </div>
 
 
@@ -677,7 +628,7 @@
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
-
+import ChatFileSendModal from '../components/ChatFileSendModal.vue'
 import ChatComposer from '../components/ChatComposer.vue'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
@@ -733,13 +684,11 @@ import {getMyContacts, addContact, removeContact,getUsersList } from '../service
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 import {
-  X,
   Download,
   Check,
   CheckCheck,
   Loader2,
-  ChevronDown,
-  File as FileIcon
+  ChevronDown
 } from 'lucide-vue-next'
 
 import { toAbsoluteServerUrl } from '../config/server'
