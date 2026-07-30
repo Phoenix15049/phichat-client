@@ -3,8 +3,8 @@ import {
   type ComputedRef,
   type Ref
 } from 'vue'
-import { deleteMessage } from '../services/api'
-import type { UiMessage } from '../types/chat'
+import { deleteMessage } from '../../../services/api'
+import type { UiMessage } from '../../../types/chat'
 
 type UseMessageDeleteOptions = {
   messages: Ref<UiMessage[]>

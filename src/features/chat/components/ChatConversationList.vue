@@ -185,8 +185,8 @@
 
 <script setup lang="ts">
 import { Menu } from 'lucide-vue-next'
-import { formatRelativeEn } from '../utils/time'
-import type { UiConversation } from '../types/chat'
+import { formatRelativeEn } from '../../../utils/time'
+import type { UiConversation } from '../../../types/chat'
 
 const props = defineProps<{
   conversations: UiConversation[]

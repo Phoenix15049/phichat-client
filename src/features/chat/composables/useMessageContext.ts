@@ -7,7 +7,7 @@ import {
 import type {
   ChatUser,
   UiMessage
-} from '../types/chat'
+} from '../../../types/chat'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null

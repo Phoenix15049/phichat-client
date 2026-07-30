@@ -214,7 +214,7 @@ import {
 
 import type {
   ChatUser
-} from '../types/chat'
+} from '../../../types/chat'
 
 type HeaderUser =
   Pick<ChatUser, 'id' | 'username'>

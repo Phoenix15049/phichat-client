@@ -4,7 +4,7 @@ import {
   ref,
   type Ref
 } from 'vue'
-import type { UiMessage } from '../types/chat'
+import type { UiMessage } from '../../../types/chat'
 
 type UseMessageSelectionOptions = {
   messages: Ref<UiMessage[]>

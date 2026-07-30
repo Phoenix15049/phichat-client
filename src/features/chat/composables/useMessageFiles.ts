@@ -6,16 +6,16 @@ import {
 
 import {
   sendMessageWithFileFD
-} from '../services/api'
+} from '../../../services/api'
 
 import {
   encryptAES
-} from '../services/crypto'
+} from '../../../services/crypto'
 
 import type {
   ChatUser,
   UiMessage
-} from '../types/chat'
+} from '../../../types/chat'
 
 const EMPTY_MSG_MARKER = '\u200B'
 

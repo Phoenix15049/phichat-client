@@ -151,7 +151,7 @@ import {
   X
 } from 'lucide-vue-next'
 
-import ModalSheet from './ModalSheet.vue'
+import ModalSheet from '../../../components/ModalSheet.vue'
 
 const props = defineProps<{
   open: boolean

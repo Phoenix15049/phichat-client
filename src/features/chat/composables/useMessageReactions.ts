@@ -6,15 +6,15 @@ import {
 import {
   addReaction,
   removeReaction
-} from '../services/api'
+} from '../../../services/api'
 
 import {
   dedupeReactions
-} from '../utils/messageMapper'
+} from '../../../utils/messageMapper'
 
 import type {
   UiMessage
-} from '../types/chat'
+} from '../../../types/chat'
 
 export type ReactionUpdatePayload = {
   messageId: string

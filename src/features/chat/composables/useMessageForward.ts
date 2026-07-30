@@ -5,15 +5,15 @@ import {
   type Ref
 } from 'vue'
 
-import { getUserById } from '../services/api'
-import { encryptAES } from '../services/crypto'
-import { sendMessage } from '../services/signalr'
+import { getUserById } from '../../../services/api'
+import { encryptAES } from '../../../services/crypto'
+import { sendMessage } from '../../../services/signalr'
 
 import type {
   ChatUser,
   UiConversation,
   UiMessage
-} from '../types/chat'
+} from '../../../types/chat'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null

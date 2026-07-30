@@ -448,58 +448,26 @@
         @send="confirmSendFile"
       />
 
-      </div>
+    </div>
 
+    <ChatForwardPicker
+      :open="forwardPicker.visible"
+      :mode="forwardPicker.mode"
+      :count="forwardPicker.srcList.length"
+      :conversations="conversations"
+      @close="forwardPicker.visible=false"
+      @select="doForward"
+    />
 
-      <!-- Forward picker -->
-      <div v-if="forwardPicker.visible" class="fixed inset-0 z-40 bg-black/20" @click.self="forwardPicker.visible=false">
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-3 w-[320px]">
-          <div class="font-medium mb-2">
-            {{ forwardPicker.mode === 'multi' ? `Forward ${forwardPicker.srcList.length} messages to` : 'Forward to...' }}
-          </div>
-          <div class="max-h-64 overflow-y-auto">
-            <button
-              v-for="c in conversations"
-              :key="c.peerId"
-              class="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
-              @click="doForward(c.peerId)"
-            >
-              {{ c.displayName || '@' + c.username }}
-            </button>
-          </div>
-          <div class="mt-2 text-left">
-            <button class="text-xs text-gray-500 hover:text-gray-700" @click="forwardPicker.visible=false">Close</button>
-          </div>
-        </div>
-      </div>
-
-
-      <!-- Delete confirm dialog -->
-      <div v-if="confirmDel.visible" class="fixed inset-0 z-50 bg-black/30" @click.self="cancelDelete">
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow p-4 w-[360px]">
-          <div class="font-medium mb-2">Delete messages</div>
-          <p class="text-sm text-gray-700 mb-3">
-            Delete {{ confirmDel.count }} message(s)?
-          </p>
-
-          <label class="flex items-center gap-2 text-sm mb-3">
-            <input
-              type="checkbox"
-              class="accent-red-600"
-              v-model="confirmDel.forAll"
-              :disabled="!confirmDel.canAll"
-            />
-            <span :class="confirmDel.canAll ? '' : 'text-gray-400'">
-              Delete for everyone
-            </span>
-          </label>
-
-          <div class="flex items-center justify-end gap-2">
-            <button class="px-3 py-1.5 rounded border" @click="cancelDelete">Cancel</button>
-            <button class="px-3 py-1.5 rounded bg-red-600 text-white" @click="confirmDelete">Delete</button>
-          </div>
-        </div>
-      </div>
+    <ChatDeleteConfirmDialog
+      v-model:for-all="confirmDel.forAll"
+      :open="confirmDel.visible"
+      :count="confirmDel.count"
+      :can-all="confirmDel.canAll"
+      @close="cancelDelete"
+      @confirm="confirmDelete"
+    />
+          
     </div>
   <!-- Toast -->
   <div
@@ -540,64 +508,21 @@
     </div>
   </ModalSheet>
 
-
-  <!-- Media Send Modal -->
-  <ModalSheet :open="showMediaModal" @close="cancelMediaSend">
-    <div class="p-5 w-[560px] max-w-full" dir="ltr">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-bold text-[#1B3C59]">Media</h3>
-        <button class="btn-ghost" @click="cancelMediaSend" v-ripple>✕</button>
-      </div>
-
-      <!-- preview -->
-      <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-        <div v-for="(f,i) in pendingMedia" :key="i" class="relative group">
-          <img v-if="isImageFile(f)" :src="objUrl(f)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"/>
-          <video v-else :src="objUrl(f)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"></video>
-          <button
-            class="absolute top-1 right-1 btn-ghost !bg-white/90 hover:!bg-white shadow"
-            @click="removePendingMedia(i)"
-            v-ripple
-          >Remove</button>
-        </div>
-      </div>
-
-      <!-- image compression (images only) -->
-      <div class="mt-3 flex items-center gap-2" v-if="allImagesSelected">
-        <input id="cmp" type="checkbox" v-model="compressImages"/>
-        <label for="cmp" class="text-sm select-none text-[#456173]">Compress images</label>
-      </div>
-
-      <!-- group items -->
-      <div class="mt-2 flex items-center gap-2">
-        <input id="grpMedia" type="checkbox" v-model="mediaGroupItems"/>
-        <label for="grpMedia" class="text-sm select-none text-[#456173]">Group items</label>
-      </div>
-
-      <!-- caption -->
-      <label class="block text-sm text-[#456173] mt-2 mb-1">Caption</label>
-      <textarea v-model="mediaCaption" rows="3" class="input w-full min-h-[84px]" placeholder="Write a caption…"></textarea>
-
-      <!-- actions -->
-      <div class="mt-4 flex items-center justify-between">
-        <button class="btn-ghost" @click="cancelMediaSend" v-ripple>Cancel</button>
-        <div class="flex items-center gap-2">
-          <button class="btn-outline" @click="addAnotherMedia" v-ripple>Add more</button>
-          <button class="btn-primary"
-                  :disabled="sendingMedia || pendingMedia.length===0"
-                  @click="confirmSendMedia"
-                  v-ripple>
-            {{ sendingMedia ? 'Sending…' : `Send (${pendingMedia.length})` }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </ModalSheet>
-
-
-
-  
-
+  <ChatMediaSendModal
+    v-model:caption="mediaCaption"
+    v-model:group-items="mediaGroupItems"
+    v-model:compress-images="compressImages"
+    :open="showMediaModal"
+    :files="pendingMedia"
+    :sending="sendingMedia"
+    :all-images-selected="allImagesSelected"
+    :is-image-file="isImageFile"
+    :preview-url="objUrl"
+    @close="cancelMediaSend"
+    @remove="removePendingMedia"
+    @add-more="addAnotherMedia"
+    @send="confirmSendMedia"
+  />
 
   <MediaImageViewer v-if="showImageViewer"
                   :src="viewerImageSrc" :caption="viewerCaption"
@@ -628,14 +553,18 @@
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
-import ChatFileSendModal from '../components/ChatFileSendModal.vue'
-import ChatComposer from '../components/ChatComposer.vue'
+import ChatMediaSendModal from '../features/chat/components/ChatMediaSendModal.vue'
+import ChatForwardPicker from '../features/chat/components/ChatForwardPicker.vue'
+import ChatDeleteConfirmDialog from '../features/chat/components/ChatDeleteConfirmDialog.vue'
+
+import ChatFileSendModal from '../features/chat/components/ChatFileSendModal.vue'
+import ChatComposer from '../features/chat/components/ChatComposer.vue'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import ContactsView from './ContactsView.vue'   // NEW
 
-import ChatConversationHeader from '../components/ChatConversationHeader.vue'
+import ChatConversationHeader from '../features/chat/components/ChatConversationHeader.vue'
 
 const showContacts = ref(false)                 // NEW
 
@@ -706,39 +635,16 @@ import {
   mapServerMessage
 } from '../utils/messageMapper'
 
-import {
-  useMessageSelection
-} from '../composables/useMessageSelection'
+import { useChatComposer } from '../features/chat/composables/useChatComposer'
+import { useMessageSelection } from '../features/chat/composables/useMessageSelection'
+import { useMessageContext } from '../features/chat/composables/useMessageContext'
+import { useMessageDelete } from '../features/chat/composables/useMessageDelete'
+import { useMessageReactions } from '../features/chat/composables/useMessageReactions'
+import { useMessageForward } from '../features/chat/composables/useMessageForward'
+import { useMessageFiles } from '../features/chat/composables/useMessageFiles'
+import { useMessageMedia } from '../features/chat/composables/useMessageMedia'
 
-import {
-  useMessageContext
-} from '../composables/useMessageContext'
-
-import {
-  useMessageDelete
-} from '../composables/useMessageDelete'
-
-import {
-  useMessageReactions
-} from '../composables/useMessageReactions'
-
-import {
-  useMessageForward
-} from '../composables/useMessageForward'
-
-import {
-  useMessageFiles
-} from '../composables/useMessageFiles'
-
-import {
-  useMessageMedia
-} from '../composables/useMessageMedia'
-
-import {
-  useChatComposer
-} from '../composables/useChatComposer'
-
-import ChatConversationList from '../components/ChatConversationList.vue'
+import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
