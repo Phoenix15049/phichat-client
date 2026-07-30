@@ -36,6 +36,10 @@ type ReactionPayload = {
 let connection: HubConnection | null = null
 let connectPromise: Promise<void> | null = null
 
+let activeToken: string | null = null
+let reconnectTimer: number | null = null
+let manualDisconnect = false
+
 const messageReceivedHandlers = new Set<Handler<[any]>>()
 const deliveredHandlers = new Set<Handler<[any]>>()
 const messageReadHandlers = new Set<Handler<[any]>>()
@@ -86,6 +90,109 @@ function normalizeTyping(payload: any): TypingPayload {
     SenderId: String(senderId ?? ''),
     At: payload?.At ?? payload?.at
   }
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer === null) return
+
+  window.clearTimeout(reconnectTimer)
+  reconnectTimer = null
+}
+
+async function refreshOnlineSnapshot(
+  current: HubConnection
+) {
+  try {
+    const ids =
+      await current.invoke<string[]>(
+        'GetOnlineUsers'
+      )
+
+    if (connection === current) {
+      dispatch(
+        onlineSnapshotHandlers,
+        ids.map(String)
+      )
+    }
+  } catch {}
+}
+
+function scheduleReconnect() {
+  if (
+    manualDisconnect ||
+    !activeToken ||
+    reconnectTimer !== null
+  ) {
+    return
+  }
+
+  reconnectTimer =
+    window.setTimeout(() => {
+      reconnectTimer = null
+
+      const token = activeToken
+
+      if (
+        !token ||
+        manualDisconnect
+      ) {
+        return
+      }
+
+      void connectToChatHub(token)
+        .catch(() => {
+          scheduleReconnect()
+        })
+    }, 1500)
+}
+
+async function getConnectedHub():
+  Promise<HubConnection> {
+  const current = connection
+
+  if (
+    current?.state ===
+    HubConnectionState.Connected
+  ) {
+    return current
+  }
+
+  if (connectPromise) {
+    try {
+      await connectPromise
+    } catch {}
+  }
+
+  const afterPending = connection
+
+  if (
+    afterPending?.state ===
+    HubConnectionState.Connected
+  ) {
+    return afterPending
+  }
+
+  if (!activeToken) {
+    throw new Error(
+      'SignalR token is not available'
+    )
+  }
+
+  await connectToChatHub(activeToken)
+
+  const connected = connection
+
+  if (
+    !connected ||
+    connected.state !==
+      HubConnectionState.Connected
+  ) {
+    throw new Error(
+      'SignalR not connected'
+    )
+  }
+
+  return connected
 }
 
 function bindConnection(current: HubConnection) {
@@ -146,6 +253,36 @@ function bindConnection(current: HubConnection) {
   current.on('ReactionUpdated', payload =>
     dispatch(reactionUpdatedHandlers, payload)
   )
+
+  current.onreconnecting(() => {
+    if (connection === current) {
+      // هنگام قطع اتصال، وضعیت آنلاین
+      // قبلی را معتبر فرض نکن.
+      dispatch(
+        onlineSnapshotHandlers,
+        []
+      )
+    }
+  })
+
+  current.onreconnected(() => {
+    if (connection === current) {
+      void refreshOnlineSnapshot(
+        current
+      )
+    }
+  })
+
+  current.onclose(() => {
+    if (connection !== current) {
+      return
+    }
+
+    connection = null
+    connectPromise = null
+
+    scheduleReconnect()
+  })
 }
 
 export function createChatHubSubscriptionScope() {
@@ -220,9 +357,17 @@ export function createChatHubSubscriptionScope() {
   }
 }
 
-export async function connectToChatHub(token: string) {
+export async function connectToChatHub(
+  token: string
+) {
+  activeToken = token
+  manualDisconnect = false
+
+  clearReconnectTimer()
+
   if (
-    connection?.state === HubConnectionState.Connected
+    connection?.state ===
+    HubConnectionState.Connected
   ) {
     return
   }
@@ -231,34 +376,56 @@ export async function connectToChatHub(token: string) {
     return connectPromise
   }
 
-  if (connection) {
+  const previous = connection
+  connection = null
+
+  if (previous) {
     try {
-      await connection.stop()
+      await previous.stop()
     } catch {}
   }
 
-  const next = new HubConnectionBuilder()
-    .withUrl(CHAT_HUB_URL, {
-      accessTokenFactory: () => token
-    })
-    .withAutomaticReconnect()
-    .build()
+  const next =
+    new HubConnectionBuilder()
+      .withUrl(CHAT_HUB_URL, {
+        accessTokenFactory: () =>
+          activeToken ?? token
+      })
+      .withAutomaticReconnect()
+      .build()
 
   bindConnection(next)
   connection = next
 
-  const pending = next.start().then(async () => {
-    if (connection !== next) {
-      await next.stop()
-    }
-  })
+  const pending = next
+    .start()
+    .then(async () => {
+      if (connection !== next) {
+        await next.stop()
+        return
+      }
+
+      await refreshOnlineSnapshot(
+        next
+      )
+    })
+    .catch(error => {
+      if (connection === next) {
+        connection = null
+      }
+
+      scheduleReconnect()
+      throw error
+    })
 
   connectPromise = pending
 
   try {
     await pending
   } finally {
-    if (connectPromise === pending) {
+    if (
+      connectPromise === pending
+    ) {
       connectPromise = null
     }
   }
@@ -272,57 +439,86 @@ export async function sendMessage(
   replyToMessageId?: string | null,
   forwardedFromMessageId?: string | null
 ) {
-  if (!connection) {
-    throw new Error('SignalR not connected')
-  }
+  const current =
+    await getConnectedHub()
 
-  await connection.invoke('SendMessage', {
-    receiverId,
-    encryptedText,
-    fileUrl: fileUrl ?? null,
-    clientId: clientId ?? null,
-    replyToMessageId: replyToMessageId ?? null,
-    forwardedFromMessageId:
-      forwardedFromMessageId ?? null
-  })
+  await current.invoke(
+    'SendMessage',
+    {
+      receiverId,
+      encryptedText,
+
+      fileUrl:
+        fileUrl ?? null,
+
+      clientId:
+        clientId ?? null,
+
+      replyToMessageId:
+        replyToMessageId ?? null,
+
+      forwardedFromMessageId:
+        forwardedFromMessageId ??
+        null
+    }
+  )
 }
 
-export async function markAsRead(messageId: string) {
-  if (!connection) {
-    throw new Error('SignalR not connected')
-  }
+export async function markAsRead(
+  messageId: string
+) {
+  const current =
+    await getConnectedHub()
 
-  await connection.invoke(
+  await current.invoke(
     'MarkMessageAsRead',
     messageId
   )
 }
 
-export async function startTyping(receiverId: string) {
-  await connection?.invoke(
+export async function startTyping(
+  receiverId: string
+) {
+  const current =
+    await getConnectedHub()
+
+  await current.invoke(
     'StartTyping',
     receiverId
   )
 }
 
-export async function stopTyping(receiverId: string) {
-  await connection?.invoke(
+export async function stopTyping(
+  receiverId: string
+) {
+  const current =
+    await getConnectedHub()
+
+  await current.invoke(
     'StopTyping',
     receiverId
   )
 }
 
-export async function fetchOnlineUsers(): Promise<string[]> {
-  if (!connection) {
-    throw new Error('SignalR not connected')
-  }
+export async function fetchOnlineUsers():
+  Promise<string[]> {
+  const current =
+    await getConnectedHub()
 
-  return connection.invoke<string[]>(
-    'GetOnlineUsers'
-  )
+  const ids =
+    await current.invoke<string[]>(
+      'GetOnlineUsers'
+    )
+
+  return ids.map(String)
 }
 
 export async function disconnectFromChatHub() {
+  manualDisconnect = true
+  activeToken = null
+
+  clearReconnectTimer()
+
   const current = connection
 
   connection = null

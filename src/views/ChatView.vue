@@ -17,96 +17,56 @@
     <div class="flex-1 flex flex-col"
      v-show="showChatPane">
 
-    <div
-      class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
-      @click="!selectionMode && selectedUser && openPeerProfile()"
-      role="button"
-      aria-label="View contact profile"
-    >
-      <transition name="slide-down" mode="out-in">
-        <div v-if="selectionMode" key="sel" class="flex items-center gap-3">
-          <button
-            class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-0.5"
-            :disabled="!selectedCount"
-            @click="openForwardPickerMulti"
-            title="Group Forward"
-            v-ripple
-          >
-            Forward
-            <span class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700">
-              {{ selectedCount }}
-            </span>
-          </button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="openDeleteConfirmMulti" v-ripple>Delete</button>
-          <button class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50" :disabled="!selectedCount" @click="copySelectedText" v-ripple>Copy text</button>
-          <div class="flex-1">
-            
-          </div>
-          <button class="px-2 py-1 rounded hover:bg-white/10" @click.stop="clearSelection" v-ripple>Cancel</button>
-        </div>
-
-        <div v-else key="norm" class="flex items-center gap-3">
-          <!-- Back -->
-          <button
-            v-if="(isNarrow && selectedUser) || chatNavStack.length"
-            class="ml-1 px-2 py-1 rounded hover:bg-white/10"
-            @click.stop="onHeaderBack"
-            title="Back"
-            v-ripple aria-label="Back">
-            <ArrowLeft class="w-5 h-5" />
-          </button>
-
-          <!-- Avatar -->
-          <div v-if="isNarrow && selectedUser" class="relative shrink-0" @click.stop="openPeerProfile()">
-            <div class="w-9 h-9 rounded-full overflow-hidden bg-white/10 grid place-items-center">
-              <img v-if="avatarById[selectedUser.id]"
-                  :src="avatarById[selectedUser.id]!"
-                  class="w-full h-full object-cover" />
-              <div v-else
-                  class="w-full h-full grid place-items-center text-sm font-semibold"
-                  :style="{ backgroundColor: colorFromString(displayById[selectedUser.id] || '@'+selectedUser.username) }">
-                <span class="text-white">
-                  {{ initialsOf(displayById[selectedUser.id] || selectedLabel) }}
-                </span>
-              </div>
-            </div>
-            
-          </div>
-
-          <!-- Title + status -->
-          <div v-if="selectedUser" class="min-w-0 select-none" @click.stop="openPeerProfile()">
-            <div class="truncate text-[15px] leading-5 font-semibold">
-              {{ selectedLabel }}
-            </div>
-
-            <!-- typing / online / last seen -->
-            <div class="flex items-center gap-2 leading-4">
-              <!-- typing (بنفش) -->
-              <template v-if="isPeerTyping">
-                <div class="flex items-center gap-1 text-[13px] text-[#A78BFA]">
-                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:0ms"></span>
-                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:120ms"></span>
-                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce" style="animation-delay:240ms"></span>
-                  <span>typing</span>
-                </div>
-              </template>
-
-              <!-- online (سفید کامل) -->
-              <template v-else-if="onlineIds.has(selectedUser.id)">
-                <div class="text-[12px] text-white/100">Online</div>
-              </template>
-
-              <!-- last seen (سفید با شفافیت) -->
-              <template v-else>
-                <div class="text-[12px] text-white/70 truncate">{{ peerStatus }}</div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </transition>
-
-    </div>
-
+    <ChatConversationHeader
+      :selection-mode="selectionMode"
+      :selected-count="selectedCount"
+      :selected-user="selectedUser"
+      :selected-label="selectedLabel"
+      :is-narrow="isNarrow"
+      :show-back="
+        (
+          isNarrow &&
+          !!selectedUser
+        ) ||
+        chatNavStack.length > 0
+      "
+      :avatar-url="
+        selectedUser
+          ? (
+              avatarById[
+                selectedUser.id
+              ] ?? null
+            )
+          : null
+      "
+      :is-peer-typing="
+        isPeerTyping
+      "
+      :is-peer-online="
+        selectedUser
+          ? onlineIds.has(
+              selectedUser.id
+            )
+          : false
+      "
+      :peer-status="peerStatus"
+      @open-profile="
+        openPeerProfile
+      "
+      @back="onHeaderBack"
+      @forward-selected="
+        openForwardPickerMulti
+      "
+      @delete-selected="
+        openDeleteConfirmMulti
+      "
+      @copy-selected="
+        copySelectedText
+      "
+      @clear-selection="
+        clearSelection
+      "
+    />
 
       <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 bg-[#F2F2F0]" @scroll="onScrollLoadMore">
         <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
@@ -738,6 +698,9 @@ import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import ContactsView from './ContactsView.vue'   // NEW
+
+import ChatConversationHeader from '../components/ChatConversationHeader.vue'
+
 const showContacts = ref(false)                 // NEW
 
 import PeerProfileModal from '../components/PeerProfileModal.vue'
@@ -785,7 +748,7 @@ import {getMyContacts, addContact, removeContact,getUsersList } from '../service
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 import {
-  ArrowLeft, Paperclip, X, Download, Check, CheckCheck, Loader2,
+  Paperclip, X, Download, Check, CheckCheck, Loader2,
   ChevronDown, File as FileIcon,SendHorizontal
 } from 'lucide-vue-next'
 
@@ -1261,17 +1224,6 @@ function isVideoUrl(url?: string|null) {
 
 function isNearBottom(el: HTMLElement, threshold = 400) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
-}
-
-function initialsOf(name: string) {
-  const t = (name || '').trim()
-  if (!t) return '؟'
-  const p = t.split(/\s+/)
-  return (p.length === 1 ? p[0].slice(0,2) : (p[0][0] + p[1][0])).toUpperCase()
-}
-function colorFromString(s: string) {
-  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-  return `hsl(${h % 360} 65% 55%)`
 }
 
 async function openPeerProfile() {
@@ -1989,12 +1941,24 @@ onMounted(async () => {
     try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
 
     wireSignalR()
-    await connectToChatHub(token)
+
     try {
-      const ids = await fetchOnlineUsers()
+      await connectToChatHub(token)
+
+      const ids =
+        await fetchOnlineUsers()
+
       onlineIds.clear()
-      ids.forEach(id => onlineIds.add(id))
-    } catch {}
+
+      ids.forEach(id =>
+        onlineIds.add(String(id))
+      )
+    } catch (error) {
+      console.warn(
+        'initial SignalR connection failed',
+        error
+      )
+    }
   }
   
 
@@ -2079,25 +2043,41 @@ function wireSignalR() {
   signalR.dispose()
 
   signalR.onUserOnline(userId => {
-    onlineIds.add(userId)
+    onlineIds.add(
+      String(userId)
+    )
   })
 
-  signalR.onUserOffline((userId, when) => {
-    onlineIds.delete(userId)
+  signalR.onUserOffline(
+    (userId, when) => {
+      const id =
+        String(userId)
 
-    if (when) {
-      lastSeenMap[userId] = when
+      onlineIds.delete(id)
+
+      if (when) {
+        lastSeenMap[id] = when
+      }
     }
-  })
+  )
 
   signalR.onOnlineSnapshot(ids => {
     onlineIds.clear()
-    ids.forEach(id => onlineIds.add(id))
+
+    ids.forEach(id => {
+      onlineIds.add(
+        String(id)
+      )
+    })
   })
 
-  signalR.onUserLastSeen((userId, whenIso) => {
-    lastSeenMap[userId] = whenIso
-  })
+  signalR.onUserLastSeen(
+    (userId, whenIso) => {
+      lastSeenMap[
+        String(userId)
+      ] = whenIso
+    }
+  )
   signalR.onMessageReceived(async (message: any) => {
 
     const senderId = String(message.senderId ?? message.SenderId)
