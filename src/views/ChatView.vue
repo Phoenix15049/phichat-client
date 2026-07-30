@@ -303,86 +303,69 @@
         </transition-group>
       </div>
 
-      <!-- Reply Banner -->
-      <div v-if="replyingTo" class="px-4 pt-2">
-        <div class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded">
-          <div class="truncate">
-            Replying to: {{ resolveReplyPreview(replyingTo.id) }}
-          </div>
-          <button type="button" class="text-gray-500 hover:text-red-600" @click="replyingTo = null">✕</button>
-        </div>
-      </div>
+      <ChatComposer
+        v-model="text"
 
-      <!-- Edit Banner -->
-      <div v-if="editingMessage" class="px-4 pt-2">
-        <div class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded">
-          <div class="truncate">Editing message</div>
-          <button type="button" class="text-gray-500 hover:text-red-600" @click="cancelEdit">✕</button>
-        </div>
-      </div>
+        :visible="!!selectedUser"
+        :can-send="canSend"
 
-      <!-- Submission form -->
-      <!-- Submission form -->
-      <form v-if="selectedUser" @submit.prevent="send"
-        class="composer p-2 border-t border-gray-100">
+        :replying="!!replyingTo"
+        :reply-preview="
+          replyingTo
+            ? resolveReplyPreview(
+                replyingTo.id
+              )
+            : ''
+        "
 
-        <!-- کپسول سبک تلگرام -->
-        <div class="relative flex items-end gap-1 rounded-2xl bg-white ring-1 ring-[#456173]/15
-                    px-1 py-1 shadow-sm focus-within:ring-[#11BFAE]/40">
+        :editing="!!editingMessage"
 
-          <!-- گیره (Attach) داخل کپسول -->
-          <div class="relative"
-              @mouseenter="clipHover = true"
-              @mouseleave="clipHover = false">
-            <button type="button"
-                    class="p-1 rounded-full text-[#456173] hover:text-[#1B3C59] hover:bg-black/5"
-                    @click="openFilePicker" title="Attach" aria-label="Attach">
-              <Paperclip class="w-6 h-6" />
-            </button>
+        :set-message-input="
+          setComposerMessageInput
+        "
 
-            <!-- Pin menu (بدون تغییر) -->
-            <transition name="clip-pop">
-              <div v-if="clipHover || menuHover"
-                  class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
-                  @mouseenter="menuHover = true"
-                  @mouseleave="menuHover = false">
-                <button type="button" class="block w-full text-left px-3 py-2 hover:bg-gray-50" @click="openFilePicker" v-ripple>
-                  File
-                </button>
-                <button class="px-3 py-2 hover:bg-gray-100 w-full text-left" @click="openMediaPicker" v-ripple>
-                  Photo & Video
-                </button>
-              </div>
-            </transition>
-          </div>
+        :set-file-input="
+          setComposerFileInput
+        "
 
-          <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesChosen" />
-          <input ref="mediaInput" type="file" class="hidden" multiple accept="image/*,video/*" @change="onMediaChosen" />
+        :set-media-input="
+          setComposerMediaInput
+        "
 
-          <!-- textarea بدون باکس مستقل؛ داخل کپسول -->
-          <textarea
-            v-model="text"
-            ref="msgInput"
-            rows="1"
-            dir="auto"
-            placeholder="Write a message…"
-            class="tg-text tg-fade flex-1 min-w-0 bg-transparent border-0 pl-1 px-2 py-2 leading-6 resize-none
-                  overflow-y-auto box-border will-change-[height] outline-none placeholder:text-gray-400"
-            style="transition: height .14s ease;"
-            @keydown.enter.exact.prevent="send"
-            @input="onComposerInput"
-            @blur="onBlurInput"
-          />
+        @send="send"
 
-          <!-- دکمه ارسال گرد، داخل کپسول (هم‌رنگ برند) -->
-          <button type="submit"
-            class="tg-send w-10 h-10 rounded-full grid place-items-center
-                  bg-[#11BFAE] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="!canSend">
-            <SendHorizontal class="w-5 h-5" />
-          </button>
-        </div>
-      </form>
+        @composer-input="
+          onComposerInput
+        "
+
+        @composer-blur="
+          onBlurInput
+        "
+
+        @open-file="
+          openFilePicker
+        "
+
+        @open-media="
+          openMediaPicker
+        "
+
+        @files-chosen="
+          onFilesChosen
+        "
+
+        @media-chosen="
+          onMediaChosen
+        "
+
+        @cancel-reply="
+          replyingTo = null
+        "
+
+        @cancel-edit="
+          cancelEdit
+        "
+      />
 
       <!-- Context Menu -->
       <transition name="fade">
@@ -694,6 +677,8 @@
 //----------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------
 
+
+import ChatComposer from '../components/ChatComposer.vue'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
@@ -748,8 +733,13 @@ import {getMyContacts, addContact, removeContact,getUsersList } from '../service
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 import {
-  Paperclip, X, Download, Check, CheckCheck, Loader2,
-  ChevronDown, File as FileIcon,SendHorizontal
+  X,
+  Download,
+  Check,
+  CheckCheck,
+  Loader2,
+  ChevronDown,
+  File as FileIcon
 } from 'lucide-vue-next'
 
 import { toAbsoluteServerUrl } from '../config/server'
@@ -925,10 +915,6 @@ const peerStatus = computed(() => {
   const ls = lastSeenMap[su.id]
   return ls ? `Last seen ${formatRelativeEn(ls)}` : 'Last seen unknown'
 })
-
-const clipHover = ref(false)
-const menuHover = ref(false)
-
 
 const showImageViewer = ref(false)
 const viewerImageSrc = ref<string>('');
@@ -1617,6 +1603,28 @@ onBeforeUnmount(() => {
 })
 
 
+function setComposerMessageInput(
+  element:
+    HTMLTextAreaElement | null
+) {
+  msgInput.value = element
+}
+
+function setComposerFileInput(
+  element:
+    HTMLInputElement | null
+) {
+  fileInput.value = element
+}
+
+function setComposerMediaInput(
+  element:
+    HTMLInputElement | null
+) {
+  mediaInput.value = element
+}
+
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') closeMenu()
 }
@@ -2005,10 +2013,7 @@ onMounted(async () => {
       console.warn('load conversations failed', e)
     }
 
-
-
-
-
+    
   const username = route.params.username as string | undefined
   if (username && !selectedUser.value) {
     try {
