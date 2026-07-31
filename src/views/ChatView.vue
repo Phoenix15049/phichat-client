@@ -68,240 +68,24 @@
       "
     />
 
-      <div ref="scrollBox" class="flex-1 overflow-y-auto p-4 bg-[#F2F2F0]" @scroll="onScrollLoadMore">
-        <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
-          <div class="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur px-3 py-1 shadow">
-            <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" class="opacity-25"/>
-              <path fill="currentColor" class="opacity-75" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-            </svg>
-            <span class="text-xs text-gray-600">Loading…</span>
-          </div>
-
-        </div>
-
-        <transition-group name="bubble" tag="div" class="space-y-2">
-          <div
-            v-for="(msg, index) in messages"
-            :key="msg.clientId || msg.id || index"
-            :class="['relative', msg.senderId === myId ? 'text-right' : 'text-left']"
-            @click.stop="onRowClick($event, msg)"
-            @contextmenu.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
-            @mousedown.left="onRowMouseDown($event, msg)"
-            @mouseenter="onRowMouseEnter(msg)"
-          >
-          <div v-if="showDayHeader(index)" class="flex justify-center my-2">
-            <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
-              {{ dayLabel(messages[index].sentAt) }}
-            </span>
-          </div>
-
-          <div
-            :class="bubbleClasses(msg)"
-            
-            @dblclick="onBubbleDblClick($event, msg)"
-            @contextmenu.stop.prevent="!selectionMode && selectedUser ? openMenu($event, msg) : null"
-            :ref="bindMsgEl((msg.id || msg.clientId)!)"
-
-            @mouseenter="onBubbleHoverStart(msg)"
-            @mouseleave="onBubbleHoverEnd"
-          >
-
-
-            <div
-              v-if="msg.replyToMessageId"
-              class="mb-1 border-l-2 pl-2 text-xs opacity-80 cursor-pointer hover:underline"
-              @click="jumpToReplied(msg.replyToMessageId)"
-            >
-              <div class="truncate">
-                {{ resolveReplyPreview(msg.replyToMessageId) }}
-              </div>
-            </div>
-
-            <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">
-              Message deleted
-            </div>
-
-            <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-l-2 pl-2">
-              Forwarded from
-              <button
-                type="button"
-                class="font-medium underline hover:opacity-90 text-[#c5ffff]"
-                @mouseenter="cacheForwardName(msg.forwardedFromSenderId)"
-                @click.stop="openForwardUser(msg.forwardedFromSenderId)"
-              >
-                {{ resolveForwardLabel(msg.forwardedFromSenderId) }}
-              </button>
-            </div>
-
-            <!-- متن -->
-            <div v-if="!msg.fileUrl && msg.plainText"
-              dir="auto"
-              class="whitespace-pre-wrap break-words select-text text-start auto-dir"
-              data-text-selectable>
-            <template v-for="(p, i) in toParts(msg.plainText)" :key="i">
-              <span v-if="p.t === 'text'">{{ p.s }}</span>
-              <span v-else dir="ltr"
-                    class="text-[#c0fcff] underline cursor-pointer"
-                    @click.stop="openMention(p.u)"
-                    data-text-selectable>@{{ p.u }}</span>
-            </template>
-          </div>
-
-
-            
-            <div v-if="msg.fileUrl && isImageUrl(msg.fileUrl)" class="mt-1">
-              <img
-                :src="msg.fileUrl"
-                class="rounded-xl cursor-zoom-in
-                      max-h-[70vh]           
-                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]  
-                      sm:min-w-[180px] min-w-[140px]                
-                      h-auto w-auto object-contain"
-                @click="openImage(msg)"
-              />
-            </div>
-
-            <div v-else-if="msg.fileUrl && isVideoUrl(msg.fileUrl)" class="mt-1">
-              <video
-                :src="msg.fileUrl" controls playsinline
-                class="rounded-xl bg-black cursor-pointer
-                      max-h-[70vh]
-                      max-w-[75vw] md:max-w-[60%] lg:max-w-[640px]
-                      sm:min-w-[220px] min-w-[160px]
-                      h-auto w-auto"
-                @dblclick.prevent="openVideo(msg)"
-              ></video>
-            </div>
-
-            <!-- File bubble -->
-            <div v-else-if="msg.fileUrl" class="mt-1">
-              <div
-                :class="[
-                  'flex items-center gap-3 rounded px-3 py-2',
-                  msg.senderId === myId ? 'bg-white/10' : 'bg-[#536e7e]'
-                ]"
-              >
-                <!-- download button -->
-                <button type="button"
-                        class="w-8 h-8 rounded-full border flex items-center justify-center"
-                        :class="msg.senderId === myId ? 'border-white/50 text-white' : 'border-gray-300 text-gray-600'"
-                        @click="downloadFile(msg)"
-                        aria-label="Download">
-                  <Loader2 v-if="downloading[fileKey(msg)]" class="w-4 h-4 animate-spin" />
-                  <Check   v-else-if="downloaded[fileKey(msg)]" class="w-4 h-4" />
-                  <Download v-else class="w-4 h-4" />
-                </button>
-
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium truncate max-w-[16rem] min-w-0">
-                    {{ fileNameFromUrl(msg.fileUrl) }}
-                  </div>
-                  <div class="text-xs opacity-70">
-                    {{ humanFileSize(fileSizeMap[fileKey(msg)] || 0) }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- caption  -->
-              <div v-if="msg.fileUrl && msg.plainText"
-                  dir="auto"
-                  class="mt-1 whitespace-pre-wrap break-words text-start auto-dir">
-                {{ msg.plainText }}
-              </div>
-            </div>
-
-            <div
-              class="mt-1 flex items-center gap-1 text-[11px]"
-              :class="timeColorClass(msg)"
-              :title="tooltipForMessage(msg)">
-              
-            
-              <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
-              <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(edited)</span>
-              <span v-if="msg.senderId === myId">
-                <CheckCheck v-if="msg.status === 'read'" class="w-3 h-3" />
-                <Check v-else-if="msg.status === 'delivered'" class="w-3 h-3" />
-                <Loader2 v-else class="w-3 h-3 animate-spin" />
-              </span>
-            </div>
-            
-            <!-- Reactions -->
-            <!-- Inline reaction bar on hover -->
-            <transition name="fade-scale">
-              <div
-                v-if="hoverReactFor === (msg.id || msg.clientId) && !selectionMode && !contextMenu.visible"
-                class="absolute z-20 pointer-events-auto select-none"
-                :class="msg.senderId === myId
-                        ? 'bottom-0 left-0 -translate-x-full -translate-y-1/6 -ml-1'
-                        : 'bottom-0 right-0 translate-x-full -translate-y-1/6 -mr-1'"
-                @mouseenter="keepHoverBar"
-                @mouseleave="hideHoverBarSoon"
-              >
-                <div class="reaction-pill">
-                  <button v-for="e in quickEmojis"
-                          :key="e"
-                          class="reaction-btn"
-                          @click.stop="applyReaction(msg, e)">
-                    {{ e }}
-                  </button>
-                </div>
-              </div>
-            </transition>
-
-
-
-
-            <!-- Reactions chips under the bubble -->
-            <div v-if="msg.reactions && msg.reactions.length"
-                class="mt-1 flex flex-wrap gap-1"
-                :class="msg.senderId === myId ? 'justify-end' : 'justify-start'">
-              <button
-                v-for="r in msg.reactions"
-                :key="r.emoji"
-                class="px-1.5 py-[2px] text-[12px] rounded-full bg-black/5 hover:bg-black/10 ring-1 ring-black/5 transition"
-                :class="r.mine ? 'ring-2 ring-[#11BFAE]' : ''"
-                @click.stop="applyReaction(msg, r.emoji)">
-                <span>{{ r.emoji }}</span>
-                <span class="ml-1 text-[11px] opacity-70">{{ r.count }}</span>
-              </button>
-            </div>
-
-
-
-
-            <!-- Picker inline -->
-            <div v-if="reactionPickerFor && reactionPickerFor === (msg.id || msg.clientId)" class="mt-1 flex gap-1">
-              <button v-for="e in quickEmojis" :key="e" class="px-2 py-[2px] text-[13px] rounded hover:bg-gray-100"
-                      @click="applyReaction(msg, e)">{{ e }}</button>
-              <button class="px-2 py-[2px] text-[11px] text-gray-500" @click="reactionPickerFor = null">بستن</button>
-            </div>
-            
-            <!-- Check indicator (only in selection mode) -->
-              <button
-                v-if="selectionMode"
-                class="absolute top-1"
-                :class="msg.senderId === myId ? 'left-1' : 'right-1'"
-                @click.stop="toggleSelect(msg)"
-                :title="isSelected(msg) ? 'Remove from selection' : 'Select message'"
-              >
-                <span
-                  :class="[
-                    'w-5 h-5 inline-flex items-center justify-center rounded-full border text-[11px]',
-                    isSelected(msg)
-                      ? (msg.senderId === myId ? 'bg-white text-blue-600 border-white' : 'bg-blue-600 text-white border-blue-600')
-                      : 'bg-white/80 text-gray-400 border-gray-300'
-                  ]"
-                >
-                  {{ isSelected(msg) ? '✓' : '' }}
-                </span>
-              </button>
-
-          </div>
-
-        </div>
-        </transition-group>
-      </div>
+      <ChatMessageList
+        :messages="messages"
+        :my-id="myId"
+        :loading-older="loadingOlder"
+        :selection-mode="selectionMode"
+        :chat-active="!!selectedUser"
+        :context-menu="contextMenu"
+        :quick-emojis="quickEmojis"
+        :hover-react-for="hoverReactFor"
+        :reaction-picker-for="reactionPickerFor"
+        :downloaded="downloaded"
+        :downloading="downloading"
+        :file-size-map="fileSizeMap"
+        :actions="messageListActions"
+        :bind-message-element="bindMsgEl"
+        :set-scroll-element="setMessageScrollElement"
+        :set-menu-element="setMessageMenuElement"
+      />
 
       <ChatComposer
         v-model="text"
@@ -367,74 +151,7 @@
         "
       />
 
-      <!-- Context Menu -->
-      <transition name="fade">
-        <div v-if="contextMenu.visible"
-            class="fixed inset-0 z-40 "
-            @click="closeMenu"
-            @contextmenu.prevent="closeMenu">
 
-          <transition name="ctx-pop">
-            <div
-              ref="menuEl"
-              role="menu"
-              class="absolute z-50 min-w-[168px] text-left
-                    rounded-2xl border border-[#456173]/10 bg-white/80 backdrop-blur-md
-                    ring-1 ring-black/5"         
-              :style="{
-                top: contextMenu.y + 'px',
-                left: contextMenu.x + 'px',
-                '--origin': contextMenu.pillAlign === 'right'
-                  ? 'top right'
-                  : (contextMenu.pillAlign === 'left' ? 'top left' : 'top center')
-              }"
-              @click.stop
-            >
-              <transition name="ctx-pill">
-                <div class="absolute -top-11 "
-                    :class="contextMenu.pillAlign === 'right'
-                              ? 'right-2'
-                              : (contextMenu.pillAlign === 'left'
-                                  ? 'left-2'
-                                  : 'left-1/2 -translate-x-1/2')">
-                  <div class="reaction-pill bg-white/80 backdrop-blur-md">
-                    <button v-for="e in quickEmojis"
-                            :key="e"
-                            class="reaction-btn"
-                            @click.stop="contextMenu.msg && applyReaction(contextMenu.msg, e)"
-                            :title="e">{{ e }}</button>
-                    <button class="reaction-more" title="More" aria-label="More"><ChevronDown class="w-4 h-4" /></button>
-                  </div>
-                </div>
-              </transition>
-              <div class="max-w-[220px]">
-                <button class="menu-item rounded-t-2xl first:overflow-hidden"
-                        @click="startSelectionFrom(contextMenu.msg!)" v-ripple>
-                  Select
-                </button>
-                <button class="menu-item "
-                        @click="openForwardPicker" v-ripple>
-                  Forward…
-                </button>
-                <button class="menu-item "
-                        @click="doReply" v-ripple>
-                  Reply
-                </button>
-                <button v-if="canEdit(contextMenu.msg)"
-                        class="menu-item "
-                        @click="doEdit" v-ripple>
-                  Edit
-                </button>
-                <button class="menu-item rounded-b-2xl"
-                        @click="() => { const m = contextMenu.msg; closeMenu(); if (m) openDeleteConfirmSingle(m) }"
-                        v-ripple>
-                  Delete
-                </button>
-              </div>
-            </div>
-          </transition>
-        </div>
-      </transition>
 
       <ChatFileSendModal
         v-model:caption="pendingCaption"
@@ -556,7 +273,7 @@
 import ChatMediaSendModal from '../features/chat/components/ChatMediaSendModal.vue'
 import ChatForwardPicker from '../features/chat/components/ChatForwardPicker.vue'
 import ChatDeleteConfirmDialog from '../features/chat/components/ChatDeleteConfirmDialog.vue'
-
+import ChatMessageList from '../features/chat/components/ChatMessageList.vue'
 import ChatFileSendModal from '../features/chat/components/ChatFileSendModal.vue'
 import ChatComposer from '../features/chat/components/ChatComposer.vue'
 import SideMenu from '../components/SideMenu.vue'
@@ -605,20 +322,12 @@ import {
 } from '../utils/aesKeyStore'
 
 import { useRoute ,useRouter} from 'vue-router'
-import {toDateSafe, formatAbsoluteEn,formatRelativeEn} from "../utils/time";
+import {toDateSafe,formatRelativeEn} from "../utils/time";
 import MediaImageViewer from '../components/MediaImageViewer.vue'
 import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
 import {getMyContacts, addContact, removeContact,getUsersList } from '../services/api'
 
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
-
-import {
-  Download,
-  Check,
-  CheckCheck,
-  Loader2,
-  ChevronDown
-} from 'lucide-vue-next'
 
 import { toAbsoluteServerUrl } from '../config/server'
 
@@ -778,24 +487,6 @@ const showVideoPlayer = ref(false)
 const playerVideoSrc = ref<string>('');
 const playerCaption = ref<string>('')
 
-
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= 'relative'
-    el.style.overflow ||= 'hidden'
-    el.addEventListener('click', (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect()
-      const size = Math.max(rect.width, rect.height) * 1.1
-      const span = document.createElement('span')
-      span.className = 'ripple-ink'
-      span.style.width = span.style.height = `${size}px`
-      span.style.left = `${e.clientX - rect.left - size/2}px`
-      span.style.top = `${e.clientY - rect.top - size/2}px`
-      el.appendChild(span)
-      span.addEventListener('animationend', () => span.remove())
-    })
-  }
-}
 
 const signalR = createChatHubSubscriptionScope()
 
@@ -1003,40 +694,6 @@ function onConvDblClick(conv: UiConversation) {
 
 
 
-function isMediaOnly(msg: UiMessage) {
-  return !!msg.fileUrl && (isImageUrl(msg.fileUrl) || isVideoUrl(msg.fileUrl)) && !msg.plainText
-}
-
-function bubbleClasses(msg: UiMessage) {
-  const base = ['relative','inline-block','max-w-[80%]','transition','duration-150','ease-out']
-  const selOn = selectionMode.value && isSelected(msg)
-
-  if (isMediaOnly(msg)) {
-    base.push('rounded-xl', 'p-0', 'bg-transparent', 'text-current')
-    if (selOn) base.push('ring-2','ring-blue-300/60')
-  } else {
-    base.push(
-      'rounded-2xl','px-3','py-2',
-      msg.senderId === myId.value
-        ? 'bg-[#11BFAE] text-white'          // حباب من: accent
-        : 'bg-[#456173] text-white'      // حباب طرف مقابل: surface + primary-text
-    )
-    if (selOn) {
-      base.push('ring-2', msg.senderId === myId.value ? 'ring-white/80' : 'ring-[#11BFAE]/50', 'shadow-md')
-    }
-  }
-  return base
-}
-
-
-
-function timeColorClass(msg: UiMessage) {
-
-  if (isMediaOnly(msg)) return 'text-gray-500'
-  return msg.senderId === myId.value ? 'text-white/80' : 'text-white/80'
-
-}
-
 
 
 
@@ -1049,17 +706,6 @@ function openVideo(msg: UiMessage){
   playerVideoSrc.value = msg.fileUrl || ''
   playerCaption.value = msg.plainText || ''
   showVideoPlayer.value = true
-}
-
-
-function isImageUrl(url?: string|null) {
-  if (!url) return false
-  return /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(url.split('?')[0] || '')
-}
-
-function isVideoUrl(url?: string|null) {
-  if (!url) return false
-  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(url.split('?')[0] || '')
 }
 
 
@@ -1148,23 +794,6 @@ async function goBackChat() {
   const prev = chatNavStack.value.pop()!
   await handleUserSelect({ id: prev.id, username: prev.username })
   if (route.path !== '/chat') router.replace('/chat')
-}
-
-type Part = { t: 'text'; s: string } | { t: 'mention'; u: string }
-function toParts(txt?: string | null): Part[] {
-  if (!txt) return []
-  const re = /@([A-Za-z0-9_]{3,32})/g
-  const out: Part[] = []
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(txt)) !== null) {
-    const start = m.index
-    if (start > last) out.push({ t: 'text', s: txt.slice(last, start) })
-    out.push({ t: 'mention', u: m[1] })
-    last = start + m[0].length
-  }
-  if (last < txt.length) out.push({ t: 'text', s: txt.slice(last) })
-  return out
 }
 
 async function openMention(usernameOrAt: string) {
@@ -1411,6 +1040,45 @@ const {
   completeEdit
 })
 
+const messageListActions={
+  onScroll:onScrollLoadMore,
+  onRowClick,
+  onRowMouseDown,
+  onRowMouseEnter,
+  onBubbleDblClick,
+  onBubbleHoverStart,
+  onBubbleHoverEnd,
+  openMenu,
+  jumpToReply:jumpToReplied,
+  resolveReplyPreview,
+  cacheForwardName,
+  resolveForwardLabel,
+  openForwardUser,
+  openMention,
+  openImage,
+  openVideo,
+  fileKey,
+  fileNameFromUrl,
+  humanFileSize,
+  downloadFile,
+  applyReaction,
+  keepHoverBar,
+  hideHoverBarSoon,
+  closeReactionPicker:()=>{ reactionPickerFor.value=null },
+  isSelected,
+  toggleSelect,
+  closeMenu,
+  startSelection:startSelectionFrom,
+  openForwardPicker,
+  reply:doReply,
+  edit:doEdit,
+  canEdit,
+  deleteMessage:(message:UiMessage)=>{
+    closeMenu()
+    openDeleteConfirmSingle(message)
+  }
+}
+
 onMounted(() => {
   nextTick(() => {
     autoGrow(undefined, {
@@ -1457,6 +1125,13 @@ onBeforeUnmount(() => {
   )
 })
 
+function setMessageScrollElement(element:HTMLElement|null){
+  scrollBox.value=element
+}
+
+function setMessageMenuElement(element:HTMLElement|null){
+  menuEl.value=element
+}
 
 function setComposerMessageInput(
   element:
@@ -1689,24 +1364,6 @@ async function loadOlderMessages(): Promise<boolean> {
 }
 
 
-function fmtHHmmLocal(iso?: string | null): string {
-  const d = toDateSafe(iso);
-  if (!d) return "";
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-
-function tooltipForMessage(msg: UiMessage): string {
-  const sent = formatAbsoluteEn(msg.sentAt); 
-  const delivered = msg.deliveredAtUtc ? formatAbsoluteEn(msg.deliveredAtUtc) : null;
-  const read = msg.readAtUtc ? formatAbsoluteEn(msg.readAtUtc) : null;
-
-  if (read) return `ارسال: ${sent}\nخوانده‌شدن: ${read}`;
-  if (delivered) return `ارسال: ${sent}\nتحویل: ${delivered}`;
-  return `ارسال: ${sent}`;
-}
-
-
 
 async function selectConversation(conv: UiConversation) {
   chatNavStack.value = []
@@ -1715,33 +1372,6 @@ async function selectConversation(conv: UiConversation) {
   scrollToEndSmooth()
 
 }
-
-
-
-function dayKey(iso?: string | null): string {
-  const d = toDateSafe(iso);
-  if (!d) return '';
-  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-}
-
-function dayLabel(iso?: string | null): string {
-  const d = toDateSafe(iso); if (!d) return '';
-  const today = new Date(); today.setHours(0,0,0,0);
-  const that = new Date(d); that.setHours(0,0,0,0);
-  const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'full' }).format(d);
-}
-
-
-function showDayHeader(index: number): boolean {
-  if (index === 0) return true;
-  const a = messages.value[index];
-  const b = messages.value[index - 1];
-  return dayKey(a.sentAt) !== dayKey(b.sentAt);
-}
-
 
 
 
@@ -2387,18 +2017,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   to { transform: scale(4); opacity: 0; }
 }
 
-/* پیام‌ها: ورود/خروج نرم */
-.bubble-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); }
-.bubble-enter-active { transition: opacity .15s ease, transform .15s ease; }
-.bubble-leave-active { transition: opacity .12s ease, transform .12s ease; }
-.bubble-leave-to     { opacity: 0; transform: translateY(-4px) scale(0.98); }
-
-/* منوی راست‌کلیک: پاپ/محو کوتاه */
-.fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
-.fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
-.fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
-.fade-scale-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
-
 /* منوی راست‌کلیک: پاپ/محو کوتاه */
 .fade-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); transform-origin: bottom right; }
 .fade-enter-active { transition: opacity .12s ease, transform .12s ease; }
@@ -2455,63 +2073,18 @@ function toAbsoluteFileUrl(url: string | null): string | null {
          transition;
 }
 
-/* قرص ایموجی */
-.reaction-pill {
-  @apply bg-gray-900 text-white/95 rounded-full px-2 py-1 z-20 flex items-center gap-1
-         ring-1 ring-black/10 backdrop-blur-sm;
-}
-
-/* دکمه ایموجی داخل قرص */
-.reaction-btn {
-  @apply text-base leading-none px-1.5 py-1 rounded-full transition;
-}
-.reaction-btn:hover { transform: translateY(-1px) scale(1.08); }
-
-.reaction-more {
-  @apply w-6 h-6 inline-grid place-items-center rounded-full bg-white/20 hover:bg-white/30 transition text-white;
-}
 
 .fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
 .fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
 .fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
 .fade-scale-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
 
-/* پاپ منو؛ بدون سایهٔ اضافه */
-.ctx-pop-enter-active,
-.ctx-pop-leave-active {
-  transition: transform 160ms cubic-bezier(.22,.61,.36,1), opacity 140ms ease;
-  transform-origin: var(--origin, top left);
-}
-.ctx-pop-enter-from { opacity: 0; transform: translateY(8px) scale(.98); }
-.ctx-pop-leave-to   { opacity: 0; transform: translateY(2px)  scale(.98); }
 
-/* قرص ایموجی نرم؛ بدون سایهٔ برجسته */
-.reaction-pill {
-  @apply bg-white/95 backdrop-blur rounded-full px-2 py-1
-         border border-[#456173]/10 flex items-center gap-1;
-}
-.reaction-btn {
-  @apply w-8 h-8 grid place-items-center rounded-full
-         hover:bg-[#11BFAE]/10 active:scale-95 transition;
-}
-.reaction-more {
-  @apply w-6 h-6 grid place-items-center rounded-full text-[#1B3C59]
-         hover:bg-black/5 transition;
-}
-
-.menu-item {
-  @apply w-full text-left px-3 py-2 text-[14px] text-[#1B3C59]
-         hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15
-         transition outline-none
-         focus-visible:ring-2 focus-visible:ring-[#11BFAE]/40;
-}
 .menu-item:first-child { position: relative; z-index: 0; overflow: hidden; border-top-left-radius: 1rem; border-top-right-radius: 1rem; }
 
 .menu-item + .menu-item {
   border-top: 1px solid rgba(69,97,115,0.10);
 }
-
-
 
 :global(.ripple-ink){
   position: absolute;
