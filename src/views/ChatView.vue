@@ -380,14 +380,19 @@ const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const unread = ref<Record<string, number>>({})
-const typing = new Set<string>()
 
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
-const TYPING_IDLE_MS = 4000
-let prevSelectedUserId: string | null = null
+const TYPING_IDLE_MS = 2000
 
+function clearPeerTyping() {
+  isPeerTyping.value = false
 
+  if (typingTimer !== null) {
+    window.clearTimeout(typingTimer)
+    typingTimer = null
+  }
+}
 
 const scrollBox = ref<HTMLElement | null>(null)
 const loadingConversation = ref(false)
@@ -536,15 +541,24 @@ async function ensurePeerCached(uid: string) {
 }
 
 function resetState() {
+  chatSessionId++
+
   conversations.value = []
   messages.value = []
   selectedUser.value = null
-  // اگر map/object داری:
-  for (const k in displayById) delete displayById[k]
-  for (const k in avatarById)  delete avatarById[k]
-  for (const k in lastSeenMap) delete lastSeenMap[k]
-  onlineIds.clear?.()
-  typing.clear?.()
+  unread.value = {}
+
+  loadingConversation.value = false
+  loadingOlder.value = false
+  hasMore.value = true
+  oldestId.value = null
+
+  for (const key in displayById) delete displayById[key]
+  for (const key in avatarById) delete avatarById[key]
+  for (const key in lastSeenMap) delete lastSeenMap[key]
+
+  onlineIds.clear()
+  clearPeerTyping()
 
   text.value = ''
   resetMessageContext()
@@ -1079,27 +1093,38 @@ const messageListActions={
   }
 }
 
-onMounted(() => {
-  nextTick(() => {
-    autoGrow(undefined, {
-      animate: false
-    })
-  })
-})
-
-watch(selectedUser, () => {
-  nextTick(() => {
-    autoGrow(undefined, {
-      animate: false
-    })
-  })
-})
-
-
-watch(selectedUser, () => {
+watch(selectedUser, async (current, previous) => {
   clearSelection()
   resetReactionUi()
-})
+  clearPeerTyping()
+
+  if (previous?.id && previous.id !== current?.id) {
+    void stopTyping(previous.id).catch(() => {})
+  }
+
+  await nextTick()
+  autoGrow(undefined, { animate: false })
+
+  if (!current) return
+
+  const needsProfile =
+    !lastSeenMap[current.id] ||
+    !displayById[current.id] ||
+    avatarById[current.id] === undefined
+
+  if (!needsProfile) return
+
+  try {
+    const user = await getUserById(current.id)
+
+    if (user?.lastSeenUtc) lastSeenMap[current.id] = user.lastSeenUtc
+    if (user?.displayName) displayById[current.id] = user.displayName
+    if (user?.avatarUrl) avatarById[current.id] = user.avatarUrl
+  } catch {}
+}, { immediate: true })
+
+
+
 
 watch(selectedCount, count => {
   if (
@@ -1111,19 +1136,6 @@ watch(selectedCount, count => {
 })
 
 
-onMounted(() => {
-  window.addEventListener(
-    'keydown',
-    onKeydownSelection
-  )
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener(
-    'keydown',
-    onKeydownSelection
-  )
-})
 
 function setMessageScrollElement(element:HTMLElement|null){
   scrollBox.value=element
@@ -1165,6 +1177,20 @@ function onWindowResize() {
   repositionMenu()
   isNarrow.value =
     window.innerWidth < 768
+}
+
+function registerPageListeners() {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('keydown', onKeydownSelection)
+  window.addEventListener('scroll', onWindowScroll, true)
+  window.addEventListener('resize', onWindowResize)
+}
+
+function unregisterPageListeners() {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('keydown', onKeydownSelection)
+  window.removeEventListener('scroll', onWindowScroll, true)
+  window.removeEventListener('resize', onWindowResize)
 }
 
 function loadAESKeyScoped(partnerId: string) {
@@ -1405,16 +1431,8 @@ onBeforeUnmount(() => {
 
 })
 
-onMounted(() => {
-  isNarrow.value = window.innerWidth < 768
-  window.addEventListener('resize', onWindowResize)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', onWindowResize)
-})
 
-onMounted(async () => {
-  // myId from JWT
+async function initializeChatPage() {
   resetState()
 
   
@@ -1509,24 +1527,33 @@ onMounted(async () => {
     }
   }
 
-  
-  watch(selectedUser, async (su) => {
-    if (!su) return
-    if (!lastSeenMap[su.id]) {
-      try {
-        const u = await getUserById(su.id)
-        if (u?.lastSeenUtc) lastSeenMap[su.id] = u.lastSeenUtc
-        if (u?.displayName) displayById[su.id] = u.displayName
-        if (u?.avatarUrl)   avatarById[su.id]  = u.avatarUrl
-      } catch {}
-    }
-  }, { immediate: true })
+}
 
-  window.addEventListener('keydown', onKeydown)
-  window.addEventListener('scroll', onWindowScroll, true) 
-  window.addEventListener('resize', onWindowResize)
+onMounted(async () => {
+  onWindowResize()
+  registerPageListeners()
 
+  await nextTick()
+  autoGrow(undefined, { animate: false })
 
+  try {
+    await initializeChatPage()
+  } catch (error) {
+    console.error('chat initialization failed', error)
+  }
+})
+
+onBeforeUnmount(() => {
+  chatSessionId++
+  unregisterPageListeners()
+
+  disposeSelection()
+  disposeReactions()
+  disposeMedia()
+  signalR.dispose()
+  clearPeerTyping()
+
+  void disconnectFromChatHub().catch(() => {})
 })
 
 function wireSignalR() {
@@ -1738,47 +1765,29 @@ function wireSignalR() {
   })
 
 
-  signalR.onTyping(p => {
-    typing.add(p.SenderId)
+  signalR.onTyping(payload => {
+    const senderId = String(payload.SenderId || '')
 
-    const selectedId = selectedUser.value?.id
-
-    if (
-      !selectedId ||
-      String(p.SenderId) !== String(selectedId)
-    ) {
-      return
-    }
+    if (!senderId || senderId !== selectedUser.value?.id) return
 
     isPeerTyping.value = true
 
-    if (typingTimer) {
+    if (typingTimer !== null) {
       window.clearTimeout(typingTimer)
     }
 
     typingTimer = window.setTimeout(() => {
       isPeerTyping.value = false
+      typingTimer = null
     }, TYPING_IDLE_MS)
   })
 
-  signalR.onTypingStopped(p => {
-    typing.delete(p.SenderId)
+  signalR.onTypingStopped(payload => {
+    const senderId = String(payload.SenderId || '')
 
-    const selectedId = selectedUser.value?.id
+    if (!senderId || senderId !== selectedUser.value?.id) return
 
-    if (
-      !selectedId ||
-      String(p.SenderId) !== String(selectedId)
-    ) {
-      return
-    }
-
-    isPeerTyping.value = false
-
-    if (typingTimer) {
-      window.clearTimeout(typingTimer)
-      typingTimer = null
-    }
+    clearPeerTyping()
   })
 
   signalR.onMessageEdited(async (p) => {
@@ -1841,6 +1850,8 @@ async function handleUserSelect(
     conversations.value[idx].unreadCount = 0
   }
 
+  unread.value[user.id] = 0
+
   try {
     const page1 = await getConversationPaged(
       user.id,
@@ -1877,20 +1888,6 @@ async function handleUserSelect(
 
     if (!isActiveChat(sessionId, user.id)) {
       return
-    }
-
-    if (history.length) {
-      if (unread.value[user.id]) {
-        unread.value[user.id] = 0
-      }
-
-      if (prevSelectedUserId) {
-        stopTyping(prevSelectedUserId)
-          .catch(() => {})
-      }
-
-      prevSelectedUserId = user.id
-      isPeerTyping.value = false
     }
 
     const prepared = await Promise.all(
