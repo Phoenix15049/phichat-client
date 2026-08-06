@@ -125,3 +125,9 @@ export type ServerMessage = {
   ForwardedFromSenderId?: string | null
 
 }
+
+export type ConversationPage = {
+  items: ServerMessage[]
+  hasMore: boolean
+  oldestId: string | null
+}

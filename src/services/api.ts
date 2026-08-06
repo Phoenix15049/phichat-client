@@ -2,7 +2,12 @@
 import axios from 'axios'
 import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
 import { getToken, clearAuthLocal, setToken } from './auth'
-import type { Contact, UserApiItem } from '../types/chat'
+import type {
+  Contact,
+  ConversationPage,
+  ServerMessage,
+  UserApiItem
+} from '../types/chat'
 
 
 export const API = axios.create({
@@ -130,11 +135,29 @@ export function storeTokenFromAuthResponse(data: any) {
 }
 
 
-export async function getConversationPaged(userId: string, beforeId?: string, pageSize = 50) {
-  const params: any = { pageSize };
-  if (beforeId) params.beforeId = beforeId;
-  const { data } = await API.get(`/messages/with-paged/${userId}`, { params });
-  return data; // { items: ReceivedMessageResponse[], hasMore: boolean, oldestId?: string }
+export async function getConversationPaged(
+  userId: string,
+  beforeId?: string,
+  pageSize = 50
+): Promise<ConversationPage> {
+  const params: { pageSize: number; beforeId?: string } = { pageSize }
+  if (beforeId) params.beforeId = beforeId
+
+  const { data } = await API.get(`/messages/with-paged/${userId}`, { params })
+  const items = (data?.items ?? data?.Items ?? []) as ServerMessage[]
+  const first = items[0]
+
+  return {
+    items,
+    hasMore: Boolean(data?.hasMore ?? data?.HasMore),
+    oldestId:
+      data?.oldestId ??
+      data?.OldestId ??
+      first?.messageId ??
+      first?.MessageId ??
+      first?.id ??
+      null
+  }
 }
 
 export async function editMessage(id: string, encryptedText: string) {

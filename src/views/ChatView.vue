@@ -1422,6 +1422,89 @@ function isActiveChat(
   )
 }
 
+type PreparedMessagePage = {
+  messages: UiMessage[]
+  source: ServerMessage[]
+  hasMore: boolean
+  oldestId: string | null
+}
+
+function serverMessageId(message: ServerMessage) {
+  return message.messageId ?? message.MessageId ?? message.id ?? ''
+}
+
+function serverSenderId(message: ServerMessage) {
+  return String(message.senderId ?? message.SenderId ?? '')
+}
+
+function serverMessageIsDeleted(message: ServerMessage) {
+  return Boolean(message.isDeleted ?? message.IsDeleted)
+}
+
+function serverMessageIsUnread(message: ServerMessage) {
+  return (message.isRead ?? message.IsRead) !== true
+}
+
+async function prepareMessagePage(
+  userId: string,
+  beforeId: string | undefined,
+  sessionId: number
+): Promise<PreparedMessagePage | null> {
+  const page = await getConversationPaged(userId, beforeId, 50)
+
+  if (!isActiveChat(sessionId, userId)) return null
+
+  const visibleItems = page.items.filter(message => !serverMessageIsDeleted(message))
+
+  if (!visibleItems.length) {
+    return {
+      messages: [],
+      source: page.items,
+      hasMore: page.hasMore,
+      oldestId: page.oldestId
+    }
+  }
+
+  const aesKey = await getOrLoadKey(userId)
+
+  if (!isActiveChat(sessionId, userId)) return null
+
+  const prepared = await Promise.all(
+    visibleItems.map(async message => {
+      const ui = await mapServerMessage(message, {
+        aesKey,
+        myId: myId.value,
+        cipherSource: 'content',
+        decryptFailureText: '[رمزگشایی نشد]'
+      })
+
+      if (ui.forwardedFromSenderId) {
+        void cacheForwardName(ui.forwardedFromSenderId)
+      }
+
+      return ui
+    })
+  )
+
+  if (!isActiveChat(sessionId, userId)) return null
+
+  for (const message of prepared) {
+    if (!message.fileUrl) continue
+
+    const key = fileKey(message)
+    if (!fileSizeMap[key]) {
+      void ensureFileSize(message.fileUrl, key)
+    }
+  }
+
+  return {
+    messages: prepared,
+    source: page.items,
+    hasMore: page.hasMore,
+    oldestId: page.oldestId
+  }
+}
+
 async function loadOlderMessages(): Promise<boolean> {
   const user = selectedUser.value
 
@@ -1435,121 +1518,61 @@ async function loadOlderMessages(): Promise<boolean> {
   }
 
   const sessionId = chatSessionId
-  const el = scrollBox.value
-  const previousHeight = el?.scrollHeight ?? 0
-  const previousTop = el?.scrollTop ?? 0
+  const element = scrollBox.value
+  const previousHeight = element?.scrollHeight ?? 0
+  const previousTop = element?.scrollTop ?? 0
 
   loadingOlder.value = true
 
   try {
-    const page = await getConversationPaged(
-      user.id,
-      oldestId.value || undefined,
-      50
-    )
+    let cursor = oldestId.value || undefined
 
-    if (!isActiveChat(sessionId, user.id)) {
-      return false
-    }
+    // اگر یک صفحه فقط پیام حذف‌شده داشت،
+    // حداکثر پنج صفحه جلوتر بررسی می‌شود.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const page = await prepareMessagePage(user.id, cursor, sessionId)
+      if (!page) return false
 
-    const items = (
-      page.items ??
-      page.Items ??
-      []
-    ) as ServerMessage[]
+      hasMore.value = page.hasMore
+      oldestId.value = page.oldestId
 
-    const visibleItems = items.filter(
-      message =>
-        !(message.isDeleted ?? message.IsDeleted)
-    )
+      if (page.messages.length) {
+        messages.value = [...page.messages, ...messages.value]
 
-    const first = visibleItems[0]
+        await nextTick()
 
-    hasMore.value = !!(
-      page.hasMore ??
-      page.HasMore
-    )
-
-    oldestId.value =
-      page.oldestId ??
-      page.OldestId ??
-      first?.messageId ??
-      first?.MessageId ??
-      first?.id ??
-      null
-
-    if (!visibleItems.length) {
-      return false
-    }
-
-    const aesKey = await getOrLoadKey(user.id)
-
-    if (!isActiveChat(sessionId, user.id)) {
-      return false
-    }
-
-    const older = await Promise.all(
-      visibleItems.map(async message => {
-        const ui = await mapServerMessage(
-          message,
-          {
-            aesKey,
-            myId: myId.value,
-            cipherSource: 'content',
-            decryptFailureText:
-              '[رمزگشایی نشد]'
-          }
-        )
-
-        if (ui.forwardedFromSenderId) {
-          cacheForwardName(
-            ui.forwardedFromSenderId
-          )
+        if (isActiveChat(sessionId, user.id) && element) {
+          element.scrollTop =
+            previousTop + element.scrollHeight - previousHeight
         }
 
-        return ui
-      })
-    )
-
-    if (!isActiveChat(sessionId, user.id)) {
-      return false
-    }
-
-    messages.value = [
-      ...older,
-      ...messages.value
-    ]
-
-    for (const msg of older) {
-      if (!msg.fileUrl) continue
-
-      const key = fileKey(msg)
-
-      if (!fileSizeMap[key]) {
-        ensureFileSize(msg.fileUrl, key)
+        return true
       }
+
+      if (
+        !page.hasMore ||
+        !page.oldestId ||
+        page.oldestId === cursor
+      ) {
+        return false
+      }
+
+      cursor = page.oldestId
     }
 
-    await nextTick()
-
-    if (
-      isActiveChat(sessionId, user.id) &&
-      el
-    ) {
-      el.scrollTop =
-        previousTop +
-        el.scrollHeight -
-        previousHeight
+    return false
+  } catch (error) {
+    if (isActiveChat(sessionId, user.id)) {
+      console.warn('load older messages failed', error)
     }
 
-    return true
+    return false
   } finally {
     if (sessionId === chatSessionId) {
       loadingOlder.value = false
     }
   }
 }
-
 
 
 async function selectConversation(conv: UiConversation) {
@@ -1965,12 +1988,7 @@ function wireSignalR() {
   )
   }
 
-async function handleUserSelect(
-  user: {
-    id: string
-    username: string
-  }
-) {
+async function handleUserSelect(user: ChatTarget) {
   const sessionId = ++chatSessionId
 
   selectedUser.value = user
@@ -1982,124 +2000,44 @@ async function handleUserSelect(
   loadingOlder.value = false
   loadingConversation.value = true
 
-  const idx = conversations.value.findIndex(
-    conversation =>
-      conversation.peerId === user.id
-  )
+  const conversation = conversations.value.find(item => item.peerId === user.id)
 
-  if (idx >= 0) {
-    conversations.value[idx].unreadCount = 0
+  if (conversation) {
+    conversation.unreadCount = 0
   }
 
   unread.value[user.id] = 0
 
   try {
-    const page1 = await getConversationPaged(
-      user.id,
-      undefined,
-      50
-    )
+    const page = await prepareMessagePage(user.id, undefined, sessionId)
+    if (!page) return
 
-    if (!isActiveChat(sessionId, user.id)) {
-      return
-    }
-
-    const history = (
-      page1.items ??
-      page1.Items ??
-      []
-    ) as ServerMessage[]
-
-    const first = history[0]
-
-    hasMore.value = !!(
-      page1.hasMore ??
-      page1.HasMore
-    )
-
-    oldestId.value =
-      page1.oldestId ??
-      page1.OldestId ??
-      first?.messageId ??
-      first?.MessageId ??
-      first?.id ??
-      null
-
-    const aesKey = await getOrLoadKey(user.id)
-
-    if (!isActiveChat(sessionId, user.id)) {
-      return
-    }
-
-    const prepared = await Promise.all(
-      history.map(async message => {
-        const ui = await mapServerMessage(
-          message,
-          {
-            aesKey,
-            myId: myId.value,
-            cipherSource: 'content',
-            decryptFailureText:
-              '[رمزگشایی نشد]'
-          }
-        )
-
-        if (ui.forwardedFromSenderId) {
-          cacheForwardName(
-            ui.forwardedFromSenderId
-          )
-        }
-
-        return ui
-      })
-    )
-
-    if (!isActiveChat(sessionId, user.id)) {
-      return
-    }
-
-    messages.value = prepared
+    hasMore.value = page.hasMore
+    oldestId.value = page.oldestId
+    messages.value = page.messages
 
     await nextTick()
 
-    if (!isActiveChat(sessionId, user.id)) {
-      return
-    }
+    if (!isActiveChat(sessionId, user.id)) return
 
-    const el = scrollBox.value
+    const element = scrollBox.value
+    if (element) element.scrollTop = element.scrollHeight
 
-    if (el) {
-      el.scrollTop = el.scrollHeight
-    }
-
-    for (const msg of prepared) {
-      if (!msg.fileUrl) continue
-
-      const key = fileKey(msg)
-
-      if (!fileSizeMap[key]) {
-        ensureFileSize(msg.fileUrl, key)
-      }
-    }
-
-    const unreadIds: string[] = history
-      .filter(
-        (message: any) =>
-          message.senderId === user.id &&
-          (
-            message.isRead === false ||
-            message.isRead === undefined
-          )
+    const unreadIds = page.source
+      .filter(message =>
+        !serverMessageIsDeleted(message) &&
+        serverSenderId(message) === user.id &&
+        serverMessageIsUnread(message)
       )
-      .map(
-        (message: any) =>
-          message.messageId
-      )
-      .filter(Boolean)
+      .map(serverMessageId)
+      .filter((id): id is string => Boolean(id))
 
-    Promise.allSettled(
-      unreadIds.map(id => markAsRead(id))
-    ).catch(() => {})
+    void Promise.allSettled(unreadIds.map(id => markAsRead(id)))
+  } catch (error) {
+    if (isActiveChat(sessionId, user.id)) {
+      console.warn('load conversation failed', error)
+      showToast('بارگذاری گفتگو ناموفق بود')
+    }
   } finally {
     if (isActiveChat(sessionId, user.id)) {
       loadingConversation.value = false
