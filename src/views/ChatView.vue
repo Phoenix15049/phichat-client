@@ -412,8 +412,22 @@ const showProfile = ref(false)
 const showSettings = ref(false)
 const meProfile = ref<Partial<ChatUser> | null>(null)
 
-const chatNavStack = ref<Array<{ id: string; username: string }>>([])
- // label (DisplayName یا @username)
+type ChatTarget = {
+  id: string
+  username: string
+}
+
+type OpenChatOptions = {
+  pushCurrent?: boolean
+  resetStack?: boolean
+  syncRoute?: boolean
+  scrollToEnd?: boolean
+}
+
+const chatNavStack = ref<ChatTarget[]>([])
+
+let routeSyncReady = false
+let routeSyncRequestId = 0
 
 const messageEls: Map<string, HTMLElement> = new Map()
 
@@ -507,16 +521,16 @@ const showChatPane = computed(() => !isNarrow.value || !!selectedUser.value)
 //----------------------------------------------------------------------------------------------------------------------------
 
 
-function onHeaderBack() {
+async function onHeaderBack() {
   if (chatNavStack.value.length) {
-    return goBackChat()
+    await goBackChat()
+    return
   }
+
   if (isNarrow.value && selectedUser.value) {
-    selectedUser.value = null
-    if (route.path !== '/chat') router.replace('/chat')
+    await closeChat()
   }
 }
-
 
 
 function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
@@ -697,13 +711,12 @@ function updateConversationAfterSend(
 
 
 function onConvDblClick(conv: UiConversation) {
-  // اگر همین چت بازه، فقط اسکرول کن
-  if (selectedUser.value && selectedUser.value.id === conv.peerId) {
+  if (selectedUser.value?.id === conv.peerId) {
     scrollToEndSmooth()
-  } else {
-    // در غیر این صورت انتخاب و بعد از رندر، اسکرول
-    selectConversation(conv).then(() => nextTick(scrollToEndSmooth))
+    return
   }
+
+  void selectConversation(conv)
 }
 
 
@@ -751,13 +764,20 @@ async function onPeerRemoveContact(id: string) {
   myContacts.value = await getMyContacts()
 }
 
-function onPeerSendMessage(id: string) {
-  if (!peerProfile.value) return
-  handleUserSelect({
-    id,
-    username: peerProfile.value.username
-  })
-  if (route.path !== '/chat') router.replace('/chat')
+async function onPeerSendMessage(id: string) {
+  const profile = peerProfile.value
+  if (!profile) return
+
+  await openChat(
+    {
+      id,
+      username: profile.username
+    },
+    {
+      resetStack: true
+    }
+  )
+
   showPeerProfile.value = false
 }
 
@@ -798,40 +818,176 @@ async function decryptMessageText(base64?: string | null): Promise<string> {
   }
 }
 
-function currentChatRef() {
-  if (!selectedUser.value) return null
-  return { id: selectedUser.value.id, username: selectedUser.value.username.replace(/^@/, '') }
+function normalizeUsername(username: string) {
+  return username.replace(/^@/, '').trim()
 }
 
+function currentChatRef(): ChatTarget | null {
+  const user = selectedUser.value
+  if (!user) return null
+
+  return {
+    id: user.id,
+    username: normalizeUsername(user.username)
+  }
+}
+
+function routeUsername(value: unknown) {
+  return typeof value === 'string'
+    ? normalizeUsername(value)
+    : ''
+}
+
+async function replaceChatRoute(username?: string | null) {
+  const target = username
+    ? `/u/${encodeURIComponent(normalizeUsername(username))}`
+    : '/chat'
+
+  if (route.path !== target) {
+    await router.replace(target)
+  }
+}
+
+async function openChat(user: ChatTarget, options: OpenChatOptions = {}) {
+  const target: ChatTarget = {
+    id: String(user.id),
+    username: normalizeUsername(user.username)
+  }
+
+  if (!target.id || !target.username) return
+
+  const current = currentChatRef()
+
+  if (options.resetStack) {
+    chatNavStack.value = []
+  }
+
+  if (options.pushCurrent && current && current.id !== target.id) {
+    const last = chatNavStack.value[chatNavStack.value.length - 1]
+
+    if (last?.id !== current.id) {
+      chatNavStack.value.push(current)
+    }
+  }
+
+  if (selectedUser.value?.id !== target.id) {
+    await handleUserSelect(target)
+  } else if (selectedUser.value.username !== target.username) {
+    selectedUser.value = target
+  }
+
+  if (options.syncRoute !== false) {
+    await replaceChatRoute(target.username)
+  }
+
+  if (options.scrollToEnd) {
+    await nextTick()
+    scrollToEndSmooth()
+  }
+}
+
+async function closeChat(syncRoute = true) {
+  chatSessionId++
+  chatNavStack.value = []
+  selectedUser.value = null
+  messages.value = []
+
+  loadingConversation.value = false
+  loadingOlder.value = false
+  hasMore.value = true
+  oldestId.value = null
+
+  text.value = ''
+  clearPeerTyping()
+  resetMessageContext()
+
+  if (syncRoute) {
+    await replaceChatRoute(null)
+  }
+}
+
+async function syncChatFromRoute(value: unknown) {
+  const requestId = ++routeSyncRequestId
+  const username = routeUsername(value)
+
+  if (!username) {
+    if (route.path === '/chat' && selectedUser.value) {
+      await closeChat(false)
+    }
+    return
+  }
+
+  const selectedUsername = normalizeUsername(
+    selectedUser.value?.username ?? ''
+  )
+
+  if (
+    selectedUsername &&
+    selectedUsername.toLowerCase() === username.toLowerCase()
+  ) {
+    return
+  }
+
+  try {
+    const user = await getUserByUsername(username)
+
+    if (requestId !== routeSyncRequestId) return
+
+    await openChat(
+      {
+        id: user.id,
+        username: user.username
+      },
+      {
+        resetStack: true,
+        syncRoute: false
+      }
+    )
+  } catch {
+    if (requestId !== routeSyncRequestId) return
+
+    showToast('Username not found')
+    await replaceChatRoute(null)
+  }
+}
 async function goBackChat() {
-  if (!chatNavStack.value.length) return
-  const prev = chatNavStack.value.pop()!
-  await handleUserSelect({ id: prev.id, username: prev.username })
-  if (route.path !== '/chat') router.replace('/chat')
+  const previous = chatNavStack.value.pop()
+  if (!previous) return
+
+  await openChat(previous)
 }
 
 async function openMention(usernameOrAt: string) {
-  const uname = usernameOrAt.replace(/^@/, '')
+  const username = normalizeUsername(usernameOrAt)
+
   try {
-    const u = await getUserByUsername(uname)
-    if (!u || !u.id) {
+    const user = await getUserByUsername(username)
+
+    if (!user?.id || !user.username) {
       showToast('Username not found')
       return
     }
 
-    const cur = currentChatRef()
-    if (cur && cur.id !== u.id) chatNavStack.value.push(cur)
-    await handleUserSelect({ id: u.id, username: (u.username || '').replace(/^@/, '') })
-    if (route.path !== '/chat') router.replace('/chat')
+    await openChat(
+      {
+        id: user.id,
+        username: user.username
+      },
+      {
+        pushCurrent: true
+      }
+    )
   } catch {
     showToast('Username not found')
   }
 }
 
-async function onOpenChatFromContacts(p: { id: string; username: string }) {
+async function onOpenChatFromContacts(user: ChatTarget) {
   showContacts.value = false
-  await handleUserSelect({ id: p.id, username: p.username })
-  if (route.path !== '/chat') router.replace('/chat')
+
+  await openChat(user, {
+    resetStack: true
+  })
 }
 
 function onMenuAction(a: 'profile'|'contacts'|'saved'|'settings') {
@@ -853,9 +1009,18 @@ function openSettings() {
 }
 
 async function goSavedMessages() {
-  const uname = (meProfile.value?.username || '').replace(/^@/,'')
-  if (!myId.value || !uname) return
-  await handleUserSelect({ id: myId.value, username: uname })
+  const username = normalizeUsername(meProfile.value?.username ?? '')
+  if (!myId.value || !username) return
+
+  await openChat(
+    {
+      id: myId.value,
+      username
+    },
+    {
+      resetStack: true
+    }
+  )
 }
 
 
@@ -957,22 +1122,10 @@ const {
   appendOutgoingMessage,
   updateConversationAfterSend,
 
-  openUserChat: async user => {
-    const current = currentChatRef()
-
-    if (
-      current &&
-      current.id !== user.id
-    ) {
-      chatNavStack.value.push(current)
-    }
-
-    await handleUserSelect(user)
-
-    if (route.path !== '/chat') {
-      router.replace('/chat')
-    }
-  }
+  openUserChat: user =>
+    openChat(user, {
+      pushCurrent: true
+    })
 })
 
 const {
@@ -1123,6 +1276,14 @@ watch(selectedUser, async (current, previous) => {
   } catch {}
 }, { immediate: true })
 
+
+watch(
+  () => route.params.username,
+  username => {
+    if (!routeSyncReady) return
+    void syncChatFromRoute(username)
+  }
+)
 
 
 
@@ -1392,11 +1553,16 @@ async function loadOlderMessages(): Promise<boolean> {
 
 
 async function selectConversation(conv: UiConversation) {
-  chatNavStack.value = []
-  await handleUserSelect({ id: conv.peerId, username: conv.username })
-  if (route.path !== '/chat') router.replace('/chat')
-  scrollToEndSmooth()
-
+  await openChat(
+    {
+      id: conv.peerId,
+      username: conv.username
+    },
+    {
+      resetStack: true,
+      scrollToEnd: true
+    }
+  )
 }
 
 
@@ -1414,29 +1580,11 @@ async function onScrollLoadMore() {
 }
 
 
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  window.removeEventListener('scroll', onWindowScroll, true)
-  window.removeEventListener('resize', onWindowResize)
-  disposeSelection()
-  disposeReactions()
-  disposeMedia()
-  signalR.dispose()
-
-  if (typingTimer) {
-    window.clearTimeout(typingTimer)
-    typingTimer = null
-  }
-  disconnectFromChatHub().catch(()=>{})
-
-})
-
 
 async function initializeChatPage() {
+  routeSyncReady = false
+  routeSyncRequestId++
   resetState()
-
-  
-
   const token = getToken()
   if (!token || isJwtExpired(token)) {
     router.replace('/login')
@@ -1515,17 +1663,8 @@ async function initializeChatPage() {
     } catch (e) {
       console.warn('load conversations failed', e)
     }
-
-    
-  const username = route.params.username as string | undefined
-  if (username && !selectedUser.value) {
-    try {
-      const u = await getUserByUsername(username.replace(/^@/, ''))
-      await handleUserSelect({ id: u.id, username: u.username })
-    } catch (e) {
-      console.error('username not found', e)
-    }
-  }
+  routeSyncReady = true
+  await syncChatFromRoute(route.params.username)
 
 }
 
@@ -1544,9 +1683,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  routeSyncReady = false
+  routeSyncRequestId++
   chatSessionId++
-  unregisterPageListeners()
 
+  unregisterPageListeners()
   disposeSelection()
   disposeReactions()
   disposeMedia()
