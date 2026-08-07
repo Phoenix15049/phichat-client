@@ -427,6 +427,7 @@ const chatNavStack = ref<ChatTarget[]>([])
 
 let routeSyncReady = false
 let routeSyncRequestId = 0
+let pageAlive = false
 
 const messageEls: Map<string, HTMLElement> = new Map()
 
@@ -553,6 +554,8 @@ function applyPeerMeta(userId: string, meta: PeerMeta) {
   if (meta.displayName) conversation.displayName = meta.displayName
   if (meta.avatarUrl) conversation.avatarUrl = meta.avatarUrl
 }
+
+
 
 const peerStatus = computed(() => {
   const su = selectedUser.value
@@ -1697,6 +1700,7 @@ async function initializeChatPage() {
   routeSyncReady = false
   routeSyncRequestId++
   resetState()
+
   const token = getToken()
   if (!token || isJwtExpired(token)) {
     router.replace('/login')
@@ -1705,6 +1709,7 @@ async function initializeChatPage() {
 
   try { await disconnectFromChatHub() } catch {}
 
+  if (!pageAlive) return
 
   if (token) {
     const payload = parseJwt(token)
@@ -1715,31 +1720,37 @@ async function initializeChatPage() {
 
     try {
       await connectToChatHub(token)
+      if (!pageAlive) return
 
-      const ids =
-        await fetchOnlineUsers()
+      const ids = await fetchOnlineUsers()
+      if (!pageAlive) return
 
       onlineIds.clear()
 
-      ids.forEach(id =>
+      ids.forEach(id => {
         onlineIds.add(String(id))
-      )
+      })
     } catch (error) {
-      console.warn(
-        'initial SignalR connection failed',
-        error
-      )
+      if (pageAlive) {
+        console.warn(
+          'initial SignalR connection failed',
+          error
+        )
+      }
     }
   }
   
 
   try {
-      const data = await getConversations() 
+    const data = await getConversations()
+    if (!pageAlive) return
 
-      const me = await getMeProfile()
-      meProfile.value = me
+    const me = await getMeProfile()
+    if (!pageAlive) return
 
-      conversations.value = (data || []).map((c: any) => ({
+    meProfile.value = me
+
+    conversations.value = (data || []).map((c: any) => ({
         peerId: c.peerId || c.PeerId,
         username: c.peerUsername || c.PeerUsername || '',
         displayName: c.peerDisplayName || c.PeerDisplayName || null,
@@ -1762,29 +1773,45 @@ async function initializeChatPage() {
         const tb = toDateSafe(b.lastSentAt)?.getTime() || 0
         return tb - ta
       })
-    } catch (e) {
-      console.warn('load conversations failed', e)
+    } catch (error) {
+      if (pageAlive) {
+        console.warn(
+          'load conversations failed',
+          error
+        )
+      }
     }
+  if (!pageAlive) return
   routeSyncReady = true
   await syncChatFromRoute(route.params.username)
 
 }
 
 onMounted(async () => {
+  pageAlive = true
+
   onWindowResize()
   registerPageListeners()
 
   await nextTick()
+  if (!pageAlive) return
+
   autoGrow(undefined, { animate: false })
 
   try {
     await initializeChatPage()
   } catch (error) {
-    console.error('chat initialization failed', error)
+    if (pageAlive) {
+      console.error(
+        'chat initialization failed',
+        error
+      )
+    }
   }
 })
 
 onBeforeUnmount(() => {
+  pageAlive = false
   routeSyncReady = false
   routeSyncRequestId++
   chatSessionId++
