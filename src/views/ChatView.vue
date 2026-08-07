@@ -500,6 +500,26 @@ const loadedPeerIds = new Set<string>()
 const peerRequests = new Map<string, Promise<PeerMeta | null>>()
 let peerCacheGeneration = 0
 
+const chatKeyRequests = new Map<string, Promise<CryptoKey>>()
+let chatKeyGeneration = 0
+
+function invalidateChatKeyRequests() {
+  chatKeyGeneration++
+  chatKeyRequests.clear()
+}
+
+function assertActiveChatKeyRequest(
+  ownerId: string,
+  generation: number
+) {
+  if (
+    generation !== chatKeyGeneration ||
+    ownerId !== myId.value
+  ) {
+    throw new Error('Chat key request is no longer active')
+  }
+}
+
 function cachedPeerMeta(userId: string): PeerMeta {
   const conversation = conversations.value.find(item => item.peerId === userId)
 
@@ -620,6 +640,7 @@ async function ensurePeerCached(userId: string): Promise<PeerMeta | null> {
 function resetState() {
   chatSessionId++
   peerCacheGeneration++
+  invalidateChatKeyRequests()
 
   loadedPeerIds.clear()
   peerRequests.clear()
@@ -1404,18 +1425,36 @@ function unregisterPageListeners() {
   window.removeEventListener('resize', onWindowResize)
 }
 
-function loadAESKeyScoped(partnerId: string) {
+function loadAESKeyScoped(
+  ownerId: string,
+  partnerId: string
+) {
   try {
-    const uid = localStorage.getItem(ACTIVE_UID_KEY);
-    if (!uid || uid !== myId.value) return null;
-  } catch {}
-  return loadAESKey(partnerId); 
+    const activeUserId = localStorage.getItem(ACTIVE_UID_KEY)
+    if (!activeUserId || activeUserId !== ownerId) return null
+  } catch {
+    return null
+  }
+
+  return loadAESKey(partnerId)
 }
 
-async function saveAESKeyScoped(partnerId: string, key: CryptoKey) {
-  try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
-  return await saveAESKey(partnerId, key);
+async function saveAESKeyScoped(
+  ownerId: string,
+  partnerId: string,
+  key: CryptoKey
+) {
+  if (ownerId !== myId.value) {
+    throw new Error('Authenticated user changed')
+  }
+
+  try {
+    localStorage.setItem(ACTIVE_UID_KEY, ownerId)
+  } catch {}
+
+  await saveAESKey(partnerId, key)
 }
+
 
 function scrollToMessageEl(el: HTMLElement) {
   const sc = scrollBox.value as HTMLElement | null
@@ -1751,6 +1790,8 @@ onBeforeUnmount(() => {
   chatSessionId++
 
   peerCacheGeneration++
+
+  invalidateChatKeyRequests()
   loadedPeerIds.clear()
   peerRequests.clear()
 
@@ -2116,32 +2157,99 @@ async function handleUserSelect(user: ChatTarget) {
 }
 
 
-function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
-
-
-async function getOrLoadKey(partnerId: string) {
-
-  let key = await loadAESKeyScoped(partnerId);
-  if (key) return key;
-
-  let base64 = await getChatKey(partnerId);
-  if (!base64) {
-    await delay(250);
-    base64 = await getChatKey(partnerId);
-  }
-  if (base64) {
-    key = await importAESKey(base64);
-    await saveAESKeyScoped(partnerId, key);
-    return key;
-  }
-
-  const newKey = await generateAESKey();
-  const raw = await exportAESKey(newKey);
-  const base64Key = btoa(String.fromCharCode(...raw));
-  await storeChatKey({ receiverId: partnerId, encryptedKey: base64Key });
-  await saveAESKeyScoped(partnerId, newKey);
-  return newKey;
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    window.setTimeout(resolve, ms)
+  })
 }
+
+
+async function resolveChatKey(
+  ownerId: string,
+  partnerId: string,
+  generation: number
+): Promise<CryptoKey> {
+  let key = await loadAESKeyScoped(ownerId, partnerId)
+  if (key) return key
+
+  assertActiveChatKeyRequest(ownerId, generation)
+
+  let base64Key = await getChatKey(partnerId)
+  assertActiveChatKeyRequest(ownerId, generation)
+
+  if (!base64Key) {
+    await delay(250)
+    assertActiveChatKeyRequest(ownerId, generation)
+
+    base64Key = await getChatKey(partnerId)
+    assertActiveChatKeyRequest(ownerId, generation)
+  }
+
+  if (base64Key) {
+    key = await importAESKey(base64Key)
+    assertActiveChatKeyRequest(ownerId, generation)
+
+    await saveAESKeyScoped(ownerId, partnerId, key)
+    return key
+  }
+
+  const newKey = await generateAESKey()
+  const rawKey = await exportAESKey(newKey)
+
+  assertActiveChatKeyRequest(ownerId, generation)
+
+  const exportedKey = btoa(
+    String.fromCharCode(...rawKey)
+  )
+
+  await storeChatKey({
+    receiverId: partnerId,
+    encryptedKey: exportedKey
+  })
+
+  assertActiveChatKeyRequest(ownerId, generation)
+
+  await saveAESKeyScoped(
+    ownerId,
+    partnerId,
+    newKey
+  )
+
+  return newKey
+}
+
+function getOrLoadKey(
+  partnerId: string
+): Promise<CryptoKey> {
+  const ownerId = myId.value
+
+  if (!ownerId || !partnerId) {
+    return Promise.reject(
+      new Error('Chat key owner or partner is missing')
+    )
+  }
+
+  const requestId = `${ownerId}:${partnerId}`
+  const pending = chatKeyRequests.get(requestId)
+
+  if (pending) return pending
+
+  const generation = chatKeyGeneration
+
+  const request = resolveChatKey(
+    ownerId,
+    partnerId,
+    generation
+  ).finally(() => {
+    if (chatKeyRequests.get(requestId) === request) {
+      chatKeyRequests.delete(requestId)
+    }
+  })
+
+  chatKeyRequests.set(requestId, request)
+  return request
+}
+
 
 function toAbsoluteFileUrl(url: string | null): string | null {
   return url ? toAbsoluteServerUrl(url) : null
