@@ -325,7 +325,7 @@ import { useRoute ,useRouter} from 'vue-router'
 import {toDateSafe,formatRelativeEn} from "../utils/time";
 import MediaImageViewer from '../components/MediaImageViewer.vue'
 import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
-import {getMyContacts, addContact, removeContact,getUsersList } from '../services/api'
+import {getMyContacts, addContact, removeContact } from '../services/api'
 
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
@@ -379,7 +379,6 @@ const myId = ref<string>('')
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
-const unread = ref<Record<string, number>>({})
 
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
@@ -490,6 +489,51 @@ const lastSeenMap = reactive<Record<string, string | null>>({})
 const avatarById  = reactive<Record<string, string | null>>({})
 const displayById = reactive<Record<string, string | null>>({})
 
+type PeerMeta = {
+  username: string
+  displayName: string | null
+  avatarUrl: string | null
+  lastSeenUtc: string | null
+}
+
+const loadedPeerIds = new Set<string>()
+const peerRequests = new Map<string, Promise<PeerMeta | null>>()
+let peerCacheGeneration = 0
+
+function cachedPeerMeta(userId: string): PeerMeta {
+  const conversation = conversations.value.find(item => item.peerId === userId)
+
+  return {
+    username: conversation?.username ?? '',
+    displayName: displayById[userId] ?? conversation?.displayName ?? null,
+    avatarUrl: avatarById[userId] ?? conversation?.avatarUrl ?? null,
+    lastSeenUtc: lastSeenMap[userId] ?? null
+  }
+}
+
+function normalizePeerMeta(user: UserApiItem): PeerMeta {
+  return {
+    username: normalizeUsername(user.username ?? user.Username ?? ''),
+    displayName: (user.displayName ?? user.DisplayName ?? '').trim() || null,
+    avatarUrl: user.avatarUrl ?? user.AvatarUrl ?? null,
+    lastSeenUtc: user.lastSeenUtc ?? user.LastSeenUtc ?? null
+  }
+}
+
+function applyPeerMeta(userId: string, meta: PeerMeta) {
+  displayById[userId] = meta.displayName ?? displayById[userId] ?? null
+  avatarById[userId] = meta.avatarUrl ?? avatarById[userId] ?? null
+
+  if (meta.lastSeenUtc) lastSeenMap[userId] = meta.lastSeenUtc
+
+  const conversation = conversations.value.find(item => item.peerId === userId)
+  if (!conversation) return
+
+  if (meta.username) conversation.username = meta.username
+  if (meta.displayName) conversation.displayName = meta.displayName
+  if (meta.avatarUrl) conversation.avatarUrl = meta.avatarUrl
+}
+
 const peerStatus = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
@@ -539,28 +583,50 @@ function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
   startReplyFrom(m)
 }
 
-async function ensurePeerCached(uid: string) {
-  if (displayById[uid] && avatarById[uid]) return
-  try {
-    const u = await getUserById(uid)
-    if (u?.displayName) displayById[uid] = u.displayName
-    if (u?.avatarUrl)   avatarById[uid]  = u.avatarUrl
+async function ensurePeerCached(userId: string): Promise<PeerMeta | null> {
+  if (!userId) return null
+  if (loadedPeerIds.has(userId)) return cachedPeerMeta(userId)
 
-    const idx = conversations.value.findIndex(c => c.peerId === uid)
-    if (idx >= 0) {
-      conversations.value[idx].displayName = u?.displayName ?? conversations.value[idx].displayName
-      conversations.value[idx].avatarUrl   = u?.avatarUrl   ?? conversations.value[idx].avatarUrl
+  const pending = peerRequests.get(userId)
+  if (pending) return pending
+
+  const generation = peerCacheGeneration
+
+  const request = (async () => {
+    try {
+      const user = await getUserById(userId)
+      const meta = normalizePeerMeta(user)
+
+      if (generation === peerCacheGeneration) {
+        loadedPeerIds.add(userId)
+        applyPeerMeta(userId, meta)
+      }
+
+      return meta
+    } catch {
+      return null
     }
-  } catch {}
+  })()
+
+  peerRequests.set(userId, request)
+
+  void request.finally(() => {
+    if (peerRequests.get(userId) === request) peerRequests.delete(userId)
+  })
+
+  return request
 }
 
 function resetState() {
   chatSessionId++
+  peerCacheGeneration++
+
+  loadedPeerIds.clear()
+  peerRequests.clear()
 
   conversations.value = []
   messages.value = []
   selectedUser.value = null
-  unread.value = {}
 
   loadingConversation.value = false
   loadingOlder.value = false
@@ -703,10 +769,7 @@ function updateConversationAfterSend(
     message.plainText ||
     (message.fileUrl ? null : '')
 
-  const [moved] =
-    conversations.value.splice(index, 1)
-
-  conversations.value.unshift(moved)
+  moveConversationToTop(index)
 }
 
 
@@ -1260,20 +1323,7 @@ watch(selectedUser, async (current, previous) => {
 
   if (!current) return
 
-  const needsProfile =
-    !lastSeenMap[current.id] ||
-    !displayById[current.id] ||
-    avatarById[current.id] === undefined
-
-  if (!needsProfile) return
-
-  try {
-    const user = await getUserById(current.id)
-
-    if (user?.lastSeenUtc) lastSeenMap[current.id] = user.lastSeenUtc
-    if (user?.displayName) displayById[current.id] = user.displayName
-    if (user?.avatarUrl) avatarById[current.id] = user.avatarUrl
-  } catch {}
+  await ensurePeerCached(current.id)
 }, { immediate: true })
 
 
@@ -1661,16 +1711,6 @@ async function initializeChatPage() {
         lastPreview: null 
       }))
 
-      try {
-        const all = await getUsersList()
-        const peerIds = new Set(conversations.value.map(c => c.peerId))
-        for (const u of all) {
-          if (!peerIds.has(u.id)) continue
-          if (u.lastSeenUtc) lastSeenMap[u.id] = u.lastSeenUtc
-          if (u.displayName) displayById[u.id] = u.displayName
-          if (u.avatarUrl)   avatarById[u.id]  = u.avatarUrl
-        }
-      } catch {}
 
       for (const c of conversations.value) {
           if (c.displayName) displayById[c.peerId] = c.displayName
@@ -1710,6 +1750,10 @@ onBeforeUnmount(() => {
   routeSyncRequestId++
   chatSessionId++
 
+  peerCacheGeneration++
+  loadedPeerIds.clear()
+  peerRequests.clear()
+
   unregisterPageListeners()
   disposeSelection()
   disposeReactions()
@@ -1719,6 +1763,86 @@ onBeforeUnmount(() => {
 
   void disconnectFromChatHub().catch(() => {})
 })
+
+type IncomingMessage = ServerMessage & {
+  senderUsername?: string
+  SenderUsername?: string
+}
+
+function moveConversationToTop(index: number) {
+  if (index <= 0) return
+
+  const [conversation] = conversations.value.splice(index, 1)
+  if (conversation) conversations.value.unshift(conversation)
+}
+
+function incomingSentAt(message: ServerMessage) {
+  return message.sentAt ?? message.SentAt ?? new Date().toISOString()
+}
+
+function incomingFileUrl(message: ServerMessage) {
+  return toAbsoluteFileUrl(message.fileUrl ?? message.FileUrl ?? null)
+}
+
+function incomingUsername(message: IncomingMessage) {
+  return normalizeUsername(message.senderUsername ?? message.SenderUsername ?? '')
+}
+
+function upsertIncomingConversation(
+  peerId: string,
+  message: IncomingMessage,
+  incrementUnread: boolean
+) {
+  const sentAt = incomingSentAt(message)
+  const fileUrl = incomingFileUrl(message)
+  const index = conversations.value.findIndex(item => item.peerId === peerId)
+
+  if (index >= 0) {
+    const conversation = conversations.value[index]
+
+    conversation.lastSentAt = sentAt
+    conversation.lastFileUrl = fileUrl
+    conversation.lastPreview = fileUrl ? null : 'پیام جدید'
+    conversation.unreadCount = incrementUnread
+      ? conversation.unreadCount + 1
+      : 0
+
+    moveConversationToTop(index)
+    return
+  }
+
+  const username =
+    incomingUsername(message) ||
+    (selectedUser.value?.id === peerId ? selectedUser.value.username : '') ||
+    peerId
+
+  conversations.value.unshift({
+    peerId,
+    username,
+    displayName: displayById[peerId] ?? null,
+    avatarUrl: avatarById[peerId] ?? null,
+    unreadCount: incrementUnread ? 1 : 0,
+    lastSentAt: sentAt,
+    lastFileUrl: fileUrl,
+    lastPreview: fileUrl ? null : 'پیام جدید'
+  })
+
+  void ensurePeerCached(peerId)
+}
+
+function updateIncomingPreview(peerId: string, message: UiMessage) {
+  const index = conversations.value.findIndex(item => item.peerId === peerId)
+  if (index < 0) return
+
+  const conversation = conversations.value[index]
+
+  conversation.lastSentAt = message.sentAt ?? conversation.lastSentAt
+  conversation.lastFileUrl = message.fileUrl
+  conversation.lastPreview =
+    message.plainText || (message.fileUrl ? null : '')
+
+  moveConversationToTop(index)
+}
 
 function wireSignalR() {
   signalR.dispose()
@@ -1759,117 +1883,64 @@ function wireSignalR() {
       ] = whenIso
     }
   )
-  signalR.onMessageReceived(async (message: any) => {
+  signalR.onMessageReceived(async rawMessage => {
+    const message = rawMessage as IncomingMessage
+    const senderId = String(message.senderId ?? message.SenderId ?? '')
 
-    const senderId = String(message.senderId ?? message.SenderId)
-    await ensurePeerCached(senderId)
+    if (!senderId || senderId === myId.value) return
 
-    const ci = conversations.value.findIndex(c => c.peerId === senderId)
-    if (ci >= 0) {
-      if (displayById[senderId]) conversations.value[ci].displayName = displayById[senderId]!
-      if (avatarById[senderId])   conversations.value[ci].avatarUrl   = avatarById[senderId]!
-    }
-    
-    // unify fields
-    const isFromOtherPeer =
-      selectedUser.value &&
-      senderId !== selectedUser.value.id
+    const active = selectedUser.value?.id === senderId
+    const sessionId = chatSessionId
 
-    const isMyEcho =
-      senderId === myId.value
+    upsertIncomingConversation(senderId, message, !active)
+    void ensurePeerCached(senderId)
 
-    if (!selectedUser.value || isFromOtherPeer || isMyEcho) {
-      if (!isMyEcho) {
-        const sid = senderId
-        unread.value[sid] = (unread.value[sid] ?? 0) + 1
+    if (!active) return
 
-        // update sidebar conv
-        const msgTime = message.sentAt || new Date().toISOString()
-        const convIdx = conversations.value.findIndex(c => c.peerId === sid)
-        if (convIdx >= 0) {
-          const c = conversations.value[convIdx]
-          c.unreadCount = (c.unreadCount || 0) + 1
-          c.lastSentAt = msgTime
-          c.lastFileUrl = message.fileUrl || null
-          c.lastPreview = c.lastFileUrl ? null : 'پیام جدید'
-          // move to top
-          const [moved] = conversations.value.splice(convIdx, 1)
-          conversations.value.unshift(moved)
-        } else {
-          let uname = (message.senderUsername || '').replace(/^@/, '')
-          let disp  = displayById[sid] || null
-          let avatar = avatarById[sid] || null
+    try {
+      const aesKey = await getOrLoadKey(senderId)
+      if (!isActiveChat(sessionId, senderId)) return
 
-          if (!uname || !disp || !avatar) {
-            try {
-              const u = await getUserById(sid)
-              if (u) {
-                uname  = (u.username || uname || '').replace(/^@/, '')
-                disp   = (u.displayName || disp || null)
-                avatar = (u.avatarUrl   || avatar || null)
-                if (u.displayName) displayById[sid] = u.displayName
-                if (u.avatarUrl)   avatarById[sid]  = u.avatarUrl
-              }
-            } catch { /* ignore */ }
-          }
-
-          conversations.value.unshift({
-            peerId: sid,
-            username: uname,               
-            displayName: disp || null,     
-            avatarUrl: avatar || null,
-            unreadCount: 1,
-            lastSentAt: msgTime,
-            lastFileUrl: message.fileUrl || null,
-            lastPreview: (message.fileUrl ? null : 'پیام جدید'),
-          } as UiConversation)
-        }
-      }
-      return
-    }
-
-    const aesKey =
-      await getOrLoadKey(senderId)
-
-    const ui = await mapServerMessage(
-      message as ServerMessage,
-      {
+      const ui = await mapServerMessage(message, {
         aesKey,
         myId: myId.value,
         cipherSource: 'text',
-        fallbackSentAt:
-          new Date().toISOString(),
+        fallbackSentAt: new Date().toISOString(),
+        retryKey: () => getOrLoadKey(senderId)
+      })
 
-        retryKey: () =>
-          getOrLoadKey(senderId)
+      if (!isActiveChat(sessionId, senderId)) return
+
+      if (ui.forwardedFromSenderId) {
+        void cacheForwardName(ui.forwardedFromSenderId)
       }
-    )
 
-    if (ui.forwardedFromSenderId) {
-      cacheForwardName(
-        ui.forwardedFromSenderId
-      )
+      const element = scrollBox.value
+      const shouldStick = !!element && isNearBottom(element)
+
+      messages.value.push(ui)
+      updateIncomingPreview(senderId, ui)
+
+      if (ui.fileUrl) {
+        const key = fileKey(ui)
+        if (!fileSizeMap[key]) void ensureFileSize(ui.fileUrl, key)
+      }
+
+      await nextTick()
+
+      if (!isActiveChat(sessionId, senderId)) return
+      if (element && shouldStick) element.scrollTop = element.scrollHeight
+
+      const messageId = message.messageId ?? message.MessageId ?? message.id
+      if (messageId) void markAsRead(messageId).catch(() => {})
+    } catch (error) {
+      if (isActiveChat(sessionId, senderId)) {
+        console.warn('incoming message failed', error)
+      }
     }
+  })
 
-    const el0 = scrollBox.value as HTMLElement | null
-    const stick = !!el0 && isNearBottom(el0)
-
-    messages.value.push(ui)
-
-    if (ui.fileUrl) {
-      const key = fileKey(ui)
-      if (!fileSizeMap[key]) ensureFileSize(ui.fileUrl, key)
-    }
-
-    await nextTick()
-    const box = scrollBox.value as HTMLElement | null
-    if (box && stick) box.scrollTop = box.scrollHeight
-    await nextTick()
-    const mid = message.messageId || message.id || message.MessageId
-    if (mid) {
-      try { await markAsRead(mid) } catch {}
-    }
-})
+  
 
 
   signalR.onDelivered(async (info: any) => {
@@ -2006,7 +2077,6 @@ async function handleUserSelect(user: ChatTarget) {
     conversation.unreadCount = 0
   }
 
-  unread.value[user.id] = 0
 
   try {
     const page = await prepareMessagePage(user.id, undefined, sessionId)
