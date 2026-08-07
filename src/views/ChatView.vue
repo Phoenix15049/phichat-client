@@ -555,7 +555,13 @@ function applyPeerMeta(userId: string, meta: PeerMeta) {
   if (meta.avatarUrl) conversation.avatarUrl = meta.avatarUrl
 }
 
+function cachePeerUser(user: UserApiItem) {
+  const userId = String(user.id ?? user.Id ?? '')
+  if (!userId) return
 
+  loadedPeerIds.add(userId)
+  applyPeerMeta(userId, normalizePeerMeta(user))
+}
 
 const peerStatus = computed(() => {
   const su = selectedUser.value
@@ -621,8 +627,7 @@ async function ensurePeerCached(userId: string): Promise<PeerMeta | null> {
       const meta = normalizePeerMeta(user)
 
       if (generation === peerCacheGeneration) {
-        loadedPeerIds.add(userId)
-        applyPeerMeta(userId, meta)
+        cachePeerUser(user)
       }
 
       return meta
@@ -829,9 +834,18 @@ function isNearBottom(el: HTMLElement, threshold = 400) {
 
 async function openPeerProfile() {
   if (!selectedUser.value) return
-  const u = await getUserByUsername(selectedUser.value.username.replace(/^@/,''))
-  peerProfile.value = u
-  try { myContacts.value = await getMyContacts() } catch {}
+
+  const user = await getUserByUsername(
+    selectedUser.value.username.replace(/^@/, '')
+  )
+
+  cachePeerUser(user)
+  peerProfile.value = user
+
+  try {
+    myContacts.value = await getMyContacts()
+  } catch {}
+
   showPeerProfile.value = true
 }
 
@@ -1019,6 +1033,8 @@ async function syncChatFromRoute(value: unknown) {
     const user = await getUserByUsername(username)
 
     if (requestId !== routeSyncRequestId) return
+
+    cachePeerUser(user)
 
     await openChat(
       {
@@ -1348,6 +1364,23 @@ watch(selectedUser, async (current, previous) => {
   if (!current) return
 
   await ensurePeerCached(current.id)
+
+  if (
+    onlineIds.has(current.id) ||
+    lastSeenMap[current.id]
+  ) {
+    return
+  }
+
+  try {
+    const user = await getUserByUsername(
+      normalizeUsername(current.username)
+    )
+
+    if (selectedUser.value?.id !== current.id) return
+
+    cachePeerUser(user)
+  } catch {}
 }, { immediate: true })
 
 
