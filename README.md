@@ -106,9 +106,8 @@ If it is not provided, the default development server address is used.
 ## 🎬 Demo
 
 For showing real-time features, animations, or encryption flow, you can
-add a GIF here:
 
-    ![PhiChat Demo](./screenshots/demo.gif)
+![PhiChat Demo](./screenshots/demo.gif)
 
 ## 🤝 Backend
 
