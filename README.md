@@ -95,13 +95,13 @@ If it is not provided, the default development server address is used.
 
 ## 🖼 Screenshots
 
-Add application screenshots here:
 
-    ![Login Screen](./screenshots/login.png)
 
-    ![Chat Interface](./screenshots/chat.png)
+![Login Screen](./screenshots/login.png)
 
-    ![Profile Settings](./screenshots/settings.png)
+![Chat Interface](./screenshots/chat.png)
+
+![Profile Settings](./screenshots/settings.png)
 
 ## 🎬 Demo
 
