@@ -16,7 +16,7 @@
               <img v-if="me?.avatarUrl" :src="me.avatarUrl" class="w-full h-full object-cover" />
               <div v-else class="w-full h-full grid place-items-center text-white font-semibold
                                  bg-gradient-to-br from-[#456173] to-[#1B3C59]">
-                {{ initials(me?.displayName || me?.username || 'U') }}
+                {{ initialsOf(me?.displayName || me?.username || 'U') }}
               </div>
             </div>
             <div class="min-w-0">
@@ -60,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { initialsOf } from '../utils/avatar'
 import { onMounted, onBeforeUnmount } from 'vue'
 import { User, Users, Bookmark, Settings, X } from 'lucide-vue-next'
 import type { ChatUser } from '../types/chat'
@@ -76,29 +77,7 @@ const emitClose = () => { /* helper در صورت نیاز expand شود */ }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
-function initials(name: string) {
-  const parts = name?.trim?.().split(/\s+/).slice(0,2) || []
-  return parts.map(p => p[0]?.toUpperCase() ?? '').join('')
-}
 
-// ripple directive (local)
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= 'relative'
-    el.style.overflow ||= 'hidden'
-    el.addEventListener('click', (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect()
-      const size = Math.max(rect.width, rect.height) * 1.1
-      const span = document.createElement('span')
-      span.className = 'ripple-ink'
-      span.style.width = span.style.height = `${size}px`
-      span.style.left = `${e.clientX - rect.left - size/2}px`
-      span.style.top  = `${e.clientY - rect.top  - size/2}px`
-      el.appendChild(span)
-      span.addEventListener('animationend', () => span.remove())
-    })
-  }
-}
 </script>
 
 <style scoped>
@@ -121,15 +100,4 @@ const vRipple = {
 .drawer-enter-active,
 .drawer-leave-active { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
 
-/* ripple (global so dynamic span is styled) */
-:global(.ripple-ink){
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity:.15;
-  transform: scale(0);
-  pointer-events:none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple { to { transform: scale(4); opacity:0; } }
 </style>

@@ -61,24 +61,6 @@ function pick(c: Country) {
 function toggle() { if (!props.disabled) open.value = !open.value }
 function close()  { open.value = false }
 
-/** ripple directive (local, like other views) */
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= 'relative'
-    el.style.overflow ||= 'hidden'
-    el.addEventListener('click', (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect()
-      const size = Math.max(rect.width, rect.height) * 1.1
-      const span = document.createElement('span')
-      span.className = 'ripple-ink'
-      span.style.width = span.style.height = `${size}px`
-      span.style.left = `${e.clientX - rect.left - size/2}px`
-      span.style.top  = `${e.clientY - rect.top  - size/2}px`
-      el.appendChild(span)
-      span.addEventListener('animationend', () => span.remove())
-    })
-  }
-}
 </script>
 
 <template>
@@ -172,15 +154,4 @@ const vRipple = {
   @apply text-[#1B3C59] placeholder:text-[#456173];
 }
 
-/* ripple ink (global so dynamic span is styled) */
-:global(.ripple-ink) {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity: .15;
-  transform: scale(0);
-  pointer-events: none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple { to { transform: scale(4); opacity: 0; } }
 </style>

@@ -184,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { colorFromString, initialsOf } from '../../../utils/avatar'
 import { Menu } from 'lucide-vue-next'
 import { formatRelativeEn } from '../../../utils/time'
 import type { UiConversation } from '../../../types/chat'
@@ -206,31 +207,5 @@ const emit = defineEmits<{
   (event: 'open-menu'): void
 }>()
 
-function initialsOf(name: string) {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(part => part[0]?.toUpperCase())
-      .join('') || '?'
-  )
-}
 
-function colorFromString(value: string) {
-  let hash = 0
-
-  for (
-    let index = 0;
-    index < value.length;
-    index++
-  ) {
-    hash =
-      value.charCodeAt(index) +
-      ((hash << 5) - hash)
-  }
-
-  return `hsl(${Math.abs(hash) % 360} 55% 45%)`
-}
 </script>

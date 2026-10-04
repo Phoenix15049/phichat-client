@@ -23,8 +23,8 @@ import type {
   UiMessage
 } from '../../../types/chat'
 
-const EMPTY_MSG_MARKER = '\u200B'
 
+import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
 
