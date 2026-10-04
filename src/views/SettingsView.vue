@@ -111,12 +111,14 @@ import { ImageUp, Trash2, Check, LogOut, X } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { getErrorMessage, getMeProfile, logout, updateMyProfile, uploadAvatar } from '../services/api'
 import { disconnectFromChatHub } from '../services/signalr'
+import { useSessionStore } from '../stores/session'
 import { useRouter } from 'vue-router'
 const displayName = ref<string>('')
 const avatarUrl   = ref<string>('')
 const bio         = ref<string>('')
 
 const router = useRouter()
+const session = useSessionStore()
 
 const saving = ref(false)
 const saved  = ref(false)
@@ -172,10 +174,18 @@ async function save() {
       finalAvatarUrl = await uploadAvatar(fd)
     }
     // 2) update profile
-    await updateMyProfile({
+    const profile = {
       displayName: (displayName.value || '').trim(),
       avatarUrl: (finalAvatarUrl || '').trim(),
       bio: (bio.value || '').trim()
+    }
+    await updateMyProfile(profile)
+
+    // Show the change everywhere (side menu, profile) without a reload.
+    session.updateMe({
+      displayName: profile.displayName || undefined,
+      avatarUrl: profile.avatarUrl || undefined,
+      bio: profile.bio || undefined
     })
     saved.value = true
     setTimeout(() => (saved.value = false), 1400)
@@ -191,6 +201,7 @@ async function doLogout() {
   try { await disconnectFromChatHub() } catch {}
   // Revokes the refresh token on the server, then clears local auth data.
   await logout()
+  session.reset()
   await router.replace('/login')
 }
 </script>

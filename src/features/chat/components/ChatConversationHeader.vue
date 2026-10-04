@@ -265,3 +265,11 @@ const emit = defineEmits<{
 
 
 </script>
+
+<style scoped>
+/* header (selection/non-selection) slide */
+.slide-down-enter-from { transform: translateY(-6px); opacity: 0; }
+.slide-down-enter-active { transition: transform .1s ease, opacity .1s ease; }
+.slide-down-leave-active { transition: transform .08s ease, opacity .08s ease; }
+.slide-down-leave-to { transform: translateY(-4px); opacity: 0; }
+</style>
