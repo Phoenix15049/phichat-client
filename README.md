@@ -87,11 +87,12 @@ npm run build
 ## ⚙️ Configuration
 
 The client connects to the backend server through an environment
-variable:
+variable. Copy `.env.example` to `.env.local` (ignored by git) and set:
 
     VITE_SERVER_ORIGIN=https://your-server-address
 
-If it is not provided, the default development server address is used.
+If it is not provided, the default development server address
+(`https://localhost:7146`) is used.
 
 ## 🖼 Screenshots
 
