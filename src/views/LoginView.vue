@@ -153,24 +153,6 @@ onMounted(() => {
   }
 })
 
-// Ripple directive (local)
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= "relative";
-    el.style.overflow ||= "hidden";
-    el.addEventListener("click", (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect();
-      const size = Math.max(rect.width, rect.height) * 1.1;
-      const span = document.createElement("span");
-      span.className = "ripple-ink";
-      span.style.width = span.style.height = `${size}px`;
-      span.style.left = `${e.clientX - rect.left - size / 2}px`;
-      span.style.top = `${e.clientY - rect.top - size / 2}px`;
-      el.appendChild(span);
-      span.addEventListener("animationend", () => span.remove());
-    });
-  }
-};
 
 async function handlePasswordLogin() {
   error.value = null;
@@ -256,17 +238,4 @@ async function handleSmsLogin() {
 .slide-h-enter-active,
 .slide-h-leave-active { transition: all .18s ease; }
 
-/* Ripple (global selector so dynamic span is styled even in scoped SFC) */
-:global(.ripple-ink) {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity: .15;
-  transform: scale(0);
-  pointer-events: none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple {
-  to { transform: scale(4); opacity: 0; }
-}
 </style>

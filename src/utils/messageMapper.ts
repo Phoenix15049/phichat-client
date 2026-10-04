@@ -5,8 +5,7 @@ import type {
   UiMessage,
   UiReaction
 } from '../types/chat'
-
-const EMPTY_MSG_MARKER = '\u200B'
+import { EMPTY_MSG_MARKER } from './messageText'
 
 type CipherSource = 'content' | 'text'
 

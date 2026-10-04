@@ -330,6 +330,7 @@ import {getMyContacts, addContact, removeContact } from '../services/api'
 import { isJwtExpired,parseJwt,getToken } from '../services/auth'
 
 import { toAbsoluteServerUrl } from '../config/server'
+import { EMPTY_MSG_MARKER } from '../utils/messageText'
 
 import type {
   ChatUser,
@@ -373,7 +374,6 @@ function resolveReplyPreview(replyId?: string | null): string {
 
 const route = useRoute()
 const router = useRouter()
-const EMPTY_MSG_MARKER = '\u200B' 
 
 const myId = ref<string>('')
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
@@ -2317,19 +2317,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 </script>
 
 <style>
-/* global (بدون scoped) تا روی span داینامیکی هم اعمال بشه */
-.ripple-ink {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity: .15;
-  transform: scale(0);
-  pointer-events: none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple {
-  to { transform: scale(4); opacity: 0; }
-}
 
 /* منوی راست‌کلیک: پاپ/محو کوتاه */
 .fade-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); transform-origin: bottom right; }
@@ -2400,15 +2387,6 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   border-top: 1px solid rgba(69,97,115,0.10);
 }
 
-:global(.ripple-ink){
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity:.15;
-  transform: scale(0);
-  pointer-events:none;
-  animation: ripple .5s ease-out forwards;
-}
 
 .auto-dir { unicode-bidi: plaintext; }
 
@@ -2435,6 +2413,5 @@ function toAbsoluteFileUrl(url: string | null): string | null {
 }
 
 
-@keyframes ripple { to { transform: scale(4); opacity:0; } }
 
 </style>

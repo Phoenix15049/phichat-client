@@ -15,7 +15,7 @@
           class="w-16 h-16 rounded-full grid place-items-center text-white font-semibold
                  bg-gradient-to-br from-[#456173] to-[#1B3C59]"
         >
-          {{ initials(user?.displayName || user?.username || 'U') }}
+          {{ initialsOf(user?.displayName || user?.username || 'U') }}
         </div>
 
         <!-- Title & meta -->
@@ -88,6 +88,7 @@
 </template>
 
 <script setup lang="ts">
+import { initialsOf } from '../utils/avatar'
 import ModalSheet from './ModalSheet.vue'
 import type { ChatUser } from '../types/chat'
 import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
@@ -100,29 +101,7 @@ defineProps<{
 
 defineEmits(['close','send-message','add-contact','remove-contact','share-contact'])
 
-// ripple directive (local)
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= 'relative'
-    el.style.overflow ||= 'hidden'
-    el.addEventListener('click', (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect()
-      const size = Math.max(rect.width, rect.height) * 1.1
-      const span = document.createElement('span')
-      span.className = 'ripple-ink'
-      span.style.width = span.style.height = `${size}px`
-      span.style.left = `${e.clientX - rect.left - size/2}px`
-      span.style.top  = `${e.clientY - rect.top  - size/2}px`
-      el.appendChild(span)
-      span.addEventListener('animationend', () => span.remove())
-    })
-  }
-}
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).slice(0,2)
-  return parts.map(p => p[0]?.toUpperCase() ?? '').join('')
-}
 
 function fmtLastSeen(iso?: string | null) {
   if (!iso) return 'Unknown'
@@ -150,17 +129,4 @@ function fmtLastSeen(iso?: string | null) {
   @apply border border-gray-300 text-gray-400 rounded-lg px-4 py-2 cursor-not-allowed;
 }
 
-/* ripple ink (global selector so dynamic span is styled) */
-:global(.ripple-ink) {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity: .15;
-  transform: scale(0);
-  pointer-events: none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple {
-  to { transform: scale(4); opacity: 0; }
-}
 </style>

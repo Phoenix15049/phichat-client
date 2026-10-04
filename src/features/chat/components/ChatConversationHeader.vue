@@ -204,9 +204,7 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  ObjectDirective
-} from 'vue'
+import { colorFromString, initialsOf } from '../../../utils/avatar'
 
 import {
   ArrowLeft
@@ -264,138 +262,6 @@ const emit = defineEmits<{
   ): void
 }>()
 
-const rippleHandlers =
-  new WeakMap<
-    HTMLElement,
-    (event: MouseEvent) => void
-  >()
 
-const vRipple:
-  ObjectDirective<HTMLElement> = {
-    mounted(element) {
-      element.style.position ||=
-        'relative'
 
-      element.style.overflow ||=
-        'hidden'
-
-      const handler = (
-        event: MouseEvent
-      ) => {
-        const rect =
-          element.getBoundingClientRect()
-
-        const size =
-          Math.max(
-            rect.width,
-            rect.height
-          ) * 1.1
-
-        const ripple =
-          document.createElement('span')
-
-        ripple.className =
-          'ripple-ink'
-
-        ripple.style.width =
-          `${size}px`
-
-        ripple.style.height =
-          `${size}px`
-
-        ripple.style.left =
-          `${
-            event.clientX -
-            rect.left -
-            size / 2
-          }px`
-
-        ripple.style.top =
-          `${
-            event.clientY -
-            rect.top -
-            size / 2
-          }px`
-
-        element.appendChild(ripple)
-
-        ripple.addEventListener(
-          'animationend',
-          () => ripple.remove(),
-          {
-            once: true
-          }
-        )
-      }
-
-      rippleHandlers.set(
-        element,
-        handler
-      )
-
-      element.addEventListener(
-        'click',
-        handler
-      )
-    },
-
-    beforeUnmount(element) {
-      const handler =
-        rippleHandlers.get(element)
-
-      if (handler) {
-        element.removeEventListener(
-          'click',
-          handler
-        )
-      }
-
-      rippleHandlers.delete(element)
-    }
-  }
-
-function initialsOf(
-  name: string
-) {
-  const normalized =
-    (name || '').trim()
-
-  if (!normalized) {
-    return '؟'
-  }
-
-  const parts =
-    normalized.split(/\s+/)
-
-  return (
-    parts.length === 1
-      ? parts[0].slice(0, 2)
-      : (
-          parts[0][0] +
-          parts[1][0]
-        )
-  ).toUpperCase()
-}
-
-function colorFromString(
-  value: string
-) {
-  let hash = 0
-
-  for (
-    let index = 0;
-    index < value.length;
-    index++
-  ) {
-    hash =
-      (
-        hash * 31 +
-        value.charCodeAt(index)
-      ) >>> 0
-  }
-
-  return `hsl(${
-    hash % 360
-  } 65% 55%)`
-}
 </script>

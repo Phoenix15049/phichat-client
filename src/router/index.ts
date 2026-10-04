@@ -4,7 +4,6 @@ import RegisterView from '../views/RegisterView.vue'
 import ChatView from '../views/ChatView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import ContactsView from '../views/ContactsView.vue'
-import ConversationsView from '../views/ConversationsView.vue'
 import { getToken, isJwtExpired } from '../services/auth'
 import { getValidAccessToken, onSessionExpired } from '../services/api'
 
@@ -15,8 +14,7 @@ const routes = [
   { path: '/chat', component: ChatView },
   { path: '/settings', component: SettingsView },
   { path: '/contacts', component: ContactsView },
-  { path: '/u/:username', component: ChatView, props: true },
-  { path: '/conversations', component: ConversationsView }
+  { path: '/u/:username', component: ChatView, props: true }
 ]
 
 const router = createRouter({

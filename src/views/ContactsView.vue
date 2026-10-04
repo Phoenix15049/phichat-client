@@ -40,7 +40,7 @@
             class="w-9 h-9 rounded-full grid place-items-center text-white text-xs font-semibold
                    bg-gradient-to-br from-[#456173] to-[#1B3C59]"
           >
-            {{ initials(c.displayName || c.username) }}
+            {{ initialsOf(c.displayName || c.username) }}
           </div>
 
           <div class="flex flex-col min-w-0">
@@ -100,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import { initialsOf } from '../utils/avatar'
 import { X, MessageSquare, Trash2, ArrowUpAZ, ArrowDownAZ, UserPlus } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { getMyContacts, addContact, removeContact, getUserByUsername } from '../services/api'
@@ -181,30 +182,7 @@ function openChat(c: Contact) {
 }
 
 // helpers
-function initials(name?: string) {
-  if (!name) return 'U'
-  const parts = name.trim().split(/\s+/).slice(0,2)
-  return parts.map(p => p[0]?.toUpperCase() ?? '').join('')
-}
 
-// ripple directive (local)
-const vRipple = {
-  mounted(el: HTMLElement) {
-    el.style.position ||= 'relative'
-    el.style.overflow ||= 'hidden'
-    el.addEventListener('click', (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect()
-      const size = Math.max(rect.width, rect.height) * 1.1
-      const span = document.createElement('span')
-      span.className = 'ripple-ink'
-      span.style.width = span.style.height = `${size}px`
-      span.style.left = `${e.clientX - rect.left - size/2}px`
-      span.style.top  = `${e.clientY - rect.top  - size/2}px`
-      el.appendChild(span)
-      span.addEventListener('animationend', () => span.remove())
-    })
-  }
-}
 </script>
 
 <style scoped>
@@ -234,15 +212,4 @@ const vRipple = {
 .list-fade-enter-active,
 .list-fade-leave-active { transition: opacity .16s ease, transform .16s ease; }
 
-/* ripple (global so dynamic span is styled) */
-:global(.ripple-ink) {
-  position: absolute;
-  border-radius: 9999px;
-  background: currentColor;
-  opacity: .15;
-  transform: scale(0);
-  pointer-events: none;
-  animation: ripple .5s ease-out forwards;
-}
-@keyframes ripple { to { transform: scale(4); opacity: 0; } }
 </style>

@@ -142,9 +142,6 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  ObjectDirective
-} from 'vue'
 
 import {
   File as FileIcon,
@@ -191,93 +188,4 @@ function onCaptionInput(
   )
 }
 
-const rippleHandlers =
-  new WeakMap<
-    HTMLElement,
-    (event: MouseEvent) => void
-  >()
-
-const vRipple:
-  ObjectDirective<HTMLElement> = {
-    mounted(element) {
-      element.style.position ||=
-        'relative'
-
-      element.style.overflow ||=
-        'hidden'
-
-      const handler = (
-        event: MouseEvent
-      ) => {
-        const rect =
-          element.getBoundingClientRect()
-
-        const size =
-          Math.max(
-            rect.width,
-            rect.height
-          ) * 1.1
-
-        const ripple =
-          document.createElement('span')
-
-        ripple.className =
-          'ripple-ink'
-
-        ripple.style.width =
-          `${size}px`
-
-        ripple.style.height =
-          `${size}px`
-
-        ripple.style.left =
-          `${
-            event.clientX -
-            rect.left -
-            size / 2
-          }px`
-
-        ripple.style.top =
-          `${
-            event.clientY -
-            rect.top -
-            size / 2
-          }px`
-
-        element.appendChild(ripple)
-
-        ripple.addEventListener(
-          'animationend',
-          () => ripple.remove(),
-          {
-            once: true
-          }
-        )
-      }
-
-      rippleHandlers.set(
-        element,
-        handler
-      )
-
-      element.addEventListener(
-        'click',
-        handler
-      )
-    },
-
-    beforeUnmount(element) {
-      const handler =
-        rippleHandlers.get(element)
-
-      if (handler) {
-        element.removeEventListener(
-          'click',
-          handler
-        )
-      }
-
-      rippleHandlers.delete(element)
-    }
-  }
 </script>

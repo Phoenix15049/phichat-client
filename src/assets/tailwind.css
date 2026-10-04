@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+/* The UI is designed for a light theme only; keep browsers from applying dark-mode defaults. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+/* Ink element created by the v-ripple directive (src/directives/ripple.ts). */
+.ripple-ink {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: .15;
+  transform: scale(0);
+  pointer-events: none;
+  animation: ripple .5s ease-out forwards;
+}
+
+@keyframes ripple {
+  to { transform: scale(4); opacity: 0; }
+}
