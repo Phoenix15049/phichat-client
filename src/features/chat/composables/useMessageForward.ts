@@ -14,6 +14,7 @@ import type {
   UiConversation,
   UiMessage
 } from '../../../types/chat'
+import type { Outbox } from './useOutbox'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
@@ -64,6 +65,8 @@ type UseMessageForwardOptions = {
 
   openUserChat:
     (user: ChatReference) => Promise<void>
+
+  outbox: Outbox
 }
 
 export function useMessageForward({
@@ -80,7 +83,8 @@ export function useMessageForward({
   getOrLoadKey,
   appendOutgoingMessage,
   updateConversationAfterSend,
-  openUserChat
+  openUserChat,
+  outbox
 }: UseMessageForwardOptions) {
   const forwardNames =
     reactive<Record<string, string>>({})
@@ -315,16 +319,18 @@ export function useMessageForward({
                 new Date().toISOString()
             }
 
-        await sendMessage(
-          toPeerId,
-          encrypted,
-          source.fileUrl || null,
-          clientId,
-          null,
+        await outbox.send(clientId, () =>
+          sendMessage(
+            toPeerId,
+            encrypted,
+            source.fileUrl || null,
+            clientId,
+            null,
 
-          source.forwardedFromMessageId ||
-            source.id ||
-            null
+            source.forwardedFromMessageId ||
+              source.id ||
+              null
+          )
         )
 
         updateConversationAfterSend(
@@ -421,20 +427,22 @@ export function useMessageForward({
               null
             : null
 
-        await sendMessage(
-          toPeerId,
-          encrypted,
+        await outbox.send(clientId, () =>
+          sendMessage(
+            toPeerId,
+            encrypted,
 
-          sourceMessage.fileUrl ||
+            sourceMessage.fileUrl ||
+              null,
+
+            clientId,
             null,
 
-          clientId,
-          null,
-
-          sourceMessage
-            .forwardedFromMessageId ||
-            sourceMessage.id ||
-            null
+            sourceMessage
+              .forwardedFromMessageId ||
+              sourceMessage.id ||
+              null
+          )
         )
       }
 

@@ -16,6 +16,7 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
+import type { Outbox } from './useOutbox'
 
 
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
@@ -50,6 +51,8 @@ type UseMessageFilesOptions = {
     >,
     username?: string
   ) => void
+
+  outbox: Outbox
 }
 
 export function useMessageFiles({
@@ -57,7 +60,8 @@ export function useMessageFiles({
   replyingTo,
   getOrLoadKey,
   appendOutgoingMessage,
-  updateConversationAfterSend
+  updateConversationAfterSend,
+  outbox
 }: UseMessageFilesOptions) {
   const fileInput =
     ref<HTMLInputElement | null>(null)
@@ -331,9 +335,12 @@ export function useMessageFiles({
           clientId
         )
 
-        await sendMessageWithFileFD(
-          formData
-        )
+        // One failed file does not stop the others; it can be retried from its bubble.
+        await outbox.send(clientId, async () => {
+          await sendMessageWithFileFD(
+            formData
+          )
+        })
       }
 
       if (lastOutgoing) {

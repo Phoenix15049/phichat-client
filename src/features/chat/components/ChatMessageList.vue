@@ -134,8 +134,29 @@
             <span v-if="msg.senderId===myId">
               <CheckCheck v-if="msg.status==='read'" class="w-3 h-3"/>
               <Check v-else-if="msg.status==='delivered'" class="w-3 h-3"/>
+              <AlertCircle v-else-if="msg.status==='failed'" class="w-3.5 h-3.5 text-red-600" aria-label="Not sent"/>
               <Loader2 v-else class="w-3 h-3 animate-spin"/>
             </span>
+          </div>
+
+          <div
+            v-if="msg.senderId===myId&&msg.status==='failed'"
+            class="mt-1 flex items-center justify-end gap-2 text-[12px]"
+          >
+            <span class="opacity-90">Not sent</span>
+            <button
+              v-if="actions.canRetry(msg)"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[#1B3C59] hover:bg-white"
+              @click.stop="actions.retrySend(msg)"
+            >
+              <RotateCw class="w-3 h-3"/> Retry
+            </button>
+            <button
+              type="button"
+              class="rounded-full px-2 py-0.5 hover:bg-white/15"
+              @click.stop="actions.discardFailed(msg)"
+            >Remove</button>
           </div>
 
           <Transition name="fade-scale">
@@ -280,7 +301,7 @@
 
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
-import { Check, CheckCheck, ChevronDown, Download, Loader2 } from 'lucide-vue-next'
+import { AlertCircle, Check, CheckCheck, ChevronDown, Download, Loader2, RotateCw } from 'lucide-vue-next'
 import { formatAbsoluteEn, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
 
@@ -327,6 +348,9 @@ type MessageActions={
   edit:()=>void
   canEdit:(message:UiMessage|null)=>boolean
   deleteMessage:(message:UiMessage)=>void
+  retrySend:(message:UiMessage)=>void
+  discardFailed:(message:UiMessage)=>void
+  canRetry:(message:UiMessage)=>boolean
 }
 
 const props=defineProps<{

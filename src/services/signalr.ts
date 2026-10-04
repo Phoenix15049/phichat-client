@@ -41,6 +41,18 @@ let activeToken: string | null = null
 let reconnectTimer: number | null = null
 let manualDisconnect = false
 
+// Reconnect backoff after the connection is lost: 1.5s, 3s, 6s ... capped at 30s.
+let reconnectAttempt = 0
+const RECONNECT_BASE_MS = 1500
+const RECONNECT_MAX_MS = 30_000
+
+function nextReconnectDelay() {
+  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** reconnectAttempt)
+  reconnectAttempt++
+  // Jitter so many clients do not reconnect in lockstep after a server restart.
+  return delay * (0.8 + Math.random() * 0.4)
+}
+
 const messageReceivedHandlers = new Set<Handler<[any]>>()
 const deliveredHandlers = new Set<Handler<[any]>>()
 const messageReadHandlers = new Set<Handler<[any]>>()
@@ -144,7 +156,7 @@ function scheduleReconnect() {
         .catch(() => {
           scheduleReconnect()
         })
-    }, 1500)
+    }, nextReconnectDelay())
 }
 
 async function getConnectedHub():
@@ -410,6 +422,8 @@ export async function connectToChatHub(
         await next.stop()
         return
       }
+
+      reconnectAttempt = 0
 
       await refreshOnlineSnapshot(
         next
