@@ -282,3 +282,31 @@ function bindMediaInput(
 }
 
 </script>
+
+<style scoped>
+.composer textarea {
+  resize: none !important;
+  overflow-y: auto;
+}
+.composer textarea::-webkit-resizer { display: none; } 
+
+
+.tg-text{
+  -ms-overflow-style: none;   /* IE/Edge legacy */
+  scrollbar-width: none;      /* Firefox */
+}
+.tg-text::-webkit-scrollbar{  /* Chrome/Safari */
+  width:0; height:0;
+}
+
+.tg-fade{
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
+          mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
+}
+
+/* منوی سنجاق: از پایین به بالا پاپ شود */
+.clip-pop-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); transform-origin: bottom right; }
+.clip-pop-enter-active { transition: opacity .12s ease, transform .12s ease; }
+.clip-pop-leave-active { transition: opacity .10s ease, transform .10s ease; }
+.clip-pop-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
+</style>

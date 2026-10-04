@@ -24,3 +24,42 @@ body {
 @keyframes ripple {
   to { transform: scale(4); opacity: 0; }
 }
+
+/* unified inputs & buttons using your palette */
+.input {
+  @apply border rounded-lg px-3 py-2 outline-none bg-white
+         ring-1 ring-[#456173]/15
+         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+}
+.btn-primary {
+  @apply inline-flex items-center justify-center
+         bg-[#11BFAE] text-white rounded-lg px-4 py-2
+         ring-1 ring-[#11BFAE]/20
+         hover:bg-[#10B2A3] hover:ring-[#11BFAE]/30
+         transition disabled:opacity-60;
+}
+.btn-outline {
+  @apply inline-flex items-center justify-center
+         bg-white text-[#1B3C59] rounded-lg px-3 py-2
+         ring-1 ring-[#456173]/25
+         hover:bg-[#F2F2F0] hover:ring-[#456173]/40
+         transition disabled:opacity-60;
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center
+         text-[#456173] rounded-lg px-2 py-1
+         ring-1 ring-transparent
+         hover:bg-[#F2F2F0] hover:text-[#1B3C59]
+         transition;
+}
+.btn-danger {
+  @apply inline-flex items-center justify-center
+         text-red-600 rounded-lg px-2 py-1
+         ring-1 ring-red-500/10
+         hover:bg-red-50 hover:ring-red-500/30
+         transition;
+}
+
+/* Text that follows its own direction (mixed Persian / English). */
+.auto-dir { unicode-bidi: plaintext; }
+.text-start { text-align: start; }

@@ -264,32 +264,37 @@
 
 
 
-<script setup lang="ts">//----------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
+<script setup lang="ts">
+import { ref, onMounted, nextTick, onBeforeUnmount, reactive, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 
+import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
+import ChatConversationHeader from '../features/chat/components/ChatConversationHeader.vue'
+import ChatMessageList from '../features/chat/components/ChatMessageList.vue'
+import ChatComposer from '../features/chat/components/ChatComposer.vue'
+import ChatFileSendModal from '../features/chat/components/ChatFileSendModal.vue'
 import ChatMediaSendModal from '../features/chat/components/ChatMediaSendModal.vue'
 import ChatForwardPicker from '../features/chat/components/ChatForwardPicker.vue'
 import ChatDeleteConfirmDialog from '../features/chat/components/ChatDeleteConfirmDialog.vue'
-import ChatMessageList from '../features/chat/components/ChatMessageList.vue'
-import ChatFileSendModal from '../features/chat/components/ChatFileSendModal.vue'
-import ChatComposer from '../features/chat/components/ChatComposer.vue'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
-import ContactsView from './ContactsView.vue'   // NEW
-
-import ChatConversationHeader from '../features/chat/components/ChatConversationHeader.vue'
-
-const showContacts = ref(false)                 // NEW
-
 import PeerProfileModal from '../components/PeerProfileModal.vue'
+import MediaImageViewer from '../components/MediaImageViewer.vue'
+import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
+import ContactsView from './ContactsView.vue'
 import SettingsView from './SettingsView.vue'
 
-import { ref, onMounted,nextTick,onBeforeUnmount,reactive,computed, watch  } from 'vue'
-import { getMessageBrief} from '../services/api'
+import {
+  addContact,
+  getConversationPaged,
+  getConversations,
+  getMessageBrief,
+  getMyContacts,
+  getUserByUsername,
+  removeContact
+} from '../services/api'
 import {
   connectToChatHub,
   createChatHubSubscriptionScope,
@@ -299,38 +304,10 @@ import {
   stopTyping,
   fetchOnlineUsers
 } from '../services/signalr'
-import {
-  decryptAES,
-  importAESKey,
-  generateAESKey,
-  exportAESKey,
-
-
-} from '../services/crypto'
-import {
-  getChatKey,
-  getUserByUsername,
-  storeChatKey,
-  getConversationPaged,
-  getConversations,
-  getUserById,
-  getMeProfile
-} from '../services/api'
-import {
-  saveAESKey,
-  loadAESKey
-} from '../utils/aesKeyStore'
-
-import { useRoute ,useRouter} from 'vue-router'
-import {toDateSafe,formatRelativeEn} from "../utils/time";
-import MediaImageViewer from '../components/MediaImageViewer.vue'
-import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
-import {getMyContacts, addContact, removeContact } from '../services/api'
-
-import { isJwtExpired,parseJwt,getToken } from '../services/auth'
-
+import { decryptAES } from '../services/crypto'
+import { isJwtExpired, getToken } from '../services/auth'
 import { toAbsoluteServerUrl } from '../config/server'
-import { EMPTY_MSG_MARKER } from '../utils/messageText'
+import { useSessionStore } from '../stores/session'
 
 import type {
   ChatUser,
@@ -340,11 +317,15 @@ import type {
   UiMessage,
   UserApiItem
 } from '../types/chat'
+import { mapServerMessage } from '../utils/messageMapper'
+import { EMPTY_MSG_MARKER } from '../utils/messageText'
+import { formatRelativeEn } from '../utils/time'
+import { normalizeUsername } from '../utils/username'
 
-import {
-  mapServerMessage
-} from '../utils/messageMapper'
-
+import { useChatKeys } from '../features/chat/composables/useChatKeys'
+import { usePeerDirectory } from '../features/chat/composables/usePeerDirectory'
+import { useConversations, type IncomingMessage } from '../features/chat/composables/useConversations'
+import { useOutbox } from '../features/chat/composables/useOutbox'
 import { useChatComposer } from '../features/chat/composables/useChatComposer'
 import { useMessageSelection } from '../features/chat/composables/useMessageSelection'
 import { useMessageContext } from '../features/chat/composables/useMessageContext'
@@ -353,9 +334,8 @@ import { useMessageReactions } from '../features/chat/composables/useMessageReac
 import { useMessageForward } from '../features/chat/composables/useMessageForward'
 import { useMessageFiles } from '../features/chat/composables/useMessageFiles'
 import { useMessageMedia } from '../features/chat/composables/useMessageMedia'
-import { useOutbox } from '../features/chat/composables/useOutbox'
 
-import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
+const showContacts = ref(false)
 
 function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
@@ -376,11 +356,20 @@ function resolveReplyPreview(replyId?: string | null): string {
 const route = useRoute()
 const router = useRouter()
 
-const myId = ref<string>('')
+// The signed-in user lives in the session store, shared with the side menu, profile and settings.
+const session = useSessionStore()
+const { userId: myId, me: meProfile } = storeToRefs(session)
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const outbox = useOutbox({ messages })
+
+const {
+  getOrLoadKey,
+  loadExistingChatKey,
+  invalidateChatKeyRequests,
+  rememberActiveUser
+} = useChatKeys({ myId })
 
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
@@ -404,17 +393,41 @@ let chatSessionId = 0
 
 const conversations = ref<UiConversation[]>([])
 
-const ACTIVE_UID_KEY = 'phi.activeUserId';
+const {
+  onlineIds,
+  lastSeenMap,
+  avatarById,
+  displayById,
+  cachePeerUser,
+  ensurePeerCached,
+  markOnline,
+  markOffline,
+  setOnlineSnapshot,
+  setLastSeen,
+  resetPeers
+} = usePeerDirectory({ conversations })
 
-/** Shown for an incoming message until its text is decrypted. */
-const NEW_MESSAGE_PLACEHOLDER = 'پیام جدید'
+const {
+  setConversations,
+  updateConversationAfterSend,
+  upsertIncomingConversation,
+  updateIncomingPreview,
+  refreshConversationPreview,
+  incomingFileUrl
+} = useConversations({
+  conversations,
+  selectedUser,
+  peers: { displayById, avatarById, ensurePeerCached },
+  loadExistingChatKey
+})
+
+
 
 const toast = reactive({ show: false, text: '' })
 
 const menuOpen = ref(false)
 const showProfile = ref(false)
 const showSettings = ref(false)
-const meProfile = ref<Partial<ChatUser> | null>(null)
 
 type ChatTarget = {
   id: string
@@ -490,83 +503,8 @@ const {
 })
 
 
-const onlineIds = reactive(new Set<string>())
-const lastSeenMap = reactive<Record<string, string | null>>({})
-const avatarById  = reactive<Record<string, string | null>>({})
-const displayById = reactive<Record<string, string | null>>({})
 
-type PeerMeta = {
-  username: string
-  displayName: string | null
-  avatarUrl: string | null
-  lastSeenUtc: string | null
-}
 
-const loadedPeerIds = new Set<string>()
-const peerRequests = new Map<string, Promise<PeerMeta | null>>()
-let peerCacheGeneration = 0
-
-const chatKeyRequests = new Map<string, Promise<CryptoKey>>()
-let chatKeyGeneration = 0
-
-function invalidateChatKeyRequests() {
-  chatKeyGeneration++
-  chatKeyRequests.clear()
-}
-
-function assertActiveChatKeyRequest(
-  ownerId: string,
-  generation: number
-) {
-  if (
-    generation !== chatKeyGeneration ||
-    ownerId !== myId.value
-  ) {
-    throw new Error('Chat key request is no longer active')
-  }
-}
-
-function cachedPeerMeta(userId: string): PeerMeta {
-  const conversation = conversations.value.find(item => item.peerId === userId)
-
-  return {
-    username: conversation?.username ?? '',
-    displayName: displayById[userId] ?? conversation?.displayName ?? null,
-    avatarUrl: avatarById[userId] ?? conversation?.avatarUrl ?? null,
-    lastSeenUtc: lastSeenMap[userId] ?? null
-  }
-}
-
-function normalizePeerMeta(user: UserApiItem): PeerMeta {
-  return {
-    username: normalizeUsername(user.username ?? user.Username ?? ''),
-    displayName: (user.displayName ?? user.DisplayName ?? '').trim() || null,
-    avatarUrl: user.avatarUrl ?? user.AvatarUrl ?? null,
-    lastSeenUtc: user.lastSeenUtc ?? user.LastSeenUtc ?? null
-  }
-}
-
-function applyPeerMeta(userId: string, meta: PeerMeta) {
-  displayById[userId] = meta.displayName ?? displayById[userId] ?? null
-  avatarById[userId] = meta.avatarUrl ?? avatarById[userId] ?? null
-
-  if (meta.lastSeenUtc) lastSeenMap[userId] = meta.lastSeenUtc
-
-  const conversation = conversations.value.find(item => item.peerId === userId)
-  if (!conversation) return
-
-  if (meta.username) conversation.username = meta.username
-  if (meta.displayName) conversation.displayName = meta.displayName
-  if (meta.avatarUrl) conversation.avatarUrl = meta.avatarUrl
-}
-
-function cachePeerUser(user: UserApiItem) {
-  const userId = String(user.id ?? user.Id ?? '')
-  if (!userId) return
-
-  loadedPeerIds.add(userId)
-  applyPeerMeta(userId, normalizePeerMeta(user))
-}
 
 const peerStatus = computed(() => {
   const su = selectedUser.value
@@ -590,15 +528,6 @@ const signalR = createChatHubSubscriptionScope()
 const isNarrow = ref(false)
 const showListPane = computed(() => !isNarrow.value || !selectedUser.value)
 const showChatPane = computed(() => !isNarrow.value || !!selectedUser.value)
-//----------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
-
-
-
-//----------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------
-
-
 async function onHeaderBack() {
   if (chatNavStack.value.length) {
     await goBackChat()
@@ -617,46 +546,10 @@ function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
   startReplyFrom(m)
 }
 
-async function ensurePeerCached(userId: string): Promise<PeerMeta | null> {
-  if (!userId) return null
-  if (loadedPeerIds.has(userId)) return cachedPeerMeta(userId)
-
-  const pending = peerRequests.get(userId)
-  if (pending) return pending
-
-  const generation = peerCacheGeneration
-
-  const request = (async () => {
-    try {
-      const user = await getUserById(userId)
-      const meta = normalizePeerMeta(user)
-
-      if (generation === peerCacheGeneration) {
-        cachePeerUser(user)
-      }
-
-      return meta
-    } catch {
-      return null
-    }
-  })()
-
-  peerRequests.set(userId, request)
-
-  void request.finally(() => {
-    if (peerRequests.get(userId) === request) peerRequests.delete(userId)
-  })
-
-  return request
-}
-
 function resetState() {
   chatSessionId++
-  peerCacheGeneration++
+  resetPeers()
   invalidateChatKeyRequests()
-
-  loadedPeerIds.clear()
-  peerRequests.clear()
 
   conversations.value = []
   messages.value = []
@@ -667,11 +560,6 @@ function resetState() {
   hasMore.value = true
   oldestId.value = null
 
-  for (const key in displayById) delete displayById[key]
-  for (const key in avatarById) delete avatarById[key]
-  for (const key in lastSeenMap) delete lastSeenMap[key]
-
-  onlineIds.clear()
   clearPeerTyping()
 
   text.value = ''
@@ -752,61 +640,6 @@ async function appendOutgoingMessage(
 
   return message
 }
-
-function updateConversationAfterSend(
-  peerId: string,
-  message: Pick<
-    UiMessage,
-    'plainText' | 'fileUrl' | 'sentAt'
-  >,
-  username?: string
-) {
-  const index = conversations.value.findIndex(
-    conversation =>
-      conversation.peerId === peerId
-  )
-
-  const sentAt =
-    message.sentAt ??
-    new Date().toISOString()
-
-  if (index < 0) {
-    if (!username) return
-
-    conversations.value.unshift({
-      peerId,
-      username,
-      displayName:
-        displayById[peerId] ?? null,
-
-      avatarUrl:
-        avatarById[peerId] ?? null,
-
-      unreadCount: 0,
-      lastSentAt: sentAt,
-      lastFileUrl: message.fileUrl,
-
-      lastPreview:
-        message.plainText ||
-        (message.fileUrl ? null : '')
-    })
-
-    return
-  }
-
-  const conversation =
-    conversations.value[index]
-
-  conversation.lastSentAt = sentAt
-  conversation.lastFileUrl = message.fileUrl
-
-  conversation.lastPreview =
-    message.plainText ||
-    (message.fileUrl ? null : '')
-
-  moveConversationToTop(index)
-}
-
 
 function onConvDblClick(conv: UiConversation) {
   if (selectedUser.value?.id === conv.peerId) {
@@ -923,10 +756,6 @@ async function decryptMessageText(base64?: string | null): Promise<string> {
   } catch {
     return '[رمزگشایی نشد]'
   }
-}
-
-function normalizeUsername(username: string) {
-  return username.replace(/^@/, '').trim()
 }
 
 function currentChatRef(): ChatTarget | null {
@@ -1475,37 +1304,6 @@ function unregisterPageListeners() {
   window.removeEventListener('resize', onWindowResize)
 }
 
-function loadAESKeyScoped(
-  ownerId: string,
-  partnerId: string
-) {
-  try {
-    const activeUserId = localStorage.getItem(ACTIVE_UID_KEY)
-    if (!activeUserId || activeUserId !== ownerId) return null
-  } catch {
-    return null
-  }
-
-  return loadAESKey(partnerId)
-}
-
-async function saveAESKeyScoped(
-  ownerId: string,
-  partnerId: string,
-  key: CryptoKey
-) {
-  if (ownerId !== myId.value) {
-    throw new Error('Authenticated user changed')
-  }
-
-  try {
-    localStorage.setItem(ACTIVE_UID_KEY, ownerId)
-  } catch {}
-
-  await saveAESKey(partnerId, key)
-}
-
-
 function scrollToMessageEl(el: HTMLElement) {
   const sc = scrollBox.value as HTMLElement | null
   if (!sc) return
@@ -1759,9 +1557,8 @@ async function initializeChatPage() {
   if (!pageAlive) return
 
   if (token) {
-    const payload = parseJwt(token)
-    myId.value = payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? ''
-    try { localStorage.setItem(ACTIVE_UID_KEY, myId.value); } catch {}
+    session.syncFromToken()
+    rememberActiveUser(myId.value)
 
     wireSignalR()
 
@@ -1772,11 +1569,7 @@ async function initializeChatPage() {
       const ids = await fetchOnlineUsers()
       if (!pageAlive) return
 
-      onlineIds.clear()
-
-      ids.forEach(id => {
-        onlineIds.add(String(id))
-      })
+      setOnlineSnapshot(ids)
     } catch (error) {
       if (pageAlive) {
         console.warn(
@@ -1792,40 +1585,10 @@ async function initializeChatPage() {
     const data = await getConversations()
     if (!pageAlive) return
 
-    const me = await getMeProfile()
+    await session.loadMe()
     if (!pageAlive) return
 
-    meProfile.value = me
-
-    conversations.value = (data || []).map((c: any) => ({
-        peerId: c.peerId || c.PeerId,
-        username: c.peerUsername || c.PeerUsername || '',
-        displayName: c.peerDisplayName || c.PeerDisplayName || null,
-        avatarUrl: c.peerAvatarUrl || c.PeerAvatarUrl || null,
-        unreadCount: c.unreadCount ?? c.UnreadCount ?? 0,
-        lastSentAt: c.lastSentAt || c.LastSentAt || null,
-        lastFileUrl: c.lastFileUrl || c.LastFileUrl || null,
-        lastPreview: null 
-      }))
-
-
-      for (const c of conversations.value) {
-          if (c.displayName) displayById[c.peerId] = c.displayName
-          if (c.avatarUrl)   avatarById[c.peerId]  = c.avatarUrl
-        }
-
-
-      conversations.value.sort((a, b) => {
-        const ta = toDateSafe(a.lastSentAt)?.getTime() || 0
-        const tb = toDateSafe(b.lastSentAt)?.getTime() || 0
-        return tb - ta
-      })
-
-      for (const c of data || []) {
-        if (c.lastEncryptedContent && !c.lastFileUrl) {
-          void refreshConversationPreview(c.peerId, c.lastEncryptedContent)
-        }
-      }
+    setConversations(data || [])
     } catch (error) {
       if (pageAlive) {
         console.warn(
@@ -1869,11 +1632,8 @@ onBeforeUnmount(() => {
   routeSyncRequestId++
   chatSessionId++
 
-  peerCacheGeneration++
-
   invalidateChatKeyRequests()
-  loadedPeerIds.clear()
-  peerRequests.clear()
+  resetPeers()
 
   unregisterPageListeners()
   disposeSelection()
@@ -1885,125 +1645,13 @@ onBeforeUnmount(() => {
   void disconnectFromChatHub().catch(() => {})
 })
 
-type IncomingMessage = ServerMessage & {
-  senderUsername?: string
-  SenderUsername?: string
-}
-
-function moveConversationToTop(index: number) {
-  if (index <= 0) return
-
-  const [conversation] = conversations.value.splice(index, 1)
-  if (conversation) conversations.value.unshift(conversation)
-}
-
-function incomingSentAt(message: ServerMessage) {
-  return message.sentAt ?? message.SentAt ?? new Date().toISOString()
-}
-
-function incomingFileUrl(message: ServerMessage) {
-  return toAbsoluteFileUrl(message.fileUrl ?? message.FileUrl ?? null)
-}
-
-function incomingUsername(message: IncomingMessage) {
-  return normalizeUsername(message.senderUsername ?? message.SenderUsername ?? '')
-}
-
-function upsertIncomingConversation(
-  peerId: string,
-  message: IncomingMessage,
-  incrementUnread: boolean
-) {
-  const sentAt = incomingSentAt(message)
-  const fileUrl = incomingFileUrl(message)
-  const index = conversations.value.findIndex(item => item.peerId === peerId)
-
-  if (index >= 0) {
-    const conversation = conversations.value[index]
-
-    conversation.lastSentAt = sentAt
-    conversation.lastFileUrl = fileUrl
-    conversation.lastPreview = fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
-    conversation.unreadCount = incrementUnread
-      ? conversation.unreadCount + 1
-      : 0
-
-    moveConversationToTop(index)
-    return
-  }
-
-  const username =
-    incomingUsername(message) ||
-    (selectedUser.value?.id === peerId ? selectedUser.value.username : '') ||
-    peerId
-
-  conversations.value.unshift({
-    peerId,
-    username,
-    displayName: displayById[peerId] ?? null,
-    avatarUrl: avatarById[peerId] ?? null,
-    unreadCount: incrementUnread ? 1 : 0,
-    lastSentAt: sentAt,
-    lastFileUrl: fileUrl,
-    lastPreview: fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
-  })
-
-  void ensurePeerCached(peerId)
-}
-
-function updateIncomingPreview(peerId: string, message: UiMessage) {
-  const index = conversations.value.findIndex(item => item.peerId === peerId)
-  if (index < 0) return
-
-  const conversation = conversations.value[index]
-
-  conversation.lastSentAt = message.sentAt ?? conversation.lastSentAt
-  conversation.lastFileUrl = message.fileUrl
-  conversation.lastPreview =
-    message.plainText || (message.fileUrl ? null : '')
-
-  moveConversationToTop(index)
-}
-
 function wireSignalR() {
   signalR.dispose()
 
-  signalR.onUserOnline(userId => {
-    onlineIds.add(
-      String(userId)
-    )
-  })
-
-  signalR.onUserOffline(
-    (userId, when) => {
-      const id =
-        String(userId)
-
-      onlineIds.delete(id)
-
-      if (when) {
-        lastSeenMap[id] = when
-      }
-    }
-  )
-
-  signalR.onOnlineSnapshot(ids => {
-    onlineIds.clear()
-
-    ids.forEach(id => {
-      onlineIds.add(
-        String(id)
-      )
-    })
-  })
-
-  signalR.onUserLastSeen(
-    (userId, whenIso) => {
-      lastSeenMap[
-        String(userId)
-      ] = whenIso
-    }
-  )
+  signalR.onUserOnline(markOnline)
+  signalR.onUserOffline(markOffline)
+  signalR.onOnlineSnapshot(setOnlineSnapshot)
+  signalR.onUserLastSeen(setLastSeen)
   signalR.onMessageReceived(async rawMessage => {
     const message = rawMessage as IncomingMessage
     const senderId = String(message.senderId ?? message.SenderId ?? '')
@@ -2241,246 +1889,13 @@ async function handleUserSelect(user: ChatTarget) {
 }
 
 
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    window.setTimeout(resolve, ms)
-  })
-}
-
-
 /**
  * The chat key if one already exists (cached locally or stored on the server).
  * Unlike getOrLoadKey it never creates a key, so it is safe for previews.
  */
-async function loadExistingChatKey(partnerId: string): Promise<CryptoKey | null> {
-  const ownerId = myId.value
-  if (!ownerId || !partnerId) return null
-
-  const local = await loadAESKeyScoped(ownerId, partnerId)
-  if (local) return local
-
-  const pending = chatKeyRequests.get(`${ownerId}:${partnerId}`)
-  if (pending) return pending
-
-  const base64Key = await getChatKey(partnerId)
-  if (!base64Key || ownerId !== myId.value) return null
-
-  const key = await importAESKey(base64Key)
-  await saveAESKeyScoped(ownerId, partnerId, key)
-  return key
-}
-
-/** Latest preview request per conversation; older decryptions finishing late are ignored. */
-const previewRequests = new Map<string, string>()
 
 /** Decrypts a conversation's last message into its list preview (best effort). */
-async function refreshConversationPreview(peerId: string, cipher: string) {
-  previewRequests.set(peerId, cipher)
-
-  try {
-    const key = await loadExistingChatKey(peerId)
-    if (!key) return
-
-    const plain = await decryptAES(key, cipher)
-    if (previewRequests.get(peerId) !== cipher) return
-    if (!plain || plain === EMPTY_MSG_MARKER) return
-
-    const conversation = conversations.value.find(item => item.peerId === peerId)
-    // Only fill in if nothing newer replaced the preview meanwhile.
-    if (conversation && !conversation.lastFileUrl && (conversation.lastPreview == null || conversation.lastPreview === NEW_MESSAGE_PLACEHOLDER)) {
-      conversation.lastPreview = plain
-    }
-  } catch {}
-}
-
-async function resolveChatKey(
-  ownerId: string,
-  partnerId: string,
-  generation: number
-): Promise<CryptoKey> {
-  let key = await loadAESKeyScoped(ownerId, partnerId)
-  if (key) return key
-
-  assertActiveChatKeyRequest(ownerId, generation)
-
-  let base64Key = await getChatKey(partnerId)
-  assertActiveChatKeyRequest(ownerId, generation)
-
-  if (!base64Key) {
-    await delay(250)
-    assertActiveChatKeyRequest(ownerId, generation)
-
-    base64Key = await getChatKey(partnerId)
-    assertActiveChatKeyRequest(ownerId, generation)
-  }
-
-  if (base64Key) {
-    key = await importAESKey(base64Key)
-    assertActiveChatKeyRequest(ownerId, generation)
-
-    await saveAESKeyScoped(ownerId, partnerId, key)
-    return key
-  }
-
-  const newKey = await generateAESKey()
-  const rawKey = await exportAESKey(newKey)
-
-  assertActiveChatKeyRequest(ownerId, generation)
-
-  const exportedKey = btoa(
-    String.fromCharCode(...rawKey)
-  )
-
-  await storeChatKey({
-    receiverId: partnerId,
-    encryptedKey: exportedKey
-  })
-
-  assertActiveChatKeyRequest(ownerId, generation)
-
-  await saveAESKeyScoped(
-    ownerId,
-    partnerId,
-    newKey
-  )
-
-  return newKey
-}
-
-function getOrLoadKey(
-  partnerId: string
-): Promise<CryptoKey> {
-  const ownerId = myId.value
-
-  if (!ownerId || !partnerId) {
-    return Promise.reject(
-      new Error('Chat key owner or partner is missing')
-    )
-  }
-
-  const requestId = `${ownerId}:${partnerId}`
-  const pending = chatKeyRequests.get(requestId)
-
-  if (pending) return pending
-
-  const generation = chatKeyGeneration
-
-  const request = resolveChatKey(
-    ownerId,
-    partnerId,
-    generation
-  ).finally(() => {
-    if (chatKeyRequests.get(requestId) === request) {
-      chatKeyRequests.delete(requestId)
-    }
-  })
-
-  chatKeyRequests.set(requestId, request)
-  return request
-}
-
-
 function toAbsoluteFileUrl(url: string | null): string | null {
   return url ? toAbsoluteServerUrl(url) : null
 }
 </script>
-
-<style>
-
-/* منوی راست‌کلیک: پاپ/محو کوتاه */
-.fade-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); transform-origin: bottom right; }
-.fade-enter-active { transition: opacity .12s ease, transform .12s ease; }
-.fade-leave-active { transition: opacity .10s ease, transform .10s ease; }
-.fade-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
-
-
-
-/* منوی سنجاق: از پایین به بالا پاپ شود */
-.clip-pop-enter-from   { opacity: 0; transform: translateY(6px) scale(0.98); transform-origin: bottom right; }
-.clip-pop-enter-active { transition: opacity .12s ease, transform .12s ease; }
-.clip-pop-leave-active { transition: opacity .10s ease, transform .10s ease; }
-.clip-pop-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
-
-/* header (selection/non-selection) slide */
-.slide-down-enter-from { transform: translateY(-6px); opacity: 0; }
-.slide-down-enter-active { transition: transform .1s ease, opacity .1s ease; }
-.slide-down-leave-active { transition: transform .08s ease, opacity .08s ease; }
-.slide-down-leave-to { transform: translateY(-4px); opacity: 0; }
-@reference "tailwindcss";
-
-/* unified inputs & buttons using your palette */
-.input {
-  @apply border rounded-lg px-3 py-2 outline-none bg-white
-         ring-1 ring-[#456173]/15
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
-}
-.btn-primary {
-  @apply inline-flex items-center justify-center
-         bg-[#11BFAE] text-white rounded-lg px-4 py-2
-         ring-1 ring-[#11BFAE]/20
-         hover:bg-[#10B2A3] hover:ring-[#11BFAE]/30
-         transition disabled:opacity-60;
-}
-.btn-outline {
-  @apply inline-flex items-center justify-center
-         bg-white text-[#1B3C59] rounded-lg px-3 py-2
-         ring-1 ring-[#456173]/25
-         hover:bg-[#F2F2F0] hover:ring-[#456173]/40
-         transition disabled:opacity-60;
-}
-.btn-ghost {
-  @apply inline-flex items-center justify-center
-         text-[#456173] rounded-lg px-2 py-1
-         ring-1 ring-transparent
-         hover:bg-[#F2F2F0] hover:text-[#1B3C59]
-         transition;
-}
-.btn-danger {
-  @apply inline-flex items-center justify-center
-         text-red-600 rounded-lg px-2 py-1
-         ring-1 ring-red-500/10
-         hover:bg-red-50 hover:ring-red-500/30
-         transition;
-}
-
-
-.fade-scale-enter-from   { opacity: 0; transform: translateY(4px) scale(0.98); }
-.fade-scale-enter-active { transition: opacity .12s ease, transform .12s ease; }
-.fade-scale-leave-active { transition: opacity .10s ease, transform .10s ease; }
-.fade-scale-leave-to     { opacity: 0; transform: translateY(6px) scale(0.98); }
-
-
-.menu-item:first-child { position: relative; z-index: 0; overflow: hidden; border-top-left-radius: 1rem; border-top-right-radius: 1rem; }
-
-.menu-item + .menu-item {
-  border-top: 1px solid rgba(69,97,115,0.10);
-}
-
-
-.auto-dir { unicode-bidi: plaintext; }
-
-.text-start { text-align: start; }
-
-.composer textarea {
-  resize: none !important;
-  overflow-y: auto;
-}
-.composer textarea::-webkit-resizer { display: none; } 
-
-
-.tg-text{
-  -ms-overflow-style: none;   /* IE/Edge legacy */
-  scrollbar-width: none;      /* Firefox */
-}
-.tg-text::-webkit-scrollbar{  /* Chrome/Safari */
-  width:0; height:0;
-}
-
-.tg-fade{
-  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
-          mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 10px);
-}
-
-
-
-</style>
