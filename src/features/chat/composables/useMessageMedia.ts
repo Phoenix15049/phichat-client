@@ -20,6 +20,7 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
+import type { Outbox } from './useOutbox'
 
 
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
@@ -55,6 +56,8 @@ type UseMessageMediaOptions = {
     >,
     username?: string
   ) => void
+
+  outbox: Outbox
 }
 
 export function useMessageMedia({
@@ -62,7 +65,8 @@ export function useMessageMedia({
   replyingTo,
   getOrLoadKey,
   appendOutgoingMessage,
-  updateConversationAfterSend
+  updateConversationAfterSend,
+  outbox
 }: UseMessageMediaOptions) {
   const mediaInput =
     ref<HTMLInputElement | null>(null)
@@ -368,12 +372,14 @@ export function useMessageMedia({
             }
           )
 
-        await sendMessage(
-          partnerId,
-          encryptedCaption,
-          null,
-          captionMessage.clientId ??
-            null
+        await outbox.send(captionMessage.clientId, () =>
+          sendMessage(
+            partnerId,
+            encryptedCaption,
+            null,
+            captionMessage.clientId ??
+              null
+          )
         )
 
         lastOutgoing =
@@ -478,9 +484,12 @@ export function useMessageMedia({
           clientId
         )
 
-        await sendMessageWithFileFD(
-          formData
-        )
+        // One failed item does not stop the others; it can be retried from its bubble.
+        await outbox.send(clientId, async () => {
+          await sendMessageWithFileFD(
+            formData
+          )
+        })
       }
 
       if (lastOutgoing) {

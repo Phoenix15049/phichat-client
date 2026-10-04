@@ -353,6 +353,7 @@ import { useMessageReactions } from '../features/chat/composables/useMessageReac
 import { useMessageForward } from '../features/chat/composables/useMessageForward'
 import { useMessageFiles } from '../features/chat/composables/useMessageFiles'
 import { useMessageMedia } from '../features/chat/composables/useMessageMedia'
+import { useOutbox } from '../features/chat/composables/useOutbox'
 
 import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
 
@@ -379,6 +380,7 @@ const myId = ref<string>('')
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
+const outbox = useOutbox({ messages })
 
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
@@ -403,6 +405,9 @@ let chatSessionId = 0
 const conversations = ref<UiConversation[]>([])
 
 const ACTIVE_UID_KEY = 'phi.activeUserId';
+
+/** Shown for an incoming message until its text is decrypted. */
+const NEW_MESSAGE_PLACEHOLDER = 'پیام جدید'
 
 const toast = reactive({ show: false, text: '' })
 
@@ -673,6 +678,7 @@ function resetState() {
   resetMessageContext()
   cancelFileSend()
   cancelMediaSend()
+  outbox.reset()
 }
 
 function scrollToEndSmooth() {
@@ -1228,7 +1234,9 @@ const {
   openUserChat: user =>
     openChat(user, {
       pushCurrent: true
-    })
+    }),
+
+  outbox
 })
 
 const {
@@ -1259,7 +1267,8 @@ const {
   replyingTo,
   getOrLoadKey,
   appendOutgoingMessage,
-  updateConversationAfterSend
+  updateConversationAfterSend,
+  outbox
 })
 
 const {
@@ -1287,7 +1296,8 @@ const {
   replyingTo,
   getOrLoadKey,
   appendOutgoingMessage,
-  updateConversationAfterSend
+  updateConversationAfterSend,
+  outbox
 })
 
 const {
@@ -1307,7 +1317,8 @@ const {
   getOrLoadKey,
   appendOutgoingMessage,
   updateConversationAfterSend,
-  completeEdit
+  completeEdit,
+  outbox
 })
 
 const messageListActions={
@@ -1346,7 +1357,10 @@ const messageListActions={
   deleteMessage:(message:UiMessage)=>{
     closeMenu()
     openDeleteConfirmSingle(message)
-  }
+  },
+  retrySend:(message:UiMessage)=>{ void outbox.retry(message) },
+  discardFailed:(message:UiMessage)=>outbox.discard(message),
+  canRetry:(message:UiMessage)=>outbox.canRetry(message)
 }
 
 watch(selectedUser, async (current, previous) => {
@@ -1806,6 +1820,12 @@ async function initializeChatPage() {
         const tb = toDateSafe(b.lastSentAt)?.getTime() || 0
         return tb - ta
       })
+
+      for (const c of data || []) {
+        if (c.lastEncryptedContent && !c.lastFileUrl) {
+          void refreshConversationPreview(c.peerId, c.lastEncryptedContent)
+        }
+      }
     } catch (error) {
       if (pageAlive) {
         console.warn(
@@ -1903,7 +1923,7 @@ function upsertIncomingConversation(
 
     conversation.lastSentAt = sentAt
     conversation.lastFileUrl = fileUrl
-    conversation.lastPreview = fileUrl ? null : 'پیام جدید'
+    conversation.lastPreview = fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
     conversation.unreadCount = incrementUnread
       ? conversation.unreadCount + 1
       : 0
@@ -1925,7 +1945,7 @@ function upsertIncomingConversation(
     unreadCount: incrementUnread ? 1 : 0,
     lastSentAt: sentAt,
     lastFileUrl: fileUrl,
-    lastPreview: fileUrl ? null : 'پیام جدید'
+    lastPreview: fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
   })
 
   void ensurePeerCached(peerId)
@@ -1996,7 +2016,11 @@ function wireSignalR() {
     upsertIncomingConversation(senderId, message, !active)
     void ensurePeerCached(senderId)
 
-    if (!active) return
+    if (!active) {
+      const cipher = message.encryptedText ?? message.EncryptedText
+      if (cipher && !incomingFileUrl(message)) void refreshConversationPreview(senderId, cipher)
+      return
+    }
 
     try {
       const aesKey = await getOrLoadKey(senderId)
@@ -2223,6 +2247,51 @@ function delay(ms: number): Promise<void> {
   })
 }
 
+
+/**
+ * The chat key if one already exists (cached locally or stored on the server).
+ * Unlike getOrLoadKey it never creates a key, so it is safe for previews.
+ */
+async function loadExistingChatKey(partnerId: string): Promise<CryptoKey | null> {
+  const ownerId = myId.value
+  if (!ownerId || !partnerId) return null
+
+  const local = await loadAESKeyScoped(ownerId, partnerId)
+  if (local) return local
+
+  const pending = chatKeyRequests.get(`${ownerId}:${partnerId}`)
+  if (pending) return pending
+
+  const base64Key = await getChatKey(partnerId)
+  if (!base64Key || ownerId !== myId.value) return null
+
+  const key = await importAESKey(base64Key)
+  await saveAESKeyScoped(ownerId, partnerId, key)
+  return key
+}
+
+/** Latest preview request per conversation; older decryptions finishing late are ignored. */
+const previewRequests = new Map<string, string>()
+
+/** Decrypts a conversation's last message into its list preview (best effort). */
+async function refreshConversationPreview(peerId: string, cipher: string) {
+  previewRequests.set(peerId, cipher)
+
+  try {
+    const key = await loadExistingChatKey(peerId)
+    if (!key) return
+
+    const plain = await decryptAES(key, cipher)
+    if (previewRequests.get(peerId) !== cipher) return
+    if (!plain || plain === EMPTY_MSG_MARKER) return
+
+    const conversation = conversations.value.find(item => item.peerId === peerId)
+    // Only fill in if nothing newer replaced the preview meanwhile.
+    if (conversation && !conversation.lastFileUrl && (conversation.lastPreview == null || conversation.lastPreview === NEW_MESSAGE_PLACEHOLDER)) {
+      conversation.lastPreview = plain
+    }
+  } catch {}
+}
 
 async function resolveChatKey(
   ownerId: string,

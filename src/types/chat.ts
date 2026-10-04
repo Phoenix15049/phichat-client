@@ -1,4 +1,4 @@
-export type MessageStatus = 'sending' | 'delivered' | 'read'
+export type MessageStatus = 'sending' | 'failed' | 'delivered' | 'read'
 
 export type UiReaction = {
   emoji: string

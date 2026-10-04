@@ -14,9 +14,21 @@ export function clearToken() {
   try { localStorage.removeItem(ACCESS_TOKEN_KEY) } catch {}
 }
 
+/** localStorage entries that belong to the signed-in session and must not leak to the next account. */
+const SESSION_KEY_PREFIXES = ['aeskey_']
+const SESSION_KEYS = [ACCESS_TOKEN_KEY, 'phi.activeUserId']
+
+/**
+ * Forget the signed-in session: the access token and cached chat keys (keys are not
+ * namespaced per account). Drafts are kept; they are already namespaced per user.
+ */
 export function clearAuthLocal() {
   try {
-    localStorage.clear()
+    for (const key of Object.keys(localStorage)) {
+      if (SESSION_KEYS.includes(key) || SESSION_KEY_PREFIXES.some(prefix => key.startsWith(prefix))) {
+        localStorage.removeItem(key)
+      }
+    }
   } catch {}
 }
 

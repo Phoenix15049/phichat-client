@@ -22,6 +22,7 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
+import type { Outbox } from './useOutbox'
 
 
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
@@ -69,6 +70,8 @@ type UseChatComposerOptions = {
 
   completeEdit:
     (plainText: string) => void
+
+  outbox: Outbox
 }
 
 export function useChatComposer({
@@ -81,7 +84,8 @@ export function useChatComposer({
   getOrLoadKey,
   appendOutgoingMessage,
   updateConversationAfterSend,
-  completeEdit
+  completeEdit,
+  outbox
 }: UseChatComposerOptions) {
   const MIN_ROWS = 1
   const MAX_ROWS = 6
@@ -409,12 +413,15 @@ export function useChatComposer({
       user.username
     )
 
-    await sendMessage(
-      user.id,
-      encrypted,
-      null,
-      outgoing.clientId ?? null,
-      replyId
+    // A failed send stays in the chat marked as failed, with a retry button.
+    await outbox.send(outgoing.clientId, () =>
+      sendMessage(
+        user.id,
+        encrypted,
+        null,
+        outgoing.clientId ?? null,
+        replyId
+      )
     )
 
     await finishComposerSend(
