@@ -6,6 +6,7 @@ import SettingsView from '../views/SettingsView.vue'
 import ContactsView from '../views/ContactsView.vue'
 import ConversationsView from '../views/ConversationsView.vue'
 import { getToken, isJwtExpired } from '../services/auth'
+import { getValidAccessToken, onSessionExpired } from '../services/api'
 
 const routes = [
   { path: '/', redirect: '/chat' },
@@ -23,17 +24,23 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
-  const token = getToken()
-  const authed = !!token && !isJwtExpired(token)
-
+router.beforeEach(async (to) => {
   if (to.meta?.public) {
-    if (authed) return '/chat'
+    const token = getToken()
+    if (token && !isJwtExpired(token)) return '/chat'
     return true
   }
 
-  if (!authed) return '/login'
+  // An expired access token is fine as long as the refresh cookie can renew it.
+  const token = await getValidAccessToken()
+  if (!token || isJwtExpired(token)) return '/login'
   return true
+})
+
+onSessionExpired(() => {
+  if (!router.currentRoute.value.meta?.public) {
+    void router.replace('/login')
+  }
 })
 
 export default router

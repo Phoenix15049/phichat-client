@@ -25,10 +25,10 @@
           </div>
 
           <div v-if="smsSent" class="mt-2 space-y-2">
-            <input v-model="smsCode" class="input" placeholder="SMS code" />
+            <input v-model.trim="smsCode" class="input" inputmode="numeric" maxlength="6" placeholder="6-digit code" />
             <button type="button"
               class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
-              :disabled="verifying || !smsCode || smsCode.length < 4" @click="verifyCode">
+              :disabled="verifying || !/^\d{6}$/.test(smsCode)" @click="verifyCode">
               <template v-if="verifying"><Loader2 class="w-4 h-4 animate-spin" /><span>Verifying…</span></template>
               <template v-else><ShieldCheck class="w-4 h-4" /><span>Verify & continue</span></template>
             </button>
@@ -61,7 +61,7 @@
           </div>
           <div></div>
           <label class="text-sm text-[#456173]">Password</label>
-          <input type="password" v-model="password" class="input" placeholder="At least 6 characters" />
+          <input type="password" v-model="password" class="input" placeholder="At least 8 characters" />
 
           <div class="flex items-center justify-between mt-2">
             <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
@@ -70,7 +70,7 @@
             </button>
             <button
               class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
-              :disabled="!username || uCheck.ok !== true || !password || password.length < 6"
+              :disabled="!username || uCheck.ok !== true || !password || password.length < PASSWORD_MIN"
               @click="goStep3">
               <ArrowRight class="w-4 h-4" /><span>Next</span>
             </button>
@@ -115,8 +115,6 @@
         </div>
       </transition>
 
-      <p v-if="error" class="text-red-600 text-sm mt-4 text-center">{{ error }}</p>
-
       <div class="text-center mt-6">
         <RouterLink to="/login" class="text-[#11BFAE] hover:underline">Already have an account? Sign in</RouterLink>
       </div>
@@ -136,12 +134,18 @@ import {
 import {
   registerWithPhone,
   requestSmsCode,
-  loginWithSms,
+  verifyPhone,
   storeTokenFromAuthResponse,
-  // NEW:
   checkUsername,
   updateMyProfile,
+  getErrorCode,
+  getErrorMessage,
 } from "../services/api";
+
+const USERNAME_MIN = 4;
+const USERNAME_MAX = 32;
+const USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
+const PASSWORD_MIN = 8;
 
 const router = useRouter();
 
@@ -156,6 +160,9 @@ const sending = ref(false);
 const error = ref<string | null>(null);
 const verifying = ref(false)
 
+// Issued by the server once the phone is verified; required to create the account.
+const registrationToken = ref<string | null>(null);
+
 async function sendCode() {
   error.value = null;
   if (!phoneE164.value) return;
@@ -165,7 +172,7 @@ async function sendCode() {
     await requestSmsCode({ phoneNumber: phoneE164.value as string });
     smsSent.value = true;
   } catch (e: any) {
-    error.value = e?.response?.data || "Failed to send code";
+    error.value = getErrorMessage(e, "Failed to send code");
   } finally {
     sending.value = false;
   }
@@ -176,33 +183,26 @@ async function verifyCode() {
   if (!phoneE164.value || !smsCode.value || verifying.value) return
   verifying.value = true
   try {
-    const authResp = await loginWithSms({
+    const result = await verifyPhone({
       phoneNumber: phoneE164.value,
       code: smsCode.value,
     })
 
-    storeTokenFromAuthResponse(authResp)
-
-    router.push('/chat').then(() => {
-      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
-    })
-  } catch (e: any) {
-    const status = e?.response?.status
-    const detail = e?.response?.data?.Detail || e?.response?.data || ''
-
-    if (
-      (typeof detail === 'string' && detail.includes('No account')) ||
-      status === 400 || status === 404
-    ) {
-      step.value = 2
-    } else {
-      error.value = 'Code verification failed'
+    if (!result.isNewUser && result.auth) {
+      // The phone already has an account: this is just a sign-in.
+      storeTokenFromAuthResponse(result.auth)
+      await router.push('/chat')
+      return
     }
+
+    registrationToken.value = result.registrationToken ?? null
+    step.value = 2
+  } catch (e: any) {
+    error.value = getErrorMessage(e, 'Code verification failed')
   } finally {
     verifying.value = false
   }
 }
-
 
 // --- Step 2: username + password ---
 const username = ref("");
@@ -224,8 +224,12 @@ watch(username, (v) => {
   uCheck.value = { loading: true, ok: null, msg: "" };
   uTimer = window.setTimeout(async () => {
     try {
-      if (v.length < 4) {
-        uCheck.value = { loading: false, ok: null, msg: "Minimum 4 characters" };
+      if (v.length < USERNAME_MIN || v.length > USERNAME_MAX) {
+        uCheck.value = { loading: false, ok: null, msg: `${USERNAME_MIN}-${USERNAME_MAX} characters` };
+        return;
+      }
+      if (!USERNAME_PATTERN.test(v)) {
+        uCheck.value = { loading: false, ok: null, msg: "Only English letters, digits and _" };
         return;
       }
       const { available } = await checkUsername(v);
@@ -240,7 +244,7 @@ watch(username, (v) => {
 
 function goStep3() {
   if (!username.value || uCheck.value.ok !== true) return;
-  if (!password.value || password.value.length < 6) return;
+  if (!password.value || password.value.length < PASSWORD_MIN) return;
   step.value = 3;
 }
 
@@ -256,29 +260,43 @@ const displayName = computed(() => {
 
 const loading = ref(false);
 async function completeRegister() {
-  if (!phoneE164.value || !smsCode.value) return;
+  if (!registrationToken.value) {
+    step.value = 1;
+    error.value = "Please verify your phone number first.";
+    return;
+  }
   if (!username.value || uCheck.value.ok !== true) return;
-  if (!password.value || password.value.length < 6) return;
+  if (!password.value || password.value.length < PASSWORD_MIN) return;
 
   loading.value = true;
   error.value = null;
+
   try {
-    // ساخت حساب جدید
     const auth = await registerWithPhone({
       username: username.value,
       password: password.value,
-      phoneNumber: phoneE164.value,
+      registrationToken: registrationToken.value,
     });
 
     storeTokenFromAuthResponse(auth);
 
-    if (displayName.value) await updateMyProfile({ displayName: displayName.value })
+    if (displayName.value) {
+      try {
+        await updateMyProfile({ displayName: displayName.value })
+      } catch {
+        // The account exists; the name can still be set later in Settings.
+      }
+    }
 
-    router.push('/chat').then(() => {
-      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
-    })
+    await router.push('/chat')
   } catch (e: any) {
-    error.value = e?.response?.data || "Registration failed";
+    if (getErrorCode(e) === 'phone_verification_invalid') {
+      registrationToken.value = null;
+      smsSent.value = false;
+      smsCode.value = "";
+      step.value = 1;
+    }
+    error.value = getErrorMessage(e, "Registration failed");
   } finally {
     loading.value = false;
   }
