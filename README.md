@@ -86,13 +86,24 @@ npm run build
 
 ## ⚙️ Configuration
 
-The client connects to the backend server through an environment
-variable. Copy `.env.example` to `.env.local` (ignored by git) and set:
+In development the Vite dev server proxies `/api`, `/hubs` and `/uploads`
+to the backend, so the app and API share one origin and the HttpOnly
+refresh-token cookie stays first-party. The proxy target defaults to
+`https://localhost:7146`; to change it, copy `.env.example` to `.env.local`
+(ignored by git) and set:
+
+    VITE_DEV_PROXY_TARGET=https://localhost:7146
+
+Only when the API is hosted on a different origin than the app, set:
 
     VITE_SERVER_ORIGIN=https://your-server-address
 
-If it is not provided, the default development server address
-(`https://localhost:7146`) is used.
+(cross-site hosting also needs the backend cookie setting
+`Auth:RefreshCookie:SameSite` = `None`).
+
+Sessions use a short-lived access token that is renewed automatically
+through `POST /api/auth/refresh`; signing out revokes the session on the
+server.
 
 ## 🖼 Screenshots
 

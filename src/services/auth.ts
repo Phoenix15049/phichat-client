@@ -9,6 +9,11 @@ export function setToken(token: string) {
   try { localStorage.setItem(ACCESS_TOKEN_KEY, token) } catch {}
 }
 
+/** Forget the access token only (the refresh cookie is cleared by the server on logout). */
+export function clearToken() {
+  try { localStorage.removeItem(ACCESS_TOKEN_KEY) } catch {}
+}
+
 export function clearAuthLocal() {
   try {
     localStorage.clear()
@@ -19,13 +24,15 @@ export function parseJwt(token?: string | null): any | null {
   if (!token) return null
   try {
     const payload = token.split('.')[1]
-    return JSON.parse(atob(payload))
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=')))
   } catch { return null }
 }
 
-export function isJwtExpired(token?: string | null): boolean {
+/** True when the token is missing, malformed, or expires within `marginSeconds`. */
+export function isJwtExpired(token?: string | null, marginSeconds = 0): boolean {
   const p = parseJwt(token)
   if (!p?.exp) return true
   const nowSec = Math.floor(Date.now() / 1000)
-  return p.exp <= nowSec
+  return p.exp - marginSeconds <= nowSec
 }

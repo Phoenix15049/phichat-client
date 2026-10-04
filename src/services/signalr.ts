@@ -4,6 +4,7 @@ import {
 } from '@microsoft/signalr'
 import type { HubConnection } from '@microsoft/signalr'
 import { CHAT_HUB_URL } from '../config/server'
+import { getValidAccessToken } from './api'
 
 type Handler<TArgs extends unknown[]> = (
   ...args: TArgs
@@ -388,8 +389,13 @@ export async function connectToChatHub(
   const next =
     new HubConnectionBuilder()
       .withUrl(CHAT_HUB_URL, {
-        accessTokenFactory: () =>
-          activeToken ?? token
+        // Called on every (re)connect. The server closes connections whose token
+        // expired, so always hand out a fresh one.
+        accessTokenFactory: async () => {
+          const fresh = await getValidAccessToken()
+          if (fresh && activeToken) activeToken = fresh
+          return fresh ?? activeToken ?? token
+        }
       })
       .withAutomaticReconnect()
       .build()

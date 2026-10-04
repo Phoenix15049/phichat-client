@@ -58,6 +58,8 @@
         </span>
       </transition>
 
+      <span v-if="saveError" class="text-red-600 text-sm">{{ saveError }}</span>
+
     </div>
 
     <!-- Divider -->
@@ -106,8 +108,8 @@
 <script setup lang="ts">
 import { ImageUp, Trash2, Check, LogOut, X } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
-import { getMeProfile, updateMyProfile, uploadAvatar } from '../services/api'
-import { clearAuthLocal } from '../services/auth'
+import { getErrorMessage, getMeProfile, logout, updateMyProfile, uploadAvatar } from '../services/api'
+import { disconnectFromChatHub } from '../services/signalr'
 import { useRouter } from 'vue-router'
 const displayName = ref<string>('')
 const avatarUrl   = ref<string>('')
@@ -117,6 +119,7 @@ const router = useRouter()
 
 const saving = ref(false)
 const saved  = ref(false)
+const saveError = ref<string | null>(null)
 const openLogout = ref(false)
 const avatarFile    = ref<File | null>(null)
 const avatarPreview = ref<string | null>(null)
@@ -184,6 +187,7 @@ onMounted(async () => {
 async function save() {
   try {
     saving.value = true
+    saveError.value = null
     // 1) upload avatar if selected
     let finalAvatarUrl = avatarPreview.value || ''
     if (avatarFile.value) {
@@ -199,15 +203,19 @@ async function save() {
     })
     saved.value = true
     setTimeout(() => (saved.value = false), 1400)
+  } catch (e) {
+    saveError.value = getErrorMessage(e, 'Saving failed')
   } finally {
     saving.value = false
   }
 }
 
-function doLogout() {
-  clearAuthLocal()
+async function doLogout() {
   openLogout.value = false
-  router.replace('/login')
+  try { await disconnectFromChatHub() } catch {}
+  // Revokes the refresh token on the server, then clears local auth data.
+  await logout()
+  await router.replace('/login')
 }
 </script>
 

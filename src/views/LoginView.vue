@@ -67,7 +67,7 @@
             <input
               v-model.trim="smsCode"
               inputmode="numeric"
-              maxlength="8"
+              maxlength="6"
               class="input flex-1"
               placeholder="6-digit code"
               required
@@ -101,7 +101,14 @@ import {
 
 import { ref, onBeforeUnmount,onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { API, loginWithSms, requestSmsCode, storeTokenFromAuthResponse } from "../services/api";
+import {
+  getErrorCode,
+  getErrorMessage,
+  loginWithPassword,
+  loginWithSms,
+  requestSmsCode,
+  storeTokenFromAuthResponse
+} from "../services/api";
 import PhoneInput from "../components/PhoneInput.vue";
 import { getToken, isJwtExpired } from '../services/auth'
 // ui state
@@ -169,19 +176,20 @@ async function handlePasswordLogin() {
   error.value = null;
   loading.value = true;
   try {
-    const { data } = await API.post("/auth/login", {
-      username: usernameOrPhone.value, // backend accepts username OR phone
-      password: password.value
-    });
+    // The backend accepts a username or a phone number here.
+    const data = await loginWithPassword(usernameOrPhone.value, password.value);
     storeTokenFromAuthResponse(data);
-    router.push('/chat').then(() => {
-      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
-    })
+    await router.push('/chat');
   } catch (e: any) {
-    error.value = e?.response?.data ?? e?.message ?? "Login failed";
+    error.value = getErrorMessage(e, "Login failed");
   } finally {
     loading.value = false;
   }
+}
+
+function retryAfterSeconds(e: any): number | null {
+  const value = Number(e?.response?.headers?.['retry-after']);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : null;
 }
 
 async function sendCode() {
@@ -195,7 +203,9 @@ async function sendCode() {
     await requestSmsCode({ phoneNumber: phoneE164.value as string });
     startCooldown(60);
   } catch (e: any) {
-    error.value = e?.response?.data ?? e?.message ?? "Failed to send code";
+    error.value = getErrorMessage(e, "Failed to send code");
+    const wait = retryAfterSeconds(e);
+    if (wait && wait <= 3600) startCooldown(wait);
   } finally {
     smsSending.value = false;
   }
@@ -214,11 +224,11 @@ async function handleSmsLogin() {
       code: smsCode.value
     });
     storeTokenFromAuthResponse(data);
-    router.push('/chat').then(() => {
-      setTimeout(() => window.dispatchEvent(new Event('phichat:reinit')), 0)
-    })
+    await router.push('/chat');
   } catch (e: any) {
-    error.value = e?.response?.data ?? e?.message ?? "SMS login failed";
+    error.value = getErrorCode(e) === 'no_account'
+      ? "No account uses this phone number. Create a new account first."
+      : getErrorMessage(e, "SMS login failed");
   } finally {
     loading.value = false;
   }
