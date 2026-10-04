@@ -1,23 +1,24 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4" dir="ltr">
+  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4">
     <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
-      <h1 class="text-xl font-bold mb-6 text-center text-[#1B3C59]">Sign in to PhiChat</h1>
+      <div class="flex justify-end mb-2"><LanguageSwitch /></div>
+      <h1 class="text-xl font-bold mb-6 text-center text-[#1B3C59]">{{ $t('auth.signInTitle') }}</h1>
 
       <!-- Mode switch (segmented) -->
       <div class="relative rounded-xl bg-[#F2F2F0] p-1 mb-6 flex gap-1">
         <div
-          class="absolute inset-y-1 left-1 w-1/2 rounded-lg bg-white shadow transition-transform duration-200"
-          :style="{ transform: mode === 'password' ? 'translateX(0)' : 'translateX(100%)' }"
+          class="absolute inset-y-1 start-1 w-1/2 rounded-lg bg-white shadow transition-transform duration-200"
+          :style="{ transform: mode === 'password' ? 'translateX(0)' : (isRtl() ? 'translateX(-100%)' : 'translateX(100%)') }"
         ></div>
         <button
           class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
           :class="mode === 'password' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'password'" v-ripple>
-          <Lock class="w-4 h-4" /><span>Password</span>
+          <Lock class="w-4 h-4" /><span>{{ $t('auth.modePassword') }}</span>
         </button>
         <button
           class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
           :class="mode === 'sms' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'sms'" v-ripple>
-          <MessageSquare class="w-4 h-4" /><span>SMS code</span>
+          <MessageSquare class="w-4 h-4" /><span>{{ $t('auth.modeSms') }}</span>
         </button>
 
       </div>
@@ -27,17 +28,17 @@
         <!-- Password mode -->
         <form v-if="mode === 'password'" key="pwd" @submit.prevent="handlePasswordLogin" class="space-y-4">
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">Username or phone</label>
-            <input v-model.trim="usernameOrPhone" type="text" class="input" placeholder="e.g. ali or +98912…" required />
+            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.usernameOrPhone') }}</label>
+            <input v-model.trim="usernameOrPhone" type="text" class="input" dir="ltr" :placeholder="$t('auth.usernameOrPhonePlaceholder')" required />
           </div>
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">Password</label>
-            <input v-model="password" type="password" class="input" placeholder="••••••" required />
+            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.password') }}</label>
+            <input v-model="password" type="password" class="input" dir="ltr" placeholder="••••••" required />
           </div>
 
           <button :disabled="loading" class="btn-primary w-full inline-flex items-center justify-center gap-2" v-ripple>
-            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>Sign in</span></template>
-            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>Signing in…</span></template>
+            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>{{ $t('auth.signIn') }}</span></template>
+            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('auth.signingIn') }}</span></template>
           </button>
 
         </form>
@@ -45,7 +46,7 @@
         <!-- SMS mode -->
         <form v-else key="sms" @submit.prevent="handleSmsLogin" class="space-y-4">
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">Phone number</label>
+            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.phoneNumber') }}</label>
             <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" />
             <p class="text-xs text-gray-500 mt-1"></p>
           </div>
@@ -54,13 +55,13 @@
             <button type="button" class="btn-secondary flex-1 inline-flex items-center justify-center gap-2"
                     :disabled="smsSending || cooldown > 0" @click="sendCode" v-ripple>
               <template v-if="cooldown === 0 && !smsSending">
-                <Send class="w-4 h-4" /><span>Send code</span>
+                <Send class="w-4 h-4" /><span>{{ $t('auth.sendCode') }}</span>
               </template>
               <template v-else-if="smsSending">
-                <Loader2 class="w-4 h-4 animate-spin" /><span>Sending…</span>
+                <Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('common.sending') }}</span>
               </template>
               <template v-else>
-                <Clock class="w-4 h-4" /><span>Resend in {{ cooldown }}s</span>
+                <Clock class="w-4 h-4" /><span>{{ $t('auth.resendIn', { seconds: cooldown }) }}</span>
               </template>
             </button>
 
@@ -69,14 +70,14 @@
               inputmode="numeric"
               maxlength="6"
               class="input flex-1"
-              placeholder="6-digit code"
+              :placeholder="$t('auth.codePlaceholder')"
               required
             />
           </div>
 
           <button :disabled="loading" class="btn-primary w-full inline-flex items-center justify-center gap-2" v-ripple>
-            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>Sign in with SMS</span></template>
-            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>Signing in…</span></template>
+            <template v-if="!loading"><LogIn class="w-4 h-4" /><span>{{ $t('auth.signInWithSms') }}</span></template>
+            <template v-else><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('auth.signingIn') }}</span></template>
           </button>
 
         </form>
@@ -88,7 +89,7 @@
 
 
       <div class="text-center mt-6">
-        <RouterLink to="/register" class="text-[#11BFAE] hover:underline">Create a new account</RouterLink>
+        <RouterLink to="/register" class="text-[#11BFAE] hover:underline">{{ $t('auth.createAccount') }}</RouterLink>
       </div>
     </div>
   </div>
@@ -110,6 +111,8 @@ import {
   storeTokenFromAuthResponse
 } from "../services/api";
 import PhoneInput from "../components/PhoneInput.vue";
+import LanguageSwitch from "../components/LanguageSwitch.vue";
+import { isRtl, t } from "../i18n";
 import { getToken, isJwtExpired } from '../services/auth'
 // ui state
 const mode = ref<"password" | "sms">("password");
@@ -163,7 +166,7 @@ async function handlePasswordLogin() {
     storeTokenFromAuthResponse(data);
     await router.push('/chat');
   } catch (e: any) {
-    error.value = getErrorMessage(e, "Login failed");
+    error.value = getErrorMessage(e, t("auth.loginFailed"));
   } finally {
     loading.value = false;
   }
@@ -176,7 +179,7 @@ function retryAfterSeconds(e: any): number | null {
 
 async function sendCode() {
   if (!phoneE164.value) {
-    error.value = "Invalid phone number.";
+    error.value = t("auth.invalidPhone");
     return;
   }
   error.value = null;
@@ -185,7 +188,7 @@ async function sendCode() {
     await requestSmsCode({ phoneNumber: phoneE164.value as string });
     startCooldown(60);
   } catch (e: any) {
-    error.value = getErrorMessage(e, "Failed to send code");
+    error.value = getErrorMessage(e, t("auth.sendCodeFailed"));
     const wait = retryAfterSeconds(e);
     if (wait && wait <= 3600) startCooldown(wait);
   } finally {
@@ -195,7 +198,7 @@ async function sendCode() {
 
 async function handleSmsLogin() {
   if (!phoneE164.value) {
-    error.value = "Invalid phone number.";
+    error.value = t("auth.invalidPhone");
     return;
   }
   error.value = null;
@@ -209,8 +212,8 @@ async function handleSmsLogin() {
     await router.push('/chat');
   } catch (e: any) {
     error.value = getErrorCode(e) === 'no_account'
-      ? "No account uses this phone number. Create a new account first."
-      : getErrorMessage(e, "SMS login failed");
+      ? t("auth.noAccountForPhone")
+      : getErrorMessage(e, t("auth.smsLoginFailed"));
   } finally {
     loading.value = false;
   }

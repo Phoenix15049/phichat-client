@@ -1,16 +1,20 @@
 <template>
-  <div class="max-w-xl mx-auto p-6 space-y-5 bg-[#F2F2F0] min-h-[70vh]" dir="ltr">
-    <h1 class="text-xl font-bold text-[#1B3C59]"></h1>
+  <div class="max-w-xl mx-auto p-6 space-y-5 bg-[#F2F2F0] min-h-[70vh]">
+    <!-- Language -->
+    <div class="flex items-center justify-between">
+      <label class="block text-sm text-[#456173]">{{ $t('settings.languageHint') }}</label>
+      <LanguageSwitch />
+    </div>
 
     <!-- Display name -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">Display name</label>
-      <input v-model="displayName" class="input" placeholder="Your name" />
+      <label class="block text-sm text-[#456173]">{{ $t('settings.displayName') }}</label>
+      <input v-model="displayName" class="input" dir="auto" :placeholder="$t('settings.displayNamePlaceholder')" />
     </div>
 
     <!-- Avatar -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">Avatar</label>
+      <label class="block text-sm text-[#456173]">{{ $t('settings.avatar') }}</label>
 
       <div class="flex items-center gap-3">
         <!-- preview -->
@@ -26,35 +30,35 @@
 
         <label class="btn-outline cursor-pointer inline-flex items-center gap-1.5" v-ripple>
           <input type="file" accept="image/*" class="hidden" @change="onAvatarSelected" />
-          <ImageUp class="w-4 h-4" /> <span>Change</span>
+          <ImageUp class="w-4 h-4" /> <span>{{ $t('settings.change') }}</span>
         </label>
 
         <button v-if="avatarPreview && hadServerAvatar" type="button"
                 class="btn-danger inline-flex items-center gap-1.5"
                 @click="clearAvatar" v-ripple>
-          <Trash2 class="w-4 h-4" /> <span>Remove</span>
+          <Trash2 class="w-4 h-4" /> <span>{{ $t('common.remove') }}</span>
         </button>
 
       </div>
-      <p class="text-xs text-[#456173]">JPG/PNG/WebP. A square image looks best.</p>
+      <p class="text-xs text-[#456173]">{{ $t('settings.avatarHint') }}</p>
     </div>
 
     <!-- Bio -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">Bio</label>
-      <textarea v-model="bio" class="input min-h-[90px]" placeholder="A short bio…"></textarea>
+      <label class="block text-sm text-[#456173]">{{ $t('settings.bio') }}</label>
+      <textarea v-model="bio" class="input min-h-[90px]" dir="auto" :placeholder="$t('settings.bioPlaceholder')"></textarea>
     </div>
 
     <!-- Actions -->
     <div class="flex items-center gap-3">
       <button class="btn-primary" :disabled="saving" @click="save" v-ripple>
-        <span v-if="!saving">Save</span>
-        <span v-else>Saving…</span>
+        <span v-if="!saving">{{ $t('common.save') }}</span>
+        <span v-else>{{ $t('common.saving') }}</span>
       </button>
 
       <transition name="fade-up">
         <span v-if="saved" class="text-green-600 text-sm inline-flex items-center gap-1.5">
-          <Check class="w-4 h-4" /> <span>Saved</span>
+          <Check class="w-4 h-4" /> <span>{{ $t('common.saved') }}</span>
         </span>
       </transition>
 
@@ -67,9 +71,9 @@
 
     <!-- Logout -->
     <div class="flex items-center justify-between">
-      <div class="text-[#1B3C59] font-medium">Logout</div>
+      <div class="text-[#1B3C59] font-medium">{{ $t('settings.logoutSection') }}</div>
       <button class="btn-outline inline-flex items-center gap-1.5" @click="openLogout = true" v-ripple>
-        <LogOut class="w-4 h-4" /> <span>Log out</span>
+        <LogOut class="w-4 h-4 rtl:-scale-x-100" /> <span>{{ $t('settings.logout') }}</span>
       </button>
 
     </div>
@@ -81,17 +85,17 @@
 
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
                     w-[420px] max-w-[95vw] rounded-2xl bg-white shadow-xl p-4">
-          <div class="text-lg font-semibold mb-2">Log out</div>
-          <p class="text-sm text-gray-600 mb-4">Are you sure you want to log out?</p>
+          <div class="text-lg font-semibold mb-2">{{ $t('settings.logout') }}</div>
+          <p class="text-sm text-gray-600 mb-4">{{ $t('settings.logoutConfirm') }}</p>
 
           <div class="flex items-center justify-end gap-2">
             <button class="px-3 py-1.5 rounded border hover:bg-gray-50 inline-flex items-center gap-1.5"
                     @click="openLogout=false" v-ripple>
-              <X class="w-4 h-4" /> <span>Cancel</span>
+              <X class="w-4 h-4" /> <span>{{ $t('common.cancel') }}</span>
             </button>
             <button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5"
                     @click="doLogout" v-ripple>
-              <LogOut class="w-4 h-4" /> <span>Log out</span>
+              <LogOut class="w-4 h-4 rtl:-scale-x-100" /> <span>{{ $t('settings.logout') }}</span>
             </button>
           </div>
         </div>
@@ -112,6 +116,8 @@ import { ref, onMounted } from 'vue'
 import { getErrorMessage, getMeProfile, logout, updateMyProfile, uploadAvatar } from '../services/api'
 import { disconnectFromChatHub } from '../services/signalr'
 import { useSessionStore } from '../stores/session'
+import LanguageSwitch from '../components/LanguageSwitch.vue'
+import { t } from '../i18n'
 import { useRouter } from 'vue-router'
 const displayName = ref<string>('')
 const avatarUrl   = ref<string>('')
@@ -190,7 +196,7 @@ async function save() {
     saved.value = true
     setTimeout(() => (saved.value = false), 1400)
   } catch (e) {
-    saveError.value = getErrorMessage(e, 'Saving failed')
+    saveError.value = getErrorMessage(e, t('settings.saveFailed'))
   } finally {
     saving.value = false
   }

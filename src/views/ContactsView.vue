@@ -1,24 +1,23 @@
 <template>
-  <div class="max-w-2xl mx-auto p-4 space-y-4" dir="ltr">
-    <h1 class="text-xl font-bold text-[#1B3C59]"></h1>
+  <div class="max-w-2xl mx-auto p-4 space-y-4">
 
     <!-- Search + sort + count -->
     <div class="flex items-center gap-2">
       <input
         v-model="q"
-        placeholder="Search contacts…"
+        :placeholder="$t('contacts.search')"
         class="input flex-1"
       />
 
-      <button class="btn-outline flex items-center gap-1" :aria-pressed="sortAlpha" @click="sortAlpha = !sortAlpha" title="Sort A–Z" v-ripple>
+      <button class="btn-outline flex items-center gap-1" :aria-pressed="sortAlpha" @click="sortAlpha = !sortAlpha" :title="$t('contacts.sortAz')" v-ripple>
         <ArrowUpAZ v-if="sortAlpha" class="w-4 h-4" />
         <ArrowDownAZ v-else class="w-4 h-4" />
-        <span class="sr-only">Sort</span>
+        <span class="sr-only">{{ $t('contacts.sort') }}</span>
       </button>
 
 
       <div class="text-xs text-[#456173] whitespace-nowrap">
-        {{ filteredContacts.length }} contacts
+        {{ $t('contacts.count', { count: filteredContacts.length }, filteredContacts.length) }}
       </div>
     </div>
 
@@ -44,39 +43,39 @@
           </div>
 
           <div class="flex flex-col min-w-0">
-            <span class="font-medium text-[#1B3C59] truncate">@{{ (c.username || '').replace(/^@/, '') }}</span>
-            <span v-if="c.displayName" class="text-sm text-[#456173] truncate">{{ c.displayName }}</span>
+            <span class="font-medium text-[#1B3C59] truncate"><span dir="ltr">@{{ (c.username || '').replace(/^@/, '') }}</span></span>
+            <span v-if="c.displayName" class="text-sm text-[#456173] truncate" dir="auto">{{ c.displayName }}</span>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
           <button @click="openChat(c)" class="btn-text flex items-center gap-1.5" v-ripple>
-            <MessageSquare class="w-4 h-4" /> <span>Chat</span>
+            <MessageSquare class="w-4 h-4" /> <span>{{ $t('contacts.chat') }}</span>
           </button>
           <button @click="onRemove(c)" class="btn-danger flex items-center gap-1.5" v-ripple>
-            <Trash2 class="w-4 h-4" /> <span>Remove</span>
+            <Trash2 class="w-4 h-4" /> <span>{{ $t('common.remove') }}</span>
           </button>
         </div>
 
       </li>
     </transition-group>
 
-    <p v-if="contacts.length === 0" class="text-sm text-[#456173]">No contacts yet.</p>
+    <p v-if="contacts.length === 0" class="text-sm text-[#456173]">{{ $t('contacts.empty') }}</p>
 
     <!-- Sticky add button when embedded as modal content -->
-    <div v-if="inModal" class="sticky bottom-0 left-0 right-0 bg-white/90 backdrop-blur border-t p-3">
+    <div v-if="inModal" class="sticky bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t p-3">
       <button class="btn-primary rounded-full shadow flex items-center gap-2" @click="showAdd = true" v-ripple>
-        <UserPlus class="w-4 h-4" /> <span>Add contact</span>
+        <UserPlus class="w-4 h-4" /> <span>{{ $t('contacts.add') }}</span>
       </button>
     </div>
   </div>
 
   <!-- Add contact modal -->
   <ModalSheet :open="showAdd" @close="showAdd=false">
-    <div class="p-5 w-[420px] max-w-full" dir="ltr">
+    <div class="p-5 w-[420px] max-w-full">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-bold text-[#1B3C59]">Add contact</h2>
-        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple aria-label="Close">
+        <h2 class="text-lg font-bold text-[#1B3C59]">{{ $t('contacts.add') }}</h2>
+        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple :aria-label="$t('common.close')">
           <X class="w-5 h-5" />
         </button>
       </div>
@@ -84,14 +83,15 @@
       <form class="space-y-3" @submit.prevent="onAdd">
         <input
           v-model="usernameToAdd"
-          placeholder="@username"
+          :placeholder="$t('contacts.usernamePlaceholder')"
+          dir="ltr"
           class="input w-full"
         />
         <div class="flex items-center justify-end gap-2">
-          <button type="button" class="btn-outline" @click="showAdd=false" v-ripple>Cancel</button>
+          <button type="button" class="btn-outline" @click="showAdd=false" v-ripple>{{ $t('common.cancel') }}</button>
           <button class="btn-primary" :disabled="!usernameToAdd || adding" v-ripple>
-            <span v-if="!adding">Add</span>
-            <span v-else>Adding…</span>
+            <span v-if="!adding">{{ $t('common.add') }}</span>
+            <span v-else>{{ $t('contacts.adding') }}</span>
           </button>
         </div>
       </form>

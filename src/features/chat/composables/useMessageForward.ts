@@ -1,3 +1,4 @@
+import { t } from '../../../i18n'
 import {
   reactive,
   watch,
@@ -213,7 +214,7 @@ export function useMessageForward({
       (
         forwardHandles[userId]
           ? `@${forwardHandles[userId]}`
-          : 'کاربر'
+          : t('common.user')
       )
     )
   }
@@ -234,7 +235,7 @@ export function useMessageForward({
         user.Username
 
       if (!id || !username) {
-        showToast('Username not found')
+        showToast(t('chat.usernameNotFound'))
         return
       }
 
@@ -244,7 +245,7 @@ export function useMessageForward({
           username.replace(/^@/, '')
       })
     } catch {
-      showToast('Username not found')
+      showToast(t('chat.usernameNotFound'))
     }
   }
 
@@ -468,7 +469,7 @@ export function useMessageForward({
       )
 
       clearSelection()
-      showToast('ارسال شد')
+      showToast(t('chat.sent'))
     } catch (error) {
       console.warn(
         'forward failed',

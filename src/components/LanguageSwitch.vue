@@ -1,0 +1,29 @@
+<template>
+  <div class="inline-flex rounded-lg bg-[#F2F2F0] p-0.5 text-xs" role="group" :aria-label="$t('common.language')">
+    <button
+      v-for="option in options"
+      :key="option.locale"
+      type="button"
+      class="rounded-md px-2.5 py-1 transition"
+      :class="locale === option.locale ? 'bg-white text-[#1B3C59] shadow-sm' : 'text-[#456173] hover:text-[#1B3C59]'"
+      :aria-pressed="locale === option.locale"
+      :lang="option.locale"
+      @click="setLocale(option.locale)"
+    >
+      {{ option.label }}
+    </button>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+import { setLocale, type AppLocale } from '../i18n'
+
+const { locale } = useI18n()
+
+// Each language is labelled in itself, so it is recognisable whatever the current UI language.
+const options: { locale: AppLocale; label: string }[] = [
+  { locale: 'fa', label: 'فارسی' },
+  { locale: 'en', label: 'English' }
+]
+</script>

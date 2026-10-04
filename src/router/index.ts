@@ -14,7 +14,8 @@ const routes = [
   { path: '/chat', component: ChatView },
   { path: '/settings', component: SettingsView },
   { path: '/contacts', component: ContactsView },
-  { path: '/u/:username', component: ChatView, props: true }
+  // ChatView reads the username from route.params itself.
+  { path: '/u/:username', component: ChatView }
 ]
 
 const router = createRouter({

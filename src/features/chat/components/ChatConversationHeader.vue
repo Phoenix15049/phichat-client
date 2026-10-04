@@ -2,7 +2,7 @@
   <div
     class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
     role="button"
-    aria-label="View contact profile"
+    :aria-label="$t('chat.viewProfile')"
     @click="
       !props.selectionMode &&
       props.selectedUser &&
@@ -24,13 +24,12 @@
           type="button"
           class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-0.5"
           :disabled="!props.selectedCount"
-          title="Group Forward"
+          :title="$t('chat.groupForward')"
           @click.stop="
             emit('forward-selected')
           "
         >
-          Forward
-
+          {{ $t('chat.forward') }}
           <span
             class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700"
           >
@@ -47,7 +46,7 @@
             emit('delete-selected')
           "
         >
-          Delete
+          {{ $t('common.delete') }}
         </button>
 
         <button
@@ -59,7 +58,7 @@
             emit('copy-selected')
           "
         >
-          Copy text
+          {{ $t('chat.copyText') }}
         </button>
 
         <div class="flex-1"></div>
@@ -72,7 +71,7 @@
             emit('clear-selection')
           "
         >
-          Cancel
+          {{ $t('common.cancel') }}
         </button>
       </div>
 
@@ -86,12 +85,12 @@
           v-if="props.showBack"
           v-ripple
           type="button"
-          class="ml-1 px-2 py-1 rounded hover:bg-white/10"
-          title="Back"
-          aria-label="Back"
+          class="ms-1 px-2 py-1 rounded hover:bg-white/10"
+          :title="$t('common.back')"
+          :aria-label="$t('common.back')"
           @click.stop="emit('back')"
         >
-          <ArrowLeft class="w-5 h-5" />
+          <ArrowLeft class="w-5 h-5 rtl:rotate-180" />
         </button>
 
         <div
@@ -173,7 +172,7 @@
                   style="animation-delay: 240ms"
                 ></span>
 
-                <span>typing</span>
+                <span>{{ $t('chat.typing') }}</span>
               </div>
             </template>
 
@@ -185,7 +184,7 @@
               <div
                 class="text-[12px] text-white"
               >
-                Online
+                {{ $t('chat.online') }}
               </div>
             </template>
 

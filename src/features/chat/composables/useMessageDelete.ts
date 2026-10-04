@@ -1,3 +1,4 @@
+import { t } from '../../../i18n'
 import {
   reactive,
   type ComputedRef,
@@ -126,7 +127,7 @@ export function useMessageDelete({
         clearSelection()
       }
 
-      showToast('Deleted')
+      showToast(t('chat.deleted'))
     } catch (error) {
       console.warn(
         'confirmDelete failed',

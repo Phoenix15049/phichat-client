@@ -4,10 +4,10 @@
     <div v-if="open" class="fixed inset-0 z-[55]" role="dialog" aria-modal="true" @keydown.esc="$emit('close')">
       <div class="absolute inset-0 bg-black/30" @click="$emit('close')"></div>
 
-      <!-- drawer slide from left -->
+      <!-- drawer slides in from the start edge (left in LTR, right in RTL) -->
       <transition name="drawer">
         <aside
-          class="absolute left-0 top-0 h-full w-72 bg-white shadow-xl ring-1 ring-black/5 flex flex-col"
+          class="absolute start-0 top-0 h-full w-72 bg-white shadow-xl ring-1 ring-black/5 flex flex-col"
           @click.stop
         >
           <!-- Me header -->
@@ -20,11 +20,11 @@
               </div>
             </div>
             <div class="min-w-0">
-              <div class="font-semibold text-[#1B3C59] truncate">
+              <div class="font-semibold text-[#1B3C59] truncate" dir="auto">
                 {{ me?.displayName || '@' + (me?.username || '') }}
               </div>
               <div class="text-xs text-[#456173] truncate">
-                @{{ (me?.username || '').replace(/^@/,'') }}
+                <span dir="ltr">@{{ (me?.username || '').replace(/^@/,'') }}</span>
               </div>
             </div>
           </div>
@@ -32,24 +32,24 @@
           <!-- Items -->
           <nav class="flex-1 overflow-y-auto">
             <button class="menu-item flex items-center gap-2" @click="$emit('action','profile')"  v-ripple>
-              <User class="w-4 h-4" /> <span>My profile</span>
+              <User class="w-4 h-4" /> <span>{{ $t('menu.myProfile') }}</span>
             </button>
             <button class="menu-item flex items-center gap-2" @click="$emit('action','contacts')" v-ripple>
-              <Users class="w-4 h-4" /> <span>Contacts</span>
+              <Users class="w-4 h-4" /> <span>{{ $t('menu.contacts') }}</span>
             </button>
             <button class="menu-item flex items-center gap-2" @click="$emit('action','saved')"    v-ripple>
-              <Bookmark class="w-4 h-4" /> <span>Saved Messages</span>
+              <Bookmark class="w-4 h-4" /> <span>{{ $t('menu.savedMessages') }}</span>
             </button>
             <button class="menu-item flex items-center gap-2" @click="$emit('action','settings')" v-ripple>
-              <Settings class="w-4 h-4" /> <span>Settings</span>
+              <Settings class="w-4 h-4" /> <span>{{ $t('menu.settings') }}</span>
             </button>
           </nav>
 
 
-          <div class="p-3 text-left">
+          <div class="p-3 text-start">
             <button class="text-xs text-[#456173] hover:text-[#1B3C59] inline-flex items-center gap-1.5"
                     @click="$emit('close')" v-ripple>
-              <X class="w-3.5 h-3.5" /> <span>Close</span>
+              <X class="w-3.5 h-3.5" /> <span>{{ $t('common.close') }}</span>
             </button>
           </div>
 
@@ -85,7 +85,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 /* list item */
 .menu-item {
-  @apply w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 text-[#1B3C59];
+  @apply w-full text-start px-4 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 text-[#1B3C59];
 }
 
 /* overlay fade */
@@ -99,5 +99,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .drawer-leave-to   { transform: translateX(-100%); }
 .drawer-enter-active,
 .drawer-leave-active { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
+/* RTL: the drawer sits on the right, so it slides in from the right.
+   The whole selector must be inside :global() - `:global(x) .y` compiles to just `x`. */
+:global([dir="rtl"] .drawer-enter-from),
+:global([dir="rtl"] .drawer-leave-to) { transform: translateX(100%); }
 
 </style>

@@ -3,7 +3,7 @@
     <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
       <div class="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur px-3 py-1 shadow">
         <Loader2 class="h-4 w-4 animate-spin"/>
-        <span class="text-xs text-gray-600">Loading…</span>
+        <span class="text-xs text-gray-600">{{ $t('common.loading') }}</span>
       </div>
     </div>
 
@@ -11,7 +11,7 @@
       <div
         v-for="(msg,index) in messages"
         :key="messageKey(msg,index)"
-        :class="['relative',msg.senderId===myId?'text-right':'text-left']"
+        :class="['relative',msg.senderId===myId?'text-end':'text-start']"
         @click.stop="actions.onRowClick($event,msg)"
         @contextmenu.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
         @mousedown.left="actions.onRowMouseDown($event,msg)"
@@ -19,7 +19,7 @@
       >
         <div v-if="showDayHeader(index)" class="flex justify-center my-2">
           <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
-            {{ dayLabel(msg.sentAt) }}
+            {{ formatDayLabel(msg.sentAt) }}
           </span>
         </div>
 
@@ -33,16 +33,16 @@
         >
           <div
             v-if="msg.replyToMessageId"
-            class="mb-1 border-l-2 pl-2 text-xs opacity-80 cursor-pointer hover:underline"
+            class="mb-1 border-s-2 ps-2 text-xs opacity-80 cursor-pointer hover:underline"
             @click="actions.jumpToReply(msg.replyToMessageId)"
           >
             <div class="truncate">{{ actions.resolveReplyPreview(msg.replyToMessageId) }}</div>
           </div>
 
-          <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">Message deleted</div>
+          <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">{{ $t('chat.messageDeleted') }}</div>
 
-          <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-l-2 pl-2">
-            Forwarded from
+          <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-s-2 ps-2">
+            {{ $t('chat.forwardedFrom') }}
             <button
               type="button"
               class="font-medium underline hover:opacity-90 text-[#c5ffff]"
@@ -98,7 +98,7 @@
                 type="button"
                 class="w-8 h-8 rounded-full border flex items-center justify-center"
                 :class="msg.senderId===myId?'border-white/50 text-white':'border-gray-300 text-gray-600'"
-                aria-label="Download"
+                :aria-label="$t('chat.download')"
                 @click="actions.downloadFile(msg)"
               >
                 <Loader2 v-if="downloading[actions.fileKey(msg)]" class="w-4 h-4 animate-spin"/>
@@ -128,13 +128,13 @@
             :class="timeColorClass(msg)"
             :title="tooltipForMessage(msg)"
           >
-            <span>{{ fmtHHmmLocal(msg.sentAt) }}</span>
-            <span v-if="msg.updatedAtUtc" class="ml-1 opacity-80">(edited)</span>
+            <span>{{ formatTime(msg.sentAt) }}</span>
+            <span v-if="msg.updatedAtUtc" class="ms-1 opacity-80">{{ $t('chat.edited') }}</span>
 
             <span v-if="msg.senderId===myId">
               <CheckCheck v-if="msg.status==='read'" class="w-3 h-3"/>
               <Check v-else-if="msg.status==='delivered'" class="w-3 h-3"/>
-              <AlertCircle v-else-if="msg.status==='failed'" class="w-3.5 h-3.5 text-red-600" aria-label="Not sent"/>
+              <AlertCircle v-else-if="msg.status==='failed'" class="w-3.5 h-3.5 text-red-600" :aria-label="$t('chat.notSent')"/>
               <Loader2 v-else class="w-3 h-3 animate-spin"/>
             </span>
           </div>
@@ -143,20 +143,20 @@
             v-if="msg.senderId===myId&&msg.status==='failed'"
             class="mt-1 flex items-center justify-end gap-2 text-[12px]"
           >
-            <span class="opacity-90">Not sent</span>
+            <span class="opacity-90">{{ $t('chat.notSent') }}</span>
             <button
               v-if="actions.canRetry(msg)"
               type="button"
               class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[#1B3C59] hover:bg-white"
               @click.stop="actions.retrySend(msg)"
             >
-              <RotateCw class="w-3 h-3"/> Retry
+              <RotateCw class="w-3 h-3"/> {{ $t('chat.retry') }}
             </button>
             <button
               type="button"
               class="rounded-full px-2 py-0.5 hover:bg-white/15"
               @click.stop="actions.discardFailed(msg)"
-            >Remove</button>
+            >{{ $t('common.remove') }}</button>
           </div>
 
           <Transition name="fade-scale">
@@ -164,8 +164,8 @@
               v-if="hoverReactFor===(msg.id||msg.clientId)&&!selectionMode&&!contextMenu.visible"
               class="absolute z-20 pointer-events-auto select-none"
               :class="msg.senderId===myId
-                ?'bottom-0 left-0 -translate-x-full -translate-y-1/6 -ml-1'
-                :'bottom-0 right-0 translate-x-full -translate-y-1/6 -mr-1'"
+                ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
+                :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
               @mouseenter="actions.keepHoverBar"
               @mouseleave="actions.hideHoverBarSoon"
             >
@@ -193,7 +193,7 @@
               @click.stop="actions.applyReaction(msg,reaction.emoji)"
             >
               <span>{{ reaction.emoji }}</span>
-              <span class="ml-1 text-[11px] opacity-70">{{ reaction.count }}</span>
+              <span class="ms-1 text-[11px] opacity-70">{{ reaction.count }}</span>
             </button>
           </div>
 
@@ -206,15 +206,15 @@
             >{{ emoji }}</button>
 
             <button class="px-2 py-[2px] text-[11px] text-gray-500" @click="actions.closeReactionPicker">
-              بستن
+              {{ $t('common.close') }}
             </button>
           </div>
 
           <button
             v-if="selectionMode"
             class="absolute top-1"
-            :class="msg.senderId===myId?'left-1':'right-1'"
-            :title="actions.isSelected(msg)?'Remove from selection':'Select message'"
+            :class="msg.senderId===myId?'start-1':'end-1'"
+            :title="actions.isSelected(msg)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
             @click.stop="actions.toggleSelect(msg)"
           >
             <span
@@ -240,7 +240,7 @@
         <div
           :ref="bindMenu"
           role="menu"
-          class="absolute z-50 min-w-[168px] text-left rounded-2xl border border-[#456173]/10 bg-white/80 backdrop-blur-md ring-1 ring-black/5"
+          class="absolute z-50 min-w-[168px] text-start rounded-2xl border border-[#456173]/10 bg-white/80 backdrop-blur-md ring-1 ring-black/5"
           :style="{
             top:`${contextMenu.y}px`,
             left:`${contextMenu.x}px`,
@@ -264,7 +264,7 @@
                 @click.stop="contextMenu.msg&&actions.applyReaction(contextMenu.msg,emoji)"
               >{{ emoji }}</button>
 
-              <button class="reaction-more" title="More" aria-label="More">
+              <button class="reaction-more" :title="$t('chat.more')" :aria-label="$t('chat.more')">
                 <ChevronDown class="w-4 h-4"/>
               </button>
             </div>
@@ -275,23 +275,23 @@
               class="menu-item rounded-t-2xl"
               @click="contextMenu.msg&&actions.startSelection(contextMenu.msg)"
               v-ripple
-            >Select</button>
+            >{{ $t('chat.select') }}</button>
 
-            <button class="menu-item" @click="actions.openForwardPicker" v-ripple>Forward…</button>
-            <button class="menu-item" @click="actions.reply" v-ripple>Reply</button>
+            <button class="menu-item" @click="actions.openForwardPicker" v-ripple>{{ $t('chat.forwardMenu') }}</button>
+            <button class="menu-item" @click="actions.reply" v-ripple>{{ $t('chat.reply') }}</button>
 
             <button
               v-if="actions.canEdit(contextMenu.msg)"
               class="menu-item"
               @click="actions.edit"
               v-ripple
-            >Edit</button>
+            >{{ $t('chat.edit') }}</button>
 
             <button
               class="menu-item rounded-b-2xl"
               @click="contextMenu.msg&&actions.deleteMessage(contextMenu.msg)"
               v-ripple
-            >Delete</button>
+            >{{ $t('common.delete') }}</button>
           </div>
         </div>
       </Transition>
@@ -302,7 +302,8 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
 import { AlertCircle, Check, CheckCheck, ChevronDown, Download, Loader2, RotateCw } from 'lucide-vue-next'
-import { formatAbsoluteEn, toDateSafe } from '../../../utils/time'
+import { useI18n } from 'vue-i18n'
+import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
 
 type MaybePromise=void|Promise<void>
@@ -352,6 +353,8 @@ type MessageActions={
   discardFailed:(message:UiMessage)=>void
   canRetry:(message:UiMessage)=>boolean
 }
+
+const { t }=useI18n()
 
 const props=defineProps<{
   messages:UiMessage[]
@@ -446,41 +449,18 @@ function toParts(text?:string|null):Part[]{
   return parts
 }
 
-function fmtHHmmLocal(iso?:string|null){
-  const date=toDateSafe(iso)
-  return date?date.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}):''
-}
-
 function tooltipForMessage(message:UiMessage){
-  const sent=formatAbsoluteEn(message.sentAt)
-  const delivered=message.deliveredAtUtc?formatAbsoluteEn(message.deliveredAtUtc):null
-  const read=message.readAtUtc?formatAbsoluteEn(message.readAtUtc):null
+  const lines=[t('chat.tooltipSent',{time:formatAbsolute(message.sentAt)})]
 
-  if(read) return `ارسال: ${sent}\nخوانده‌شدن: ${read}`
-  if(delivered) return `ارسال: ${sent}\nتحویل: ${delivered}`
-  return `ارسال: ${sent}`
+  if(message.readAtUtc) lines.push(t('chat.tooltipRead',{time:formatAbsolute(message.readAtUtc)}))
+  else if(message.deliveredAtUtc) lines.push(t('chat.tooltipDelivered',{time:formatAbsolute(message.deliveredAtUtc)}))
+
+  return lines.join('\n')
 }
 
 function dayKey(iso?:string|null){
   const date=toDateSafe(iso)
   return date?`${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`:''
-}
-
-function dayLabel(iso?:string|null){
-  const date=toDateSafe(iso)
-  if(!date) return ''
-
-  const today=new Date()
-  today.setHours(0,0,0,0)
-
-  const target=new Date(date)
-  target.setHours(0,0,0,0)
-
-  const difference=Math.round((today.getTime()-target.getTime())/86400000)
-
-  if(difference===0) return 'Today'
-  if(difference===1) return 'Yesterday'
-  return new Intl.DateTimeFormat('en-US',{dateStyle:'full'}).format(date)
 }
 
 function showDayHeader(index:number){
@@ -520,7 +500,7 @@ function showDayHeader(index:number){
   @apply w-6 h-6 grid place-items-center rounded-full text-[#1B3C59] hover:bg-black/5 transition;
 }
 .menu-item{
-  @apply w-full text-left px-3 py-2 text-[14px] text-[#1B3C59] hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15 transition outline-none focus-visible:ring-2 focus-visible:ring-[#11BFAE]/40;
+  @apply w-full text-start px-3 py-2 text-[14px] text-[#1B3C59] hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15 transition outline-none focus-visible:ring-2 focus-visible:ring-[#11BFAE]/40;
 }
 .menu-item:first-child{
   position:relative;

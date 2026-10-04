@@ -1,3 +1,4 @@
+import { t } from '../../../i18n'
 import type { Ref } from 'vue'
 import { toAbsoluteServerUrl } from '../../../config/server'
 import type { getConversations } from '../../../services/api'
@@ -16,7 +17,7 @@ export type IncomingMessage = ServerMessage & {
 type ConversationSummary = Awaited<ReturnType<typeof getConversations>>[number]
 
 /** Shown for an incoming message until its text is decrypted. */
-const NEW_MESSAGE_PLACEHOLDER = 'پیام جدید'
+const newMessagePlaceholder = () => t('chat.newMessage')
 
 type UseConversationsOptions = {
   conversations: Ref<UiConversation[]>
@@ -156,7 +157,7 @@ export function useConversations({
 
       conversation.lastSentAt = sentAt
       conversation.lastFileUrl = fileUrl
-      conversation.lastPreview = fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
+      conversation.lastPreview = fileUrl ? null : newMessagePlaceholder()
       conversation.unreadCount = incrementUnread
         ? conversation.unreadCount + 1
         : 0
@@ -178,7 +179,7 @@ export function useConversations({
       unreadCount: incrementUnread ? 1 : 0,
       lastSentAt: sentAt,
       lastFileUrl: fileUrl,
-      lastPreview: fileUrl ? null : NEW_MESSAGE_PLACEHOLDER
+      lastPreview: fileUrl ? null : newMessagePlaceholder()
     })
 
     void ensurePeerCached(peerId)
@@ -214,7 +215,7 @@ export function useConversations({
 
       const conversation = conversations.value.find(item => item.peerId === peerId)
       // Only fill in if nothing newer replaced the preview meanwhile.
-      if (conversation && !conversation.lastFileUrl && (conversation.lastPreview == null || conversation.lastPreview === NEW_MESSAGE_PLACEHOLDER)) {
+      if (conversation && !conversation.lastFileUrl && (conversation.lastPreview == null || conversation.lastPreview === newMessagePlaceholder())) {
         conversation.lastPreview = plain
       }
     } catch {}

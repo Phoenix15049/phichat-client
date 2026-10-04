@@ -1,6 +1,6 @@
 <template>
   <ModalSheet :open="open" @close="$emit('close')">
-    <div class="p-5 w-[520px] max-w-full" dir="ltr">
+    <div class="p-5 w-[520px] max-w-full">
       <!-- Header -->
       <div class="flex items-start gap-4">
         <!-- Avatar -->
@@ -20,21 +20,21 @@
 
         <!-- Title & meta -->
         <div class="flex-1 min-w-0">
-          <div class="text-lg font-bold text-[#1B3C59] truncate">
+          <div class="text-lg font-bold text-[#1B3C59] truncate" dir="auto">
             {{ user?.displayName || '@' + (user?.username || '') }}
           </div>
           <div class="text-sm text-[#456173] truncate">
-            @{{ user?.username }}
+            <span dir="ltr">@{{ user?.username }}</span>
           </div>
 
           <div v-if="user?.lastSeenUtc" class="text-xs text-[#456173] mt-1">
-            Last seen: {{ fmtLastSeen(user.lastSeenUtc) }}
+            {{ $t('profile.lastSeen', { when: formatAbsolute(user.lastSeenUtc) }) }}
           </div>
         </div>
 
         <button
           class="text-[#456173] hover:text-[#1B3C59] px-2 py-1 rounded hover:bg-[#F2F2F0]"
-          @click="$emit('close')" v-ripple aria-label="Close">
+          @click="$emit('close')" v-ripple :aria-label="$t('common.close')">
           <X class="w-5 h-5" />
         </button>
 
@@ -44,11 +44,11 @@
       <div class="mt-5 space-y-2 text-sm">
         <div v-if="user?.phoneNumber" class="flex items-center gap-2">
           <Phone class="w-4 h-4 text-[#456173]" />
-          <span class="text-[#1B3C59]">{{ user.phoneNumber }}</span>
+          <span class="text-[#1B3C59]" dir="ltr">{{ user.phoneNumber }}</span>
         </div>
         <div v-if="user?.bio" class="flex items-start gap-2">
           <FileText class="w-4 h-4 text-[#456173] mt-0.5" />
-          <span class="text-[#1B3C59]">{{ user.bio }}</span>
+          <span class="text-[#1B3C59]" dir="auto">{{ user.bio }}</span>
         </div>
       </div>
 
@@ -57,29 +57,29 @@
       <div class="mt-6 grid grid-cols-2 gap-2">
         <button class="btn-primary inline-flex items-center justify-center gap-2"
                 @click="$emit('send-message', user!.id)" v-ripple>
-          <MessageSquare class="w-4 h-4" /><span>Message</span>
+          <MessageSquare class="w-4 h-4" /><span>{{ $t('profile.message') }}</span>
         </button>
 
         <button class="btn-outline inline-flex items-center justify-center gap-2"
                 @click="$emit('share-contact', user!)" v-ripple>
-          <Share2 class="w-4 h-4" /><span>Share contact</span>
+          <Share2 class="w-4 h-4" /><span>{{ $t('profile.share') }}</span>
         </button>
 
         <button v-if="isContact"
                 class="btn-danger inline-flex items-center justify-center gap-2"
                 @click="$emit('remove-contact', user!.id)" v-ripple>
-          <UserMinus class="w-4 h-4" /><span>Remove from contacts</span>
+          <UserMinus class="w-4 h-4" /><span>{{ $t('profile.removeContact') }}</span>
         </button>
 
         <button v-else
                 class="btn-outline inline-flex items-center justify-center gap-2"
                 @click="$emit('add-contact', user!.id)" v-ripple>
-          <UserPlus class="w-4 h-4" /><span>Add to contacts</span>
+          <UserPlus class="w-4 h-4" /><span>{{ $t('profile.addContact') }}</span>
         </button>
 
         <button class="btn-disabled col-span-2 inline-flex items-center justify-center gap-2"
-                title="Coming soon" disabled>
-          <Ban class="w-4 h-4" /><span>Block user</span>
+                :title="$t('profile.comingSoon')" disabled>
+          <Ban class="w-4 h-4" /><span>{{ $t('profile.block') }}</span>
         </button>
       </div>
 
@@ -89,6 +89,7 @@
 
 <script setup lang="ts">
 import { initialsOf } from '../utils/avatar'
+import { formatAbsolute } from '../utils/time'
 import ModalSheet from './ModalSheet.vue'
 import type { ChatUser } from '../types/chat'
 import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
@@ -103,13 +104,6 @@ defineEmits(['close','send-message','add-contact','remove-contact','share-contac
 
 
 
-function fmtLastSeen(iso?: string | null) {
-  if (!iso) return 'Unknown'
-  try {
-    const d = new Date(iso)
-    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(d)
-  } catch { return 'Unknown' }
-}
 </script>
 
 <style scoped>
