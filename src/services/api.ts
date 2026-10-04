@@ -2,6 +2,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
 import { getToken, clearAuthLocal, clearToken, isJwtExpired, setToken } from './auth'
+import { i18n, t } from '../i18n'
 import type {
   Contact,
   ConversationPage,
@@ -124,16 +125,20 @@ API.interceptors.response.use(
 )
 
 /**
- * Human-readable message from an API error: ProblemDetails `detail`, the first validation
- * error, or `fallback`.
+ * Human-readable message from an API error, in the UI language when the server's error
+ * code is known; otherwise ProblemDetails `detail`, the first validation error, or `fallback`.
  */
-export function getErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+export function getErrorMessage(err: unknown, fallback?: string): string {
   const e = err as AxiosError<any>
   const data = e?.response?.data
+  const defaultMessage = fallback ?? t('errors.generic')
 
   if (!e?.response) {
-    return e?.message === 'Network Error' ? 'Cannot reach the server. Check your connection.' : fallback
+    return e?.message === 'Network Error' ? t('errors.network') : defaultMessage
   }
+
+  const code = getErrorCode(err) ?? (e.response.status === 429 ? 'rate_limited' : null)
+  if (code && i18n.global.te(`errors.${code}`)) return t(`errors.${code}`)
 
   if (typeof data === 'string' && data.trim()) return data
 
@@ -146,7 +151,7 @@ export function getErrorMessage(err: unknown, fallback = 'Something went wrong. 
     if (typeof data.title === 'string' && data.title) return data.title
   }
 
-  return fallback
+  return defaultMessage
 }
 
 /** Machine-readable error code from a ProblemDetails response (e.g. "no_account"). */

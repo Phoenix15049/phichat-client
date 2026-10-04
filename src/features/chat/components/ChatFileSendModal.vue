@@ -5,7 +5,6 @@
   >
     <div
       class="p-5 w-[480px] max-w-full"
-      dir="ltr"
     >
       <div
         class="flex items-center justify-between mb-3"
@@ -13,14 +12,14 @@
         <h3
           class="text-lg font-bold text-[#1B3C59]"
         >
-          Send as files
+          {{ $t('chat.sendAsFiles') }}
         </h3>
 
         <button
           v-ripple
           type="button"
           class="btn-ghost"
-          aria-label="Close"
+          :aria-label="$t('common.close')"
           @click="emit('close')"
         >
           <X class="w-5 h-5" />
@@ -73,7 +72,7 @@
               )
             "
           >
-            Remove
+            {{ $t('common.remove') }}
           </button>
         </div>
       </div>
@@ -82,7 +81,7 @@
       <label
         class="block text-sm text-[#456173] mt-3 mb-1"
       >
-        Caption (optional, applies to all)
+        {{ $t('chat.captionAll') }}
       </label>
 
       <textarea
@@ -90,7 +89,7 @@
         rows="3"
         dir="auto"
         class="input w-full min-h-[84px] text-start auto-dir"
-        placeholder="Write a caption…"
+        :placeholder="$t('chat.writeCaption')"
         @input="onCaptionInput"
       ></textarea>
 
@@ -104,7 +103,7 @@
           class="btn-ghost"
           @click="emit('close')"
         >
-          Cancel
+          {{ $t('common.cancel') }}
         </button>
 
         <div
@@ -116,7 +115,7 @@
             class="btn-outline"
             @click="emit('add-more')"
           >
-            Add more
+            {{ $t('chat.addMore') }}
           </button>
 
           <button
@@ -131,8 +130,8 @@
           >
             {{
               props.sending
-                ? 'Sending…'
-                : `Send (${props.files.length})`
+                ? $t('common.sending')
+                : $t('chat.sendCount', { count: props.files.length })
             }}
           </button>
         </div>

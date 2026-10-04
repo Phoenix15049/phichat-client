@@ -8,6 +8,8 @@
 body {
   background-color: #ffffff;
   color: #111827;
+  /* Vazirmatn covers Persian and Latin; bundled with the app (no external font request). */
+  font-family: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Ink element created by the v-ripple directive (src/directives/ripple.ts). */

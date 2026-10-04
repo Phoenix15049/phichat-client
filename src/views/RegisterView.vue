@@ -1,13 +1,14 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4" dir="ltr">
+  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4">
     <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
-      <h1 class="text-xl font-bold mb-4 text-center text-[#1B3C59]">Create your PhiChat account</h1>
+      <div class="flex justify-end mb-2"><LanguageSwitch /></div>
+      <h1 class="text-xl font-bold mb-4 text-center text-[#1B3C59]">{{ $t('auth.registerTitle') }}</h1>
 
 
             <transition name="fade-up" mode="out-in">
         <!-- Step 1: Phone & Code -->
         <div v-if="step === 1" key="step1" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">Step 1 — Verify phone</div>
+          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step1') }}</div>
 
           <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" />
 
@@ -15,22 +16,22 @@
             <button
               class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!phoneE164 || sending" @click="sendCode">
-              <template v-if="sending"><Loader2 class="w-4 h-4 animate-spin" /><span>Sending…</span></template>
-              <template v-else><Send class="w-4 h-4" /><span>Send code</span></template>
+              <template v-if="sending"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('common.sending') }}</span></template>
+              <template v-else><Send class="w-4 h-4" /><span>{{ $t('auth.sendCode') }}</span></template>
             </button>
             <span v-if="smsSent" class="text-sm text-gray-600 inline-flex items-center gap-1.5">
-              <Check class="w-4 h-4" /><span>Code sent</span>
+              <Check class="w-4 h-4" /><span>{{ $t('auth.codeSent') }}</span>
             </span>
 
           </div>
 
           <div v-if="smsSent" class="mt-2 space-y-2">
-            <input v-model.trim="smsCode" class="input" inputmode="numeric" maxlength="6" placeholder="6-digit code" />
+            <input v-model.trim="smsCode" class="input" inputmode="numeric" maxlength="6" dir="ltr" :placeholder="$t('auth.codePlaceholder')" />
             <button type="button"
               class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="verifying || !/^\d{6}$/.test(smsCode)" @click="verifyCode">
-              <template v-if="verifying"><Loader2 class="w-4 h-4 animate-spin" /><span>Verifying…</span></template>
-              <template v-else><ShieldCheck class="w-4 h-4" /><span>Verify & continue</span></template>
+              <template v-if="verifying"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('auth.verifying') }}</span></template>
+              <template v-else><ShieldCheck class="w-4 h-4" /><span>{{ $t('auth.verifyContinue') }}</span></template>
             </button>
 
           </div>
@@ -40,39 +41,39 @@
 
         <!-- Step 2: Username (+ Password) -->
         <div v-else-if="step === 2" key="step2" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">Step 2 — Username & password</div>
+          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step2') }}</div>
 
-          <label class="text-sm text-[#456173]">Username</label>
-          <input v-model="username" class="input" placeholder="e.g. ali_1370" />
+          <label class="text-sm text-[#456173]">{{ $t('auth.username') }}</label>
+          <input v-model="username" class="input" dir="ltr" :placeholder="$t('auth.usernamePlaceholder')" />
           <div class="text-xs inline-flex items-center gap-1.5"
               :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-red-600' : 'text-gray-500'">
             <template v-if="uCheck.loading">
-              <Loader2 class="w-3.5 h-3.5 animate-spin" /><span>Checking…</span>
+              <Loader2 class="w-3.5 h-3.5 animate-spin" /><span>{{ $t('auth.checking') }}</span>
             </template>
             <template v-else-if="uCheck.ok === true">
-              <Check class="w-3.5 h-3.5" /><span>Available</span>
+              <Check class="w-3.5 h-3.5" /><span>{{ $t('auth.available') }}</span>
             </template>
             <template v-else-if="uCheck.ok === false">
-              <XIcon class="w-3.5 h-3.5" /><span>Already taken</span>
+              <XIcon class="w-3.5 h-3.5" /><span>{{ $t('auth.taken') }}</span>
             </template>
             <template v-else>
               <span>{{ uCheck.msg }}</span>
             </template>
           </div>
           <div></div>
-          <label class="text-sm text-[#456173]">Password</label>
-          <input type="password" v-model="password" class="input" placeholder="At least 8 characters" />
+          <label class="text-sm text-[#456173]">{{ $t('auth.password') }}</label>
+          <input type="password" v-model="password" class="input" dir="ltr" :placeholder="$t('auth.passwordPlaceholder', { min: PASSWORD_MIN })" />
 
           <div class="flex items-center justify-between mt-2">
             <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
                     @click="step = 1">
-              <ArrowLeft class="w-4 h-4" /><span>Back</span>
+              <ArrowLeft class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.back') }}</span>
             </button>
             <button
               class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!username || uCheck.ok !== true || !password || password.length < PASSWORD_MIN"
               @click="goStep3">
-              <ArrowRight class="w-4 h-4" /><span>Next</span>
+              <ArrowRight class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.next') }}</span>
             </button>
           </div>
 
@@ -82,28 +83,28 @@
 
         <!-- Step 3: Names → displayName -->
         <div v-else key="step3" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">Step 3 — Profile</div>
+          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step3') }}</div>
 
-          <label class="text-sm text-[#456173]">First name</label>
-          <input v-model="firstName" class="input" placeholder="Required" />
+          <label class="text-sm text-[#456173]">{{ $t('auth.firstName') }}</label>
+          <input v-model="firstName" class="input" dir="auto" :placeholder="$t('auth.required')" />
 
-          <label class="text-sm text-[#456173]">Last name (optional)</label>
-          <input v-model="lastName" class="input" placeholder="Optional" />
+          <label class="text-sm text-[#456173]">{{ $t('auth.lastName') }}</label>
+          <input v-model="lastName" class="input" dir="auto" :placeholder="$t('auth.optional')" />
 
           <div class="text-xs text-gray-600">
-            Display name: <span class="font-medium">{{ displayName || '—' }}</span>
+            {{ $t('auth.displayNamePreview') }} <span class="font-medium" dir="auto">{{ displayName || '—' }}</span>
           </div>
 
           <div class="flex items-center justify-between mt-2">
             <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
                     @click="step = 2">
-              <ArrowLeft class="w-4 h-4" /><span>Back</span>
+              <ArrowLeft class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.back') }}</span>
             </button>
             <button
               class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!firstName || loading" @click="completeRegister">
-              <template v-if="loading"><Loader2 class="w-4 h-4 animate-spin" /><span>Saving…</span></template>
-              <template v-else><Check class="w-4 h-4" /><span>Finish</span></template>
+              <template v-if="loading"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('common.saving') }}</span></template>
+              <template v-else><Check class="w-4 h-4" /><span>{{ $t('auth.finish') }}</span></template>
             </button>
           </div>
 
@@ -116,7 +117,7 @@
       </transition>
 
       <div class="text-center mt-6">
-        <RouterLink to="/login" class="text-[#11BFAE] hover:underline">Already have an account? Sign in</RouterLink>
+        <RouterLink to="/login" class="text-[#11BFAE] hover:underline">{{ $t('auth.haveAccount') }}</RouterLink>
       </div>
 
     </div>
@@ -127,6 +128,8 @@
 import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import PhoneInput from "../components/PhoneInput.vue";
+import LanguageSwitch from "../components/LanguageSwitch.vue";
+import { t } from "../i18n";
 import {
   Send, Loader2, Check, ShieldCheck, ArrowRight, ArrowLeft, X as XIcon, AlertCircle
 } from 'lucide-vue-next'
@@ -167,12 +170,12 @@ async function sendCode() {
   error.value = null;
   if (!phoneE164.value) return;
   try {
-    if (!phoneE164.value) { error.value = 'Invalid phone number.'; return; }
+    if (!phoneE164.value) { error.value = t('auth.invalidPhone'); return; }
     sending.value = true;
     await requestSmsCode({ phoneNumber: phoneE164.value as string });
     smsSent.value = true;
   } catch (e: any) {
-    error.value = getErrorMessage(e, "Failed to send code");
+    error.value = getErrorMessage(e, t("auth.sendCodeFailed"));
   } finally {
     sending.value = false;
   }
@@ -198,7 +201,7 @@ async function verifyCode() {
     registrationToken.value = result.registrationToken ?? null
     step.value = 2
   } catch (e: any) {
-    error.value = getErrorMessage(e, 'Code verification failed')
+    error.value = getErrorMessage(e, t('auth.codeVerifyFailed'))
   } finally {
     verifying.value = false
   }
@@ -225,19 +228,19 @@ watch(username, (v) => {
   uTimer = window.setTimeout(async () => {
     try {
       if (v.length < USERNAME_MIN || v.length > USERNAME_MAX) {
-        uCheck.value = { loading: false, ok: null, msg: `${USERNAME_MIN}-${USERNAME_MAX} characters` };
+        uCheck.value = { loading: false, ok: null, msg: t("auth.usernameLength", { min: USERNAME_MIN, max: USERNAME_MAX }) };
         return;
       }
       if (!USERNAME_PATTERN.test(v)) {
-        uCheck.value = { loading: false, ok: null, msg: "Only English letters, digits and _" };
+        uCheck.value = { loading: false, ok: null, msg: t("auth.usernameChars") };
         return;
       }
       const { available } = await checkUsername(v);
       uCheck.value = available
-        ? { loading: false, ok: true, msg: "Available" }
-        : { loading: false, ok: false, msg: "Already taken" };
+        ? { loading: false, ok: true, msg: t("auth.available") }
+        : { loading: false, ok: false, msg: t("auth.taken") };
     } catch {
-      uCheck.value = { loading: false, ok: null, msg: "Check failed" };
+      uCheck.value = { loading: false, ok: null, msg: t("auth.checkFailed") };
     }
   }, 350);
 });
@@ -262,7 +265,7 @@ const loading = ref(false);
 async function completeRegister() {
   if (!registrationToken.value) {
     step.value = 1;
-    error.value = "Please verify your phone number first.";
+    error.value = t("auth.verifyPhoneFirst");
     return;
   }
   if (!username.value || uCheck.value.ok !== true) return;
@@ -296,7 +299,7 @@ async function completeRegister() {
       smsCode.value = "";
       step.value = 1;
     }
-    error.value = getErrorMessage(e, "Registration failed");
+    error.value = getErrorMessage(e, t("auth.registrationFailed"));
   } finally {
     loading.value = false;
   }

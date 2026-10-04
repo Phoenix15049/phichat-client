@@ -3,8 +3,8 @@
     class="flex flex-col border-gray-200"
     :class="
       props.isNarrow
-        ? 'w-full border-r-0'
-        : 'w-80 md:w-96 border-r'
+        ? 'w-full border-e-0'
+        : 'w-80 md:w-96 border-e'
     "
   >
     <div
@@ -12,13 +12,13 @@
     >
       <button
         class="px-2 py-1 rounded hover:bg-gray-100"
-        aria-label="Open menu"
+        :aria-label="$t('menu.open')"
         @click="emit('open-menu')"
       >
         <Menu class="w-5 h-5" />
       </button>
 
-      <span>Chats</span>
+      <span>{{ $t('chat.chats') }}</span>
       <span class="w-6"></span>
     </div>
 
@@ -27,7 +27,7 @@
         v-for="conversation in props.conversations"
         :key="conversation.peerId"
         v-ripple
-        class="relative overflow-hidden w-full px-3 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 flex gap-3 items-center text-left"
+        class="relative overflow-hidden w-full px-3 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 flex gap-3 items-center text-start"
         :class="{
           'bg-[#11BFAE]/10':
             props.selectedUserId ===
@@ -45,7 +45,7 @@
             props.selectedUserId ===
             conversation.peerId
           "
-          class="absolute left-0 top-0 h-full w-[3px] bg-[#11BFAE] rounded-r"
+          class="absolute start-0 top-0 h-full w-[3px] bg-[#11BFAE] rounded-e"
         ></span>
 
         <div
@@ -60,7 +60,7 @@
                   conversation.peerId
                 )
               "
-              class="absolute bottom-0 right-0 w-2.5 h-2.5 z-10 bg-green-500 rounded-full ring-2 ring-white"
+              class="absolute bottom-0 end-0 w-2.5 h-2.5 z-10 bg-green-500 rounded-full ring-2 ring-white"
             ></span>
 
             <div
@@ -136,7 +136,7 @@
               class="text-[11px] text-gray-500 whitespace-nowrap"
             >
               {{
-                formatRelativeEn(
+                formatRelative(
                   conversation.lastSentAt ||
                     null
                 )
@@ -155,7 +155,7 @@
                   conversation.lastFileUrl
                 "
               >
-                [Media]
+                {{ $t('common.media') }}
               </template>
 
               <template v-else>
@@ -170,7 +170,7 @@
               v-if="
                 conversation.unreadCount > 0
               "
-              class="ml-2 inline-flex items-center justify-center rounded-full bg-[#11BFAE] text-white text-[11px] min-w-[18px] px-1"
+              class="ms-2 inline-flex items-center justify-center rounded-full bg-[#11BFAE] text-white text-[11px] min-w-[18px] px-1"
             >
               {{
                 conversation.unreadCount
@@ -186,7 +186,7 @@
 <script setup lang="ts">
 import { colorFromString, initialsOf } from '../../../utils/avatar'
 import { Menu } from 'lucide-vue-next'
-import { formatRelativeEn } from '../../../utils/time'
+import { formatRelative } from '../../../utils/time'
 import type { UiConversation } from '../../../types/chat'
 
 const props = defineProps<{

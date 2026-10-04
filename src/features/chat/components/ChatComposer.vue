@@ -5,11 +5,10 @@
     class="px-4 pt-2"
   >
     <div
-      class="px-3 py-2 bg-gray-100 border-l-4 border-blue-500 text-xs flex items-center justify-between rounded"
+      class="px-3 py-2 bg-gray-100 border-s-4 border-blue-500 text-xs flex items-center justify-between rounded"
     >
       <div class="truncate">
-        Replying to:
-        {{ props.replyPreview }}
+        {{ $t('chat.replyingTo', { preview: props.replyPreview }) }}
       </div>
 
       <button
@@ -28,10 +27,10 @@
     class="px-4 pt-2"
   >
     <div
-      class="px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 text-xs flex items-center justify-between rounded"
+      class="px-3 py-2 bg-yellow-50 border-s-4 border-yellow-400 text-xs flex items-center justify-between rounded"
     >
       <div class="truncate">
-        Editing message
+        {{ $t('chat.editing') }}
       </div>
 
       <button
@@ -62,8 +61,8 @@
         <button
           type="button"
           class="p-1 rounded-full text-[#456173] hover:text-[#1B3C59] hover:bg-black/5"
-          title="Attach"
-          aria-label="Attach"
+          :title="$t('chat.attach')"
+          :aria-label="$t('chat.attach')"
           @click="emit('open-file')"
         >
           <Paperclip class="w-6 h-6" />
@@ -72,26 +71,26 @@
         <Transition name="clip-pop">
           <div
             v-if="clipHover || menuHover"
-            class="absolute bottom-full right-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
+            class="absolute bottom-full end-0 mb-1 w-44 bg-white border rounded-xl shadow-lg z-50 overflow-hidden"
             @mouseenter="menuHover = true"
             @mouseleave="menuHover = false"
           >
             <button
               v-ripple
               type="button"
-              class="block w-full text-left px-3 py-2 hover:bg-gray-50"
+              class="block w-full text-start px-3 py-2 hover:bg-gray-50"
               @click="emit('open-file')"
             >
-              File
+              {{ $t('chat.attachFile') }}
             </button>
 
             <button
               v-ripple
               type="button"
-              class="px-3 py-2 hover:bg-gray-100 w-full text-left"
+              class="px-3 py-2 hover:bg-gray-100 w-full text-start"
               @click="emit('open-media')"
             >
-              Photo &amp; Video
+              {{ $t('chat.attachMedia') }}
             </button>
           </div>
         </Transition>
@@ -131,8 +130,8 @@
         :value="props.modelValue"
         rows="1"
         dir="auto"
-        placeholder="Write a message…"
-        class="tg-text tg-fade flex-1 min-w-0 bg-transparent border-0 pl-1 px-2 py-2 leading-6 resize-none overflow-y-auto box-border will-change-[height] outline-none placeholder:text-gray-400"
+        :placeholder="$t('chat.writeMessage')"
+        class="tg-text tg-fade flex-1 min-w-0 bg-transparent border-0 px-2 py-2 leading-6 resize-none overflow-y-auto box-border will-change-[height] outline-none placeholder:text-gray-400"
         style="transition: height .14s ease;"
         @keydown.enter.exact.prevent="
           emit('send')
@@ -149,7 +148,7 @@
         class="tg-send w-10 h-10 rounded-full grid place-items-center bg-[#11BFAE] text-white disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!props.canSend"
       >
-        <SendHorizontal class="w-5 h-5" />
+        <SendHorizontal class="w-5 h-5 rtl:-scale-x-100" />
       </button>
     </div>
   </form>

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen" dir="ltr">
+  <div class="flex h-screen">
     <ChatConversationList
       v-show="showListPane"
       :conversations="conversations"
@@ -207,8 +207,8 @@
   <ModalSheet :open="showSettings" @close="showSettings=false">
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">Settings</div>
-        <button class="text-gray-500 hover:text-gray-700" @click="showSettings=false">✕</button>
+        <div class="text-lg font-semibold">{{ $t('settings.title') }}</div>
+        <button class="text-gray-500 hover:text-gray-700" :aria-label="$t('common.close')" @click="showSettings=false">✕</button>
       </div>
       <SettingsView/>
     </div>
@@ -218,8 +218,8 @@
   <ModalSheet :open="showContacts" @close="showContacts=false">
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">Contacts</div>
-        <button class="text-gray-500 hover:text-gray-700" @click="showContacts=false">✕</button>
+        <div class="text-lg font-semibold">{{ $t('contacts.title') }}</div>
+        <button class="text-gray-500 hover:text-gray-700" :aria-label="$t('common.close')" @click="showContacts=false">✕</button>
       </div>
       <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
     </div>
@@ -319,7 +319,8 @@ import type {
 } from '../types/chat'
 import { mapServerMessage } from '../utils/messageMapper'
 import { EMPTY_MSG_MARKER } from '../utils/messageText'
-import { formatRelativeEn } from '../utils/time'
+import { formatRelative } from '../utils/time'
+import { useI18n } from 'vue-i18n'
 import { normalizeUsername } from '../utils/username'
 
 import { useChatKeys } from '../features/chat/composables/useChatKeys'
@@ -341,7 +342,7 @@ function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
 
   const same = messages.value.find(m => m.id === replyId || m.clientId === replyId)
-  if (same) return same.plainText || (same.fileUrl ? '[مدیا]' : '—')
+  if (same) return same.plainText || (same.fileUrl ? t('common.media') : '—')
 
   const cached = replyPreviewCache[replyId]
   if (cached) return cached
@@ -350,10 +351,11 @@ function resolveReplyPreview(replyId?: string | null): string {
     pendingReplyFetch.add(replyId)
     fetchReplyPreview(replyId)
   }
-  return 'در حال بارگذاری…'
+  return t('chat.loadingPreview')
 }
 
 const route = useRoute()
+const { t } = useI18n()
 const router = useRouter()
 
 // The signed-in user lives in the session store, shared with the side menu, profile and settings.
@@ -509,10 +511,10 @@ const {
 const peerStatus = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
-  if (isPeerTyping.value) return 'is typing...'
-  if (onlineIds.has(su.id)) return 'Online'
+  if (isPeerTyping.value) return t('chat.isTyping')
+  if (onlineIds.has(su.id)) return t('chat.online')
   const ls = lastSeenMap[su.id]
-  return ls ? `Last seen ${formatRelativeEn(ls)}` : 'Last seen unknown'
+  return ls ? t('chat.lastSeen', { when: formatRelative(ls) }) : t('chat.lastSeenUnknown')
 })
 
 const showImageViewer = ref(false)
@@ -724,7 +726,7 @@ async function onPeerSendMessage(id: string) {
 async function onPeerShareContact(u: ChatUser) {
   const text = u.displayName ? `${u.displayName} (@${u.username})` : `@${u.username}`
   await navigator.clipboard.writeText(text)
-  showToast('Contact copied')
+  showToast(t('chat.contactCopied'))
 }
 
 
@@ -738,9 +740,9 @@ async function fetchReplyPreview(id: string) {
   try {
     const dto = await getMessageBrief(id)
     const plain = await decryptMessageText(dto.encryptedContent)
-    replyPreviewCache[id] = plain || (dto.fileUrl ? '[مدیا]' : '—')
+    replyPreviewCache[id] = plain || (dto.fileUrl ? t('common.media') : '—')
   } catch {
-    replyPreviewCache[id] = 'نامشخص'
+    replyPreviewCache[id] = t('common.unknown')
   } finally {
     pendingReplyFetch.delete(id)
   }
@@ -754,7 +756,7 @@ async function decryptMessageText(base64?: string | null): Promise<string> {
     const plain = await decryptAES(key, base64)
     return plain && plain !== EMPTY_MSG_MARKER ? plain : ''
   } catch {
-    return '[رمزگشایی نشد]'
+    return t('chat.decryptFailed')
   }
 }
 
@@ -884,7 +886,7 @@ async function syncChatFromRoute(value: unknown) {
   } catch {
     if (requestId !== routeSyncRequestId) return
 
-    showToast('Username not found')
+    showToast(t('chat.usernameNotFound'))
     await replaceChatRoute(null)
   }
 }
@@ -902,7 +904,7 @@ async function openMention(usernameOrAt: string) {
     const user = await getUserByUsername(username)
 
     if (!user?.id || !user.username) {
-      showToast('Username not found')
+      showToast(t('chat.usernameNotFound'))
       return
     }
 
@@ -916,7 +918,7 @@ async function openMention(usernameOrAt: string) {
       }
     )
   } catch {
-    showToast('Username not found')
+    showToast(t('chat.usernameNotFound'))
   }
 }
 
@@ -962,8 +964,8 @@ async function goSavedMessages() {
 }
 
 
-function showToast(t: string) {
-  toast.text = t
+function showToast(message: string) {
+  toast.text = message
   toast.show = true
   setTimeout(() => { toast.show = false }, 1400)
 }
@@ -1343,9 +1345,7 @@ async function jumpToReplied(replyId: string) {
       )
     }, 1000)
   } else {
-    showToast(
-      'برای دیدن پیام قدیمی‌تر، کمی بالاتر بروید'
-    )
+    showToast(t('chat.scrollUpForOlder'))
   }
 }
 
@@ -1412,7 +1412,7 @@ async function prepareMessagePage(
         aesKey,
         myId: myId.value,
         cipherSource: 'content',
-        decryptFailureText: '[رمزگشایی نشد]'
+        decryptFailureText: t('chat.decryptFailed')
       })
 
       if (ui.forwardedFromSenderId) {
@@ -1879,7 +1879,7 @@ async function handleUserSelect(user: ChatTarget) {
   } catch (error) {
     if (isActiveChat(sessionId, user.id)) {
       console.warn('load conversation failed', error)
-      showToast('بارگذاری گفتگو ناموفق بود')
+      showToast(t('chat.loadFailed'))
     }
   } finally {
     if (isActiveChat(sessionId, user.id)) {

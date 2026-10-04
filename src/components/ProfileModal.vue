@@ -1,11 +1,11 @@
 <template>
   <ModalSheet :open="open" @close="$emit('close')">
-    <div class="p-6 w-[520px] max-w-full" dir="ltr">
+    <div class="p-6 w-[520px] max-w-full">
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-[#1B3C59]">Profile</h2>
+        <h2 class="text-lg font-bold text-[#1B3C59]">{{ $t('profile.title') }}</h2>
         <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]"
-                @click="$emit('close')" v-ripple aria-label="Close">
+                @click="$emit('close')" v-ripple :aria-label="$t('common.close')">
           <X class="w-5 h-5" />
         </button>
 
@@ -24,11 +24,11 @@
 
         <!-- Names -->
         <div class="min-w-0">
-          <div class="text-xl font-bold text-[#1B3C59] truncate">
+          <div class="text-xl font-bold text-[#1B3C59] truncate" dir="auto">
             {{ me?.displayName || '@' + (me?.username || '') }}
           </div>
           <div class="text-sm text-[#456173] truncate">
-            @{{ (me?.username || '').replace(/^@/, '') }}
+            <span dir="ltr">@{{ (me?.username || '').replace(/^@/, '') }}</span>
           </div>
         </div>
       </div>
@@ -36,7 +36,7 @@
       <!-- Actions -->
       <div class="mt-6 flex items-center justify-end gap-2">
         <button class="btn-primary inline-flex items-center gap-2" @click="$emit('edit')" v-ripple>
-          <Pencil class="w-4 h-4" /><span>Edit profile</span>
+          <Pencil class="w-4 h-4" /><span>{{ $t('profile.edit') }}</span>
         </button>
 
       </div>

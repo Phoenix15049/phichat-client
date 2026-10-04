@@ -1,3 +1,4 @@
+import { t } from '../../../i18n'
 import {
   computed,
   reactive,
@@ -329,7 +330,7 @@ export function useMessageSelection({
     )
 
     clearSelection()
-    showToast('Copied')
+    showToast(t('chat.copied'))
   }
 
   function disposeSelection() {

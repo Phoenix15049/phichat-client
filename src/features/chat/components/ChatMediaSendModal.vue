@@ -1,8 +1,8 @@
 <template>
   <ModalSheet :open="props.open" @close="emit('close')">
-    <div class="p-5 w-[560px] max-w-full" dir="ltr">
+    <div class="p-5 w-[560px] max-w-full">
       <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-bold text-[#1B3C59]">Media</h3>
+        <h3 class="text-lg font-bold text-[#1B3C59]">{{ $t('chat.mediaTitle') }}</h3>
         <button class="btn-ghost" @click="emit('close')">✕</button>
       </div>
 
@@ -10,35 +10,35 @@
         <div v-for="(file,index) in props.files" :key="`${file.name}-${file.lastModified}-${index}`" class="relative group">
           <img v-if="props.isImageFile(file)" :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"/>
           <video v-else :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"></video>
-          <button class="absolute top-1 right-1 btn-ghost !bg-white/90 hover:!bg-white shadow" @click="emit('remove',index)">Remove</button>
+          <button class="absolute top-1 end-1 btn-ghost !bg-white/90 hover:!bg-white shadow" @click="emit('remove',index)">{{ $t('common.remove') }}</button>
         </div>
       </div>
 
       <label v-if="props.allImagesSelected" class="mt-3 flex items-center gap-2 text-sm text-[#456173]">
         <input type="checkbox" :checked="props.compressImages" @change="onCompressChange"/>
-        <span>Compress images</span>
+        <span>{{ $t('chat.compressImages') }}</span>
       </label>
 
       <label class="mt-2 flex items-center gap-2 text-sm text-[#456173]">
         <input type="checkbox" :checked="props.groupItems" @change="onGroupChange"/>
-        <span>Group items</span>
+        <span>{{ $t('chat.groupItems') }}</span>
       </label>
 
-      <label class="block text-sm text-[#456173] mt-2 mb-1">Caption</label>
+      <label class="block text-sm text-[#456173] mt-2 mb-1">{{ $t('chat.caption') }}</label>
       <textarea
         :value="props.caption"
         rows="3"
         class="input w-full min-h-[84px]"
-        placeholder="Write a caption…"
+        :placeholder="$t('chat.writeCaption')"
         @input="onCaptionInput"
       ></textarea>
 
       <div class="mt-4 flex items-center justify-between">
-        <button class="btn-ghost" @click="emit('close')">Cancel</button>
+        <button class="btn-ghost" @click="emit('close')">{{ $t('common.cancel') }}</button>
         <div class="flex items-center gap-2">
-          <button class="btn-outline" @click="emit('add-more')">Add more</button>
+          <button class="btn-outline" @click="emit('add-more')">{{ $t('chat.addMore') }}</button>
           <button class="btn-primary" :disabled="props.sending || !props.files.length" @click="emit('send')">
-            {{ props.sending ? 'Sending…' : `Send (${props.files.length})` }}
+            {{ props.sending ? $t('common.sending') : $t('chat.sendCount', { count: props.files.length }) }}
           </button>
         </div>
       </div>
