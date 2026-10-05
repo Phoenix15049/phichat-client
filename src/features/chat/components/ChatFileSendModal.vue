@@ -10,7 +10,7 @@
         class="flex items-center justify-between mb-3"
       >
         <h3
-          class="text-lg font-bold text-[#1B3C59]"
+          class="text-lg font-bold text-ink"
         >
           {{ $t('chat.sendAsFiles') }}
         </h3>
@@ -35,23 +35,23 @@
           :key="
             `${file.name}-${file.size}-${file.lastModified}-${index}`
           "
-          class="flex items-center gap-3 p-3 rounded-lg bg-white ring-1 ring-[#456173]/15 hover:ring-[#11BFAE]/30 transition"
+          class="flex items-center gap-3 p-3 rounded-lg bg-surface ring-1 ring-muted/15 hover:ring-accent/30 transition"
         >
           <div
-            class="w-10 h-10 shrink-0 rounded bg-[#1B3C59] grid place-items-center text-white"
+            class="w-10 h-10 shrink-0 rounded-lg bg-accent-soft grid place-items-center text-accent-strong"
           >
             <FileIcon class="w-5 h-5" />
           </div>
 
           <div class="flex-1 min-w-0">
             <div
-              class="font-medium text-[#1B3C59] truncate"
+              class="font-medium text-ink truncate"
             >
               {{ file.name }}
             </div>
 
             <div
-              class="text-xs text-[#456173]"
+              class="text-xs text-muted"
             >
               {{
                 props.humanFileSize(
@@ -79,7 +79,7 @@
 
       <!-- Caption -->
       <label
-        class="block text-sm text-[#456173] mt-3 mb-1"
+        class="block text-sm text-muted mt-3 mb-1"
       >
         {{ $t('chat.captionAll') }}
       </label>

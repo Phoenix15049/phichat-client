@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen">
+  <div class="flex h-[100dvh] overflow-hidden bg-canvas">
     <ChatConversationList
       v-show="showListPane"
       :conversations="conversations"
@@ -14,7 +14,7 @@
       @select="onConvDblClick"
     />
 
-    <div class="flex-1 flex flex-col"
+    <div class="relative flex-1 min-w-0 flex flex-col"
      v-show="showChatPane">
 
     <ChatConversationHeader
@@ -95,6 +95,12 @@
         :set-scroll-element="setMessageScrollElement"
         :set-menu-element="setMessageMenuElement"
       />
+
+      <div v-if="!selectedUser" class="absolute inset-0 grid place-items-center pointer-events-none">
+        <span class="rounded-full bg-surface/85 backdrop-blur px-4 py-1.5 text-sm text-muted shadow-sm">
+          {{ $t('chat.selectChat') }}
+        </span>
+      </div>
 
       <ChatComposer
         v-model="text"
@@ -198,7 +204,7 @@
   <!-- Toast -->
   <div
     v-if="toast.show"
-    class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-black/80 text-white text-sm px-3 py-2 rounded-full shadow"
+    class="fixed bottom-20 left-1/2 -translate-x-1/2 z-[80] bg-[#1f2a35]/95 text-white text-sm px-4 py-2 rounded-xl shadow-lg"
   >
     {{ toast.text }}
   </div>
@@ -217,7 +223,7 @@
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
         <div class="text-lg font-semibold">{{ $t('settings.title') }}</div>
-        <button class="text-gray-500 hover:text-gray-700" :aria-label="$t('common.close')" @click="showSettings=false">✕</button>
+        <button class="text-muted hover:text-ink" :aria-label="$t('common.close')" @click="showSettings=false">✕</button>
       </div>
       <SettingsView/>
     </div>
@@ -228,7 +234,7 @@
     <div class="p-4">
       <div class="flex items-center justify-between mb-3">
         <div class="text-lg font-semibold">{{ $t('contacts.title') }}</div>
-        <button class="text-gray-500 hover:text-gray-700" :aria-label="$t('common.close')" @click="showContacts=false">✕</button>
+        <button class="text-muted hover:text-ink" :aria-label="$t('common.close')" @click="showContacts=false">✕</button>
       </div>
       <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
     </div>
@@ -1234,7 +1240,8 @@ const messageListActions={
   },
   retrySend:(message:UiMessage)=>{ void outbox.retry(message) },
   discardFailed:(message:UiMessage)=>outbox.discard(message),
-  canRetry:(message:UiMessage)=>outbox.canRetry(message)
+  canRetry:(message:UiMessage)=>outbox.canRetry(message),
+  copied:()=>showToast(t('chat.copied'))
 }
 
 // Encrypted images and videos are downloaded and decrypted as they appear in the chat.

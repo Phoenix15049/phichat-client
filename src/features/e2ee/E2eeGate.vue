@@ -1,57 +1,57 @@
 <template>
   <!-- A quick check on a known device shows nothing, so the card does not flash on every load. -->
-  <div v-if="view !== 'checking' || slow" class="fixed inset-0 z-[70] overflow-y-auto bg-[#F2F2F0]">
+  <div v-if="view !== 'checking' || slow" class="fixed inset-0 z-[70] overflow-y-auto bg-canvas">
     <div class="min-h-full flex items-center justify-center p-4">
-      <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
-        <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 rounded-full bg-[#11BFAE]/10 text-[#11BFAE]">
+      <div class="w-full max-w-md bg-surface rounded-2xl shadow-xl ring-1 ring-line p-6">
+        <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 rounded-full bg-accent/10 text-accent">
           <ShieldCheck class="w-6 h-6" />
         </div>
 
         <!-- Checking -->
-        <div v-if="view === 'checking'" class="flex flex-col items-center gap-3 py-4 text-[#456173]">
+        <div v-if="view === 'checking'" class="flex flex-col items-center gap-3 py-4 text-muted">
           <Loader2 class="w-6 h-6 animate-spin" />
           <span class="text-sm">{{ $t('e2ee.checking') }}</span>
         </div>
 
         <!-- Could not check -->
         <div v-else-if="view === 'error'" class="space-y-4 text-center">
-          <h1 class="text-lg font-bold text-[#1B3C59]">{{ $t('e2ee.title') }}</h1>
-          <p class="text-sm text-[#456173]">{{ $t('e2ee.checkFailed') }}</p>
+          <h1 class="text-lg font-bold text-ink">{{ $t('e2ee.title') }}</h1>
+          <p class="text-sm text-muted">{{ $t('e2ee.checkFailed') }}</p>
           <button type="button" class="btn-primary w-full" @click="retry">{{ $t('e2ee.retry') }}</button>
         </div>
 
         <!-- First setup / new key after a lost passphrase -->
         <form v-else-if="view === 'setup' || view === 'reset'" class="space-y-4" @submit.prevent="submitNewKey">
-          <h1 class="text-lg font-bold text-center text-[#1B3C59]">
+          <h1 class="text-lg font-bold text-center text-ink">
             {{ view === 'setup' ? $t('e2ee.setupTitle') : $t('e2ee.resetTitle') }}
           </h1>
 
-          <p class="text-sm leading-6 text-[#456173]">
+          <p class="text-sm leading-6 text-muted">
             {{ view === 'setup' ? $t('e2ee.setupIntro') : $t('e2ee.resetIntro') }}
           </p>
 
-          <div v-if="view === 'reset'" class="flex gap-2 rounded-lg bg-red-50 text-red-800 text-[13px] leading-6 p-3">
+          <div v-if="view === 'reset'" class="flex gap-2 rounded-lg bg-danger/10 text-danger text-[13px] leading-6 p-3">
             <TriangleAlert class="w-4 h-4 mt-1 shrink-0" />
             <span>{{ $t('e2ee.resetWarning') }}</span>
           </div>
 
           <div>
-            <label class="block text-sm mb-1 text-[#456173]" for="e2ee-new">{{ $t('e2ee.passphrase') }}</label>
+            <label class="block text-sm mb-1 text-muted" for="e2ee-new">{{ $t('e2ee.passphrase') }}</label>
             <PassphraseInput id="e2ee-new" v-model="passphrase" autocomplete="new-password" />
             <p class="text-xs mt-1" :class="strengthClass">{{ strengthLabel }}</p>
           </div>
 
           <div>
-            <label class="block text-sm mb-1 text-[#456173]" for="e2ee-confirm">{{ $t('e2ee.confirmPassphrase') }}</label>
+            <label class="block text-sm mb-1 text-muted" for="e2ee-confirm">{{ $t('e2ee.confirmPassphrase') }}</label>
             <PassphraseInput id="e2ee-confirm" v-model="confirmation" autocomplete="new-password" />
           </div>
 
-          <label class="flex items-start gap-2 text-[13px] leading-6 text-[#1B3C59]">
-            <input v-model="understood" type="checkbox" class="mt-1.5 accent-[#11BFAE]" />
+          <label class="flex items-start gap-2 text-[13px] leading-6 text-ink">
+            <input v-model="understood" type="checkbox" class="mt-1.5 accent-accent" />
             <span>{{ view === 'setup' ? $t('e2ee.understandSetup') : $t('e2ee.understandReset') }}</span>
           </label>
 
-          <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <p v-if="error" class="text-sm text-danger">{{ error }}</p>
 
           <button type="submit" class="btn-primary w-full gap-2" :disabled="busy || !canSubmitNew">
             <Loader2 v-if="busy" class="w-4 h-4 animate-spin" />
@@ -65,15 +65,15 @@
 
         <!-- Restore on this device -->
         <form v-else class="space-y-4" @submit.prevent="submitRestore">
-          <h1 class="text-lg font-bold text-center text-[#1B3C59]">{{ $t('e2ee.restoreTitle') }}</h1>
-          <p class="text-sm leading-6 text-[#456173]">{{ $t('e2ee.restoreIntro') }}</p>
+          <h1 class="text-lg font-bold text-center text-ink">{{ $t('e2ee.restoreTitle') }}</h1>
+          <p class="text-sm leading-6 text-muted">{{ $t('e2ee.restoreIntro') }}</p>
 
           <div>
-            <label class="block text-sm mb-1 text-[#456173]" for="e2ee-restore">{{ $t('e2ee.passphrase') }}</label>
+            <label class="block text-sm mb-1 text-muted" for="e2ee-restore">{{ $t('e2ee.passphrase') }}</label>
             <PassphraseInput id="e2ee-restore" v-model="passphrase" autocomplete="current-password" autofocus />
           </div>
 
-          <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <p v-if="error" class="text-sm text-danger">{{ error }}</p>
 
           <button type="submit" class="btn-primary w-full gap-2" :disabled="busy || !passphrase">
             <Loader2 v-if="busy" class="w-4 h-4 animate-spin" />
@@ -155,8 +155,8 @@ const strengthLabel = computed(() => {
 })
 
 const strengthClass = computed(() => ({
-  'text-[#456173]': !passphrase.value,
-  'text-red-600': !!passphrase.value && strength.value === 'tooShort',
+  'text-muted': !passphrase.value,
+  'text-danger': !!passphrase.value && strength.value === 'tooShort',
   'text-amber-600': strength.value === 'weak',
   'text-emerald-600': strength.value === 'good' || strength.value === 'strong'
 }))

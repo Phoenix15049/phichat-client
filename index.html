@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="fa" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
     <title>PhiChat</title>
+    <script>
+      // Apply the saved theme before the first paint (see src/stores/preferences.ts).
+      try {
+        var prefs = JSON.parse(localStorage.getItem('phi.prefs') || '{}')
+        var dark = prefs.theme === 'dark' || (prefs.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) document.documentElement.classList.add('dark')
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

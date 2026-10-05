@@ -1,58 +1,57 @@
 <template>
   <!-- overlay fade -->
   <transition name="fade-overlay">
-    <div v-if="open" class="fixed inset-0 z-[55]" role="dialog" aria-modal="true" @keydown.esc="$emit('close')">
-      <div class="absolute inset-0 bg-black/30" @click="$emit('close')"></div>
+    <div v-if="open" class="fixed inset-0 z-[55]" role="dialog" aria-modal="true">
+      <div class="absolute inset-0 bg-overlay" @click="emit('close')"></div>
 
       <!-- drawer slides in from the start edge (left in LTR, right in RTL) -->
       <transition name="drawer">
-        <aside
-          class="absolute start-0 top-0 h-full w-72 bg-white shadow-xl ring-1 ring-black/5 flex flex-col"
-          @click.stop
-        >
+        <aside class="absolute start-0 top-0 h-full w-[300px] max-w-[85vw] bg-surface shadow-2xl flex flex-col" @click.stop>
           <!-- Me header -->
-          <div class="p-4 border-b flex items-center gap-3">
-            <div class="w-12 h-12 rounded-full overflow-hidden ring-2 ring-[#F2F2F0] bg-[#F2F2F0] grid place-items-center">
-              <img v-if="me?.avatarUrl" :src="me.avatarUrl" class="w-full h-full object-cover" />
-              <div v-else class="w-full h-full grid place-items-center text-white font-semibold
-                                 bg-gradient-to-br from-[#456173] to-[#1B3C59]">
+          <div class="px-5 pt-6 pb-4 bg-accent-soft">
+            <div class="w-16 h-16 rounded-full overflow-hidden grid place-items-center shadow-sm">
+              <img v-if="me?.avatarUrl" :src="me.avatarUrl" class="w-full h-full object-cover" alt="" />
+              <div
+                v-else
+                class="w-full h-full grid place-items-center text-white text-xl font-semibold"
+                :style="{ backgroundColor: colorFromString(me?.displayName || me?.username || 'U') }"
+              >
                 {{ initialsOf(me?.displayName || me?.username || 'U') }}
               </div>
             </div>
-            <div class="min-w-0">
-              <div class="font-semibold text-[#1B3C59] truncate" dir="auto">
+            <div class="mt-3 min-w-0">
+              <div class="font-semibold text-ink truncate" dir="auto">
                 <bdi>{{ me?.displayName || '@' + (me?.username || '') }}</bdi>
               </div>
-              <div class="text-xs text-[#456173] truncate">
-                <span dir="ltr">@{{ (me?.username || '').replace(/^@/,'') }}</span>
+              <div class="text-[13px] text-muted truncate">
+                <span dir="ltr">@{{ (me?.username || '').replace(/^@/, '') }}</span>
               </div>
             </div>
           </div>
 
           <!-- Items -->
-          <nav class="flex-1 overflow-y-auto">
-            <button class="menu-item flex items-center gap-2" @click="$emit('action','profile')"  v-ripple>
-              <User class="w-4 h-4" /> <span>{{ $t('menu.myProfile') }}</span>
+          <nav class="flex-1 overflow-y-auto py-2">
+            <button class="menu-item" type="button" @click="emit('action', 'profile')" v-ripple>
+              <CircleUser class="w-5 h-5" /> <span>{{ $t('menu.myProfile') }}</span>
             </button>
-            <button class="menu-item flex items-center gap-2" @click="$emit('action','contacts')" v-ripple>
-              <Users class="w-4 h-4" /> <span>{{ $t('menu.contacts') }}</span>
+            <button class="menu-item" type="button" @click="emit('action', 'contacts')" v-ripple>
+              <Users class="w-5 h-5" /> <span>{{ $t('menu.contacts') }}</span>
             </button>
-            <button class="menu-item flex items-center gap-2" @click="$emit('action','saved')"    v-ripple>
-              <Bookmark class="w-4 h-4" /> <span>{{ $t('menu.savedMessages') }}</span>
+            <button class="menu-item" type="button" @click="emit('action', 'saved')" v-ripple>
+              <Bookmark class="w-5 h-5" /> <span>{{ $t('menu.savedMessages') }}</span>
             </button>
-            <button class="menu-item flex items-center gap-2" @click="$emit('action','settings')" v-ripple>
-              <Settings class="w-4 h-4" /> <span>{{ $t('menu.settings') }}</span>
+            <button class="menu-item" type="button" @click="emit('action', 'settings')" v-ripple>
+              <Settings class="w-5 h-5" /> <span>{{ $t('menu.settings') }}</span>
+            </button>
+
+            <button class="menu-item" type="button" role="switch" :aria-checked="isDark" @click="toggleDark">
+              <Moon class="w-5 h-5" />
+              <span class="flex-1">{{ $t('menu.nightMode') }}</span>
+              <span class="switch" :class="isDark ? 'switch-on' : ''"><span class="switch-knob"></span></span>
             </button>
           </nav>
 
-
-          <div class="p-3 text-start">
-            <button class="text-xs text-[#456173] hover:text-[#1B3C59] inline-flex items-center gap-1.5"
-                    @click="$emit('close')" v-ripple>
-              <X class="w-3.5 h-3.5" /> <span>{{ $t('common.close') }}</span>
-            </button>
-          </div>
-
+          <div class="px-5 py-3 text-[12px] text-muted border-t border-line">PhiChat</div>
         </aside>
       </transition>
     </div>
@@ -60,32 +59,54 @@
 </template>
 
 <script setup lang="ts">
-import { initialsOf } from '../utils/avatar'
-import { onMounted, onBeforeUnmount } from 'vue'
-import { User, Users, Bookmark, Settings, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { Bookmark, CircleUser, Moon, Settings, Users } from 'lucide-vue-next'
+import { colorFromString, initialsOf } from '../utils/avatar'
+import { usePreferencesStore } from '../stores/preferences'
 import type { ChatUser } from '../types/chat'
 
+const props = defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: 'profile' | 'contacts' | 'saved' | 'settings'): void }>()
 
-defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
-defineEmits<{ (e:'close'):void; (e:'action', a:'profile'|'contacts'|'saved'|'settings'):void }>()
+const preferences = usePreferencesStore()
+const isDark = computed(() => document.documentElement.classList.contains('dark') && preferences.prefs.theme !== 'light')
 
-// Esc برای خارج‌ شدن وقتی فوکوس داخل دراور است
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') { emitClose() }
+/** Switches between light and dark explicitly (leaving "follow system"). */
+function toggleDark() {
+  preferences.prefs.theme = isDark.value ? 'light' : 'dark'
 }
-const emitClose = () => { /* helper در صورت نیاز expand شود */ }
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && props.open) emit('close')
+}
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-
-
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
-/* list item */
 .menu-item {
-  @apply w-full text-start px-4 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 text-[#1B3C59];
+  @apply relative overflow-hidden w-full flex items-center gap-4 text-start px-5 py-3 text-[15px] text-ink hover:bg-surface-2 transition;
+}
+.menu-item > svg {
+  @apply text-muted shrink-0;
+}
+
+.switch {
+  @apply relative w-9 h-5 rounded-full bg-line transition-colors;
+}
+.switch-on {
+  @apply bg-accent;
+}
+.switch-knob {
+  @apply absolute top-0.5 start-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform;
+}
+.switch-on .switch-knob {
+  transform: translateX(16px);
+}
+:global([dir="rtl"] .switch-on .switch-knob) {
+  transform: translateX(-16px);
 }
 
 /* overlay fade */
@@ -103,5 +124,4 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
    The whole selector must be inside :global() - `:global(x) .y` compiles to just `x`. */
 :global([dir="rtl"] .drawer-enter-from),
 :global([dir="rtl"] .drawer-leave-to) { transform: translateX(100%); }
-
 </style>

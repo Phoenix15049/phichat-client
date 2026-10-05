@@ -1,23 +1,23 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4">
-    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
+  <div class="min-h-screen flex items-center justify-center bg-canvas p-4">
+    <div class="w-full max-w-md bg-surface rounded-2xl shadow-xl ring-1 ring-line p-6">
       <div class="flex justify-end mb-2"><LanguageSwitch /></div>
-      <h1 class="text-xl font-bold mb-6 text-center text-[#1B3C59]">{{ $t('auth.signInTitle') }}</h1>
+      <h1 class="text-xl font-bold mb-6 text-center text-ink">{{ $t('auth.signInTitle') }}</h1>
 
       <!-- Mode switch (segmented) -->
-      <div class="relative rounded-xl bg-[#F2F2F0] p-1 mb-6 flex gap-1">
+      <div class="relative rounded-xl bg-canvas p-1 mb-6 flex gap-1">
         <div
-          class="absolute inset-y-1 start-1 w-1/2 rounded-lg bg-white shadow transition-transform duration-200"
+          class="absolute inset-y-1 start-1 w-1/2 rounded-lg bg-surface shadow transition-transform duration-200"
           :style="{ transform: mode === 'password' ? 'translateX(0)' : (isRtl() ? 'translateX(-100%)' : 'translateX(100%)') }"
         ></div>
         <button
           class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
-          :class="mode === 'password' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'password'" v-ripple>
+          :class="mode === 'password' ? 'text-ink' : 'text-muted'" @click="mode = 'password'" v-ripple>
           <Lock class="w-4 h-4" /><span>{{ $t('auth.modePassword') }}</span>
         </button>
         <button
           class="relative z-10 flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
-          :class="mode === 'sms' ? 'text-[#1B3C59]' : 'text-[#456173]'" @click="mode = 'sms'" v-ripple>
+          :class="mode === 'sms' ? 'text-ink' : 'text-muted'" @click="mode = 'sms'" v-ripple>
           <MessageSquare class="w-4 h-4" /><span>{{ $t('auth.modeSms') }}</span>
         </button>
 
@@ -28,11 +28,11 @@
         <!-- Password mode -->
         <form v-if="mode === 'password'" key="pwd" @submit.prevent="handlePasswordLogin" class="space-y-4">
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.usernameOrPhone') }}</label>
+            <label class="block text-sm mb-1 text-muted">{{ $t('auth.usernameOrPhone') }}</label>
             <input v-model.trim="usernameOrPhone" type="text" class="input" dir="ltr" :placeholder="$t('auth.usernameOrPhonePlaceholder')" required />
           </div>
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.password') }}</label>
+            <label class="block text-sm mb-1 text-muted">{{ $t('auth.password') }}</label>
             <input v-model="password" type="password" class="input" dir="ltr" placeholder="••••••" required />
           </div>
 
@@ -46,9 +46,9 @@
         <!-- SMS mode -->
         <form v-else key="sms" @submit.prevent="handleSmsLogin" class="space-y-4">
           <div>
-            <label class="block text-sm mb-1 text-[#456173]">{{ $t('auth.phoneNumber') }}</label>
+            <label class="block text-sm mb-1 text-muted">{{ $t('auth.phoneNumber') }}</label>
             <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" />
-            <p class="text-xs text-gray-500 mt-1"></p>
+            <p class="text-xs text-muted mt-1"></p>
           </div>
 
           <div class="flex items-center gap-2">
@@ -83,13 +83,13 @@
         </form>
       </transition>
 
-      <p v-if="error" class="text-red-600 text-sm mt-4 text-center inline-flex items-center justify-center gap-1.5">
+      <p v-if="error" class="text-danger text-sm mt-4 text-center inline-flex items-center justify-center gap-1.5">
         <AlertCircle class="w-4 h-4" /> <span>{{ error }}</span>
       </p>
 
 
       <div class="text-center mt-6">
-        <RouterLink to="/register" class="text-[#11BFAE] hover:underline">{{ $t('auth.createAccount') }}</RouterLink>
+        <RouterLink to="/register" class="text-accent hover:underline">{{ $t('auth.createAccount') }}</RouterLink>
       </div>
     </div>
   </div>
@@ -221,18 +221,15 @@ async function handleSmsLogin() {
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 /* Inputs and buttons with your palette */
 .input {
-  @apply border rounded-lg px-3 py-2 w-full outline-none bg-white
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+  @apply border rounded-lg px-3 py-2 w-full outline-none bg-surface
+         focus:ring-2 focus:ring-accent/60 focus:border-accent;
 }
 .btn-primary {
-  @apply bg-[#11BFAE] text-white rounded-lg px-4 py-2 hover:bg-[#10B2A3] disabled:opacity-60;
-}
-.btn-secondary {
-  @apply bg-[#456173] text-white rounded-lg px-4 py-2 hover:bg-[#3F5867] disabled:opacity-60;
+  @apply bg-accent text-white rounded-lg px-4 py-2 hover:bg-accent-strong disabled:opacity-60;
 }
 
 /* Slide between modes */

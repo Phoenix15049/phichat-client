@@ -8,7 +8,7 @@
           v-if="user?.avatarUrl"
           :src="user.avatarUrl"
           alt="avatar"
-          class="w-16 h-16 rounded-full object-cover ring-2 ring-[#F2F2F0]"
+          class="w-16 h-16 rounded-full object-cover ring-2 ring-canvas"
         />
         <div
           v-else
@@ -20,20 +20,20 @@
 
         <!-- Title & meta -->
         <div class="flex-1 min-w-0">
-          <div class="text-lg font-bold text-[#1B3C59] truncate" dir="auto">
+          <div class="text-lg font-bold text-ink truncate" dir="auto">
             <bdi>{{ user?.displayName || '@' + (user?.username || '') }}</bdi>
           </div>
-          <div class="text-sm text-[#456173] truncate">
+          <div class="text-sm text-muted truncate">
             <span dir="ltr">@{{ user?.username }}</span>
           </div>
 
-          <div v-if="user?.lastSeenUtc" class="text-xs text-[#456173] mt-1">
+          <div v-if="user?.lastSeenUtc" class="text-xs text-muted mt-1">
             {{ $t('profile.lastSeen', { when: formatAbsolute(user.lastSeenUtc) }) }}
           </div>
         </div>
 
         <button
-          class="text-[#456173] hover:text-[#1B3C59] px-2 py-1 rounded hover:bg-[#F2F2F0]"
+          class="text-muted hover:text-ink px-2 py-1 rounded hover:bg-canvas"
           @click="$emit('close')" v-ripple :aria-label="$t('common.close')">
           <X class="w-5 h-5" />
         </button>
@@ -43,12 +43,12 @@
       <!-- Info -->
       <div class="mt-5 space-y-2 text-sm">
         <div v-if="user?.phoneNumber" class="flex items-center gap-2">
-          <Phone class="w-4 h-4 text-[#456173]" />
-          <span class="text-[#1B3C59]" dir="ltr">{{ user.phoneNumber }}</span>
+          <Phone class="w-4 h-4 text-muted" />
+          <span class="text-ink" dir="ltr">{{ user.phoneNumber }}</span>
         </div>
         <div v-if="user?.bio" class="flex items-start gap-2">
-          <FileText class="w-4 h-4 text-[#456173] mt-0.5" />
-          <span class="text-[#1B3C59]" dir="auto">{{ user.bio }}</span>
+          <FileText class="w-4 h-4 text-muted mt-0.5" />
+          <span class="text-ink" dir="auto">{{ user.bio }}</span>
         </div>
       </div>
 
@@ -113,20 +113,20 @@ defineEmits(['close','send-message','add-contact','remove-contact','share-contac
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 /* buttons with your palette */
 .btn-primary {
-  @apply bg-[#11BFAE] text-white rounded-lg px-4 py-2 hover:bg-[#10B2A3] transition disabled:opacity-60;
+  @apply bg-accent text-white rounded-lg px-4 py-2 hover:bg-accent-strong transition disabled:opacity-60;
 }
 .btn-outline {
-  @apply border border-[#456173]/40 text-[#1B3C59] rounded-lg px-4 py-2 hover:bg-[#F2F2F0] transition;
+  @apply border border-muted/40 text-ink rounded-lg px-4 py-2 hover:bg-canvas transition;
 }
 .btn-danger {
-  @apply border border-red-500/30 text-red-600 rounded-lg px-4 py-2 hover:bg-red-50 transition;
+  @apply border border-red-500/30 text-danger rounded-lg px-4 py-2 hover:bg-danger/10 transition;
 }
 .btn-disabled {
-  @apply border border-gray-300 text-gray-400 rounded-lg px-4 py-2 cursor-not-allowed;
+  @apply border border-line text-muted rounded-lg px-4 py-2 cursor-not-allowed;
 }
 
 </style>

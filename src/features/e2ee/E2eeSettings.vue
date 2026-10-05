@@ -1,15 +1,15 @@
 <template>
   <section class="space-y-3">
-    <div class="flex items-center gap-2 text-[#1B3C59] font-medium">
-      <ShieldCheck class="w-4 h-4 text-[#11BFAE]" />
+    <div class="flex items-center gap-2 text-ink font-medium">
+      <ShieldCheck class="w-4 h-4 text-accent" />
       <span>{{ $t('e2ee.title') }}</span>
     </div>
 
-    <p class="text-sm text-[#456173]">{{ $t('e2ee.settingsIntro') }}</p>
+    <p class="text-sm text-muted">{{ $t('e2ee.settingsIntro') }}</p>
 
-    <div v-if="e2ee.identity" class="text-xs text-[#456173]">
+    <div v-if="e2ee.identity" class="text-xs text-muted">
       {{ $t('e2ee.yourKey') }}:
-      <code dir="ltr" class="ms-1 px-1.5 py-0.5 rounded bg-white ring-1 ring-black/5">{{ e2ee.identity.keyId }}</code>
+      <code dir="ltr" class="ms-1 px-1.5 py-0.5 rounded bg-surface ring-1 ring-line">{{ e2ee.identity.keyId }}</code>
     </div>
 
     <button
@@ -23,24 +23,24 @@
       <span>{{ $t('e2ee.changePassphrase') }}</span>
     </button>
 
-    <form v-else class="space-y-3 rounded-xl bg-white ring-1 ring-black/5 p-4" @submit.prevent="submit">
+    <form v-else class="space-y-3 rounded-xl bg-surface ring-1 ring-line p-4" @submit.prevent="submit">
       <div>
-        <label class="block text-sm mb-1 text-[#456173]" for="e2ee-current">{{ $t('e2ee.currentPassphrase') }}</label>
+        <label class="block text-sm mb-1 text-muted" for="e2ee-current">{{ $t('e2ee.currentPassphrase') }}</label>
         <PassphraseInput id="e2ee-current" v-model="current" autocomplete="current-password" />
       </div>
       <div>
-        <label class="block text-sm mb-1 text-[#456173]" for="e2ee-next">{{ $t('e2ee.newPassphrase') }}</label>
+        <label class="block text-sm mb-1 text-muted" for="e2ee-next">{{ $t('e2ee.newPassphrase') }}</label>
         <PassphraseInput id="e2ee-next" v-model="next" autocomplete="new-password" />
-        <p class="text-xs mt-1 text-[#456173]">
+        <p class="text-xs mt-1 text-muted">
           {{ next ? $t(`e2ee.strength.${strength}`) : $t('e2ee.passphraseHint', { min: MIN_PASSPHRASE_LENGTH }) }}
         </p>
       </div>
       <div>
-        <label class="block text-sm mb-1 text-[#456173]" for="e2ee-repeat">{{ $t('e2ee.confirmPassphrase') }}</label>
+        <label class="block text-sm mb-1 text-muted" for="e2ee-repeat">{{ $t('e2ee.confirmPassphrase') }}</label>
         <PassphraseInput id="e2ee-repeat" v-model="repeat" autocomplete="new-password" />
       </div>
 
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      <p v-if="error" class="text-sm text-danger">{{ error }}</p>
 
       <div class="flex items-center gap-2">
         <button type="submit" class="btn-primary gap-2" :disabled="busy || !canSubmit">

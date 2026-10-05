@@ -68,3 +68,18 @@ export function formatDayLabel(iso?: string | null): string {
   if (difference === 1) return t('chat.yesterday')
   return new Intl.DateTimeFormat(intlLocale(), { dateStyle: 'full' }).format(date)
 }
+
+/** Conversation list time: clock time today, weekday within a week, otherwise a short date. */
+export function formatListTime(iso?: string | null): string {
+  const d = toDateSafe(iso)
+  if (!d) return ''
+
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  if (d.getTime() >= startOfToday) return formatTime(iso)
+
+  const days = (startOfToday - d.getTime()) / 86400000
+  if (days < 6) return new Intl.DateTimeFormat(intlLocale(), { weekday: 'short' }).format(d)
+
+  return new Intl.DateTimeFormat(intlLocale(), { month: 'short', day: 'numeric' }).format(d)
+}

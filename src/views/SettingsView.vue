@@ -1,25 +1,29 @@
 <template>
-  <div class="max-w-xl mx-auto p-6 space-y-5 bg-[#F2F2F0] min-h-[70vh]">
+  <div class="max-w-xl mx-auto p-6 space-y-5 bg-canvas min-h-[70vh]">
     <!-- Language -->
     <div class="flex items-center justify-between">
-      <label class="block text-sm text-[#456173]">{{ $t('settings.languageHint') }}</label>
+      <label class="block text-sm text-muted">{{ $t('settings.languageHint') }}</label>
       <LanguageSwitch />
     </div>
 
+    <AppearanceSettings />
+
+    <hr class="border-line">
+
     <!-- Display name -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">{{ $t('settings.displayName') }}</label>
+      <label class="block text-sm text-muted">{{ $t('settings.displayName') }}</label>
       <input v-model="displayName" class="input" dir="auto" :placeholder="$t('settings.displayNamePlaceholder')" />
     </div>
 
     <!-- Avatar -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">{{ $t('settings.avatar') }}</label>
+      <label class="block text-sm text-muted">{{ $t('settings.avatar') }}</label>
 
       <div class="flex items-center gap-3">
         <!-- preview -->
         <div
-          class="w-16 h-16 rounded-full overflow-hidden ring-2 ring-[#F2F2F0] bg-[#F2F2F0] grid place-items-center"
+          class="w-16 h-16 rounded-full overflow-hidden ring-2 ring-canvas bg-canvas grid place-items-center"
           :style="!avatarPreview ? { background: fallbackGradient } : {}"
         >
           <img v-if="avatarPreview" :src="avatarPreview" class="w-full h-full object-cover" />
@@ -40,12 +44,12 @@
         </button>
 
       </div>
-      <p class="text-xs text-[#456173]">{{ $t('settings.avatarHint') }}</p>
+      <p class="text-xs text-muted">{{ $t('settings.avatarHint') }}</p>
     </div>
 
     <!-- Bio -->
     <div class="space-y-2">
-      <label class="block text-sm text-[#456173]">{{ $t('settings.bio') }}</label>
+      <label class="block text-sm text-muted">{{ $t('settings.bio') }}</label>
       <textarea v-model="bio" class="input min-h-[90px]" dir="auto" :placeholder="$t('settings.bioPlaceholder')"></textarea>
     </div>
 
@@ -62,20 +66,20 @@
         </span>
       </transition>
 
-      <span v-if="saveError" class="text-red-600 text-sm">{{ saveError }}</span>
+      <span v-if="saveError" class="text-danger text-sm">{{ saveError }}</span>
 
     </div>
 
-    <hr class="my-6 border-[#456173]/20">
+    <hr class="my-6 border-muted/20">
 
     <E2eeSettings />
 
     <!-- Divider -->
-    <hr class="my-6 border-[#456173]/20">
+    <hr class="my-6 border-muted/20">
 
     <!-- Logout -->
     <div class="flex items-center justify-between">
-      <div class="text-[#1B3C59] font-medium">{{ $t('settings.logoutSection') }}</div>
+      <div class="text-ink font-medium">{{ $t('settings.logoutSection') }}</div>
       <button class="btn-outline inline-flex items-center gap-1.5" @click="openLogout = true" v-ripple>
         <LogOut class="w-4 h-4 rtl:-scale-x-100" /> <span>{{ $t('settings.logout') }}</span>
       </button>
@@ -88,16 +92,16 @@
         <div class="absolute inset-0 bg-black/40" @click="openLogout=false"></div>
 
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
-                    w-[420px] max-w-[95vw] rounded-2xl bg-white shadow-xl p-4">
+                    w-[420px] max-w-[95vw] rounded-2xl bg-surface shadow-xl p-4">
           <div class="text-lg font-semibold mb-2">{{ $t('settings.logout') }}</div>
-          <p class="text-sm text-gray-600 mb-4">{{ $t('settings.logoutConfirm') }}</p>
+          <p class="text-sm text-muted mb-4">{{ $t('settings.logoutConfirm') }}</p>
 
           <div class="flex items-center justify-end gap-2">
-            <button class="px-3 py-1.5 rounded border hover:bg-gray-50 inline-flex items-center gap-1.5"
+            <button class="px-3 py-1.5 rounded border hover:bg-surface-2 inline-flex items-center gap-1.5"
                     @click="openLogout=false" v-ripple>
               <X class="w-4 h-4" /> <span>{{ $t('common.cancel') }}</span>
             </button>
-            <button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5"
+            <button class="px-3 py-1.5 rounded bg-danger text-white hover:bg-red-700 inline-flex items-center gap-1.5"
                     @click="doLogout" v-ripple>
               <LogOut class="w-4 h-4 rtl:-scale-x-100" /> <span>{{ $t('settings.logout') }}</span>
             </button>
@@ -122,6 +126,7 @@ import { disconnectFromChatHub } from '../services/signalr'
 import { useSessionStore } from '../stores/session'
 import { useE2eeStore } from '../stores/e2ee'
 import E2eeSettings from '../features/e2ee/E2eeSettings.vue'
+import AppearanceSettings from '../features/settings/AppearanceSettings.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import { t } from '../i18n'
 import { useRouter } from 'vue-router'
@@ -221,7 +226,7 @@ async function doLogout() {
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 .modal-backdrop {
   position: fixed;
@@ -233,17 +238,17 @@ async function doLogout() {
 
 /* unified inputs & buttons using your palette */
 .input {
-  @apply border rounded-lg px-3 py-2 w-full outline-none bg-white
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+  @apply border rounded-lg px-3 py-2 w-full outline-none bg-surface
+         focus:ring-2 focus:ring-accent/60 focus:border-accent;
 }
 .btn-primary {
-  @apply bg-[#11BFAE] text-white rounded-lg px-4 py-2 hover:bg-[#10B2A3] transition disabled:opacity-60;
+  @apply bg-accent text-white rounded-lg px-4 py-2 hover:bg-accent-strong transition disabled:opacity-60;
 }
 .btn-outline {
-  @apply border border-[#456173]/40 text-[#1B3C59] rounded-lg px-3 py-2 hover:bg-[#F2F2F0] transition;
+  @apply border border-muted/40 text-ink rounded-lg px-3 py-2 hover:bg-canvas transition;
 }
 .btn-danger {
-  @apply text-red-600 rounded-lg px-3 py-2 hover:bg-red-50 transition;
+  @apply text-danger rounded-lg px-3 py-2 hover:bg-danger/10 transition;
 }
 
 /* tiny saved toast */

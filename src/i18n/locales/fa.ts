@@ -69,6 +69,7 @@ export default {
     searchCountry: 'جستجوی کشور یا کد…'
   },
   menu: {
+    nightMode: 'حالت شب',
     open: 'باز کردن منو',
     myProfile: 'پروفایل من',
     contacts: 'مخاطبین',
@@ -76,6 +77,12 @@ export default {
     settings: 'تنظیمات'
   },
   chat: {
+    selectedCount: '{count} انتخاب‌شده',
+    searchChats: 'جستجو',
+    noChats: 'هنوز گفتگویی ندارید.',
+    noSearchResults: 'چیزی پیدا نشد.',
+    selectChat: 'یک گفتگو را برای شروع انتخاب کنید',
+    send: 'ارسال',
     chats: 'گفتگوها',
     viewProfile: 'مشاهده پروفایل',
     typing: 'در حال نوشتن',
@@ -147,6 +154,16 @@ export default {
     comingSoon: 'به‌زودی'
   },
   settings: {
+    appearance: 'ظاهر',
+    theme: 'پوسته',
+    themes: { system: 'مطابق سیستم', light: 'روشن', dark: 'تیره' },
+    textSize: 'اندازه متن پیام‌ها',
+    sizes: { small: 'کوچک', medium: 'متوسط', large: 'بزرگ' },
+    previewIncoming: 'سلام! این پیش‌نمایش پیام‌هاست 👋',
+    previewOutgoing: 'عالیه، همین خوبه 😍',
+    sendWithEnter: 'ارسال با Enter',
+    sendWithEnterOn: 'Enter می‌فرستد؛ Shift+Enter خط جدید',
+    sendWithEnterOff: 'Ctrl+Enter می‌فرستد؛ Enter خط جدید',
     title: 'تنظیمات',
     displayName: 'نام نمایشی',
     displayNamePlaceholder: 'نام شما',
@@ -224,6 +241,26 @@ export default {
     currentPassphrase: 'عبارت بازیابی فعلی',
     newPassphrase: 'عبارت بازیابی جدید',
     passphraseChanged: 'عبارت بازیابی تغییر کرد.'
+  },
+  emoji: {
+    title: 'شکلک',
+    search: 'جستجوی شکلک',
+    results: 'نتایج جستجو',
+    noResults: 'شکلکی پیدا نشد',
+    skinTone: 'رنگ پوست',
+    more: 'شکلک‌های بیشتر',
+    groups: {
+      recent: 'اخیر',
+      smileys: 'شکلک‌ها و احساسات',
+      people: 'افراد',
+      animals: 'حیوانات و طبیعت',
+      food: 'غذا و نوشیدنی',
+      travel: 'سفر و مکان‌ها',
+      activities: 'فعالیت‌ها',
+      objects: 'اشیا',
+      symbols: 'نمادها',
+      flags: 'پرچم‌ها'
+    }
   },
   time: {
     justNow: 'هم‌اکنون'

@@ -16,23 +16,23 @@
       </button>
 
 
-      <div class="text-xs text-[#456173] whitespace-nowrap">
+      <div class="text-xs text-muted whitespace-nowrap">
         {{ $t('contacts.count', { count: filteredContacts.length }, filteredContacts.length) }}
       </div>
     </div>
 
     <!-- List -->
-    <transition-group name="list-fade" tag="ul" class="divide-y bg-white rounded-xl ring-1 ring-black/5 overflow-hidden">
+    <transition-group name="list-fade" tag="ul" class="divide-y bg-surface rounded-xl ring-1 ring-line overflow-hidden">
       <li
         v-for="c in filteredContacts"
         :key="c.contactId"
-        class="flex items-center justify-between py-3 px-3 hover:bg-[#11BFAE]/5 transition"
+        class="flex items-center justify-between py-3 px-3 hover:bg-accent/5 transition"
       >
         <div class="flex items-center gap-3 min-w-0">
           <img
             v-if="c.avatarUrl"
             :src="c.avatarUrl"
-            class="w-9 h-9 rounded-full object-cover ring-2 ring-[#F2F2F0]"
+            class="w-9 h-9 rounded-full object-cover ring-2 ring-canvas"
           />
           <div
             v-else
@@ -43,8 +43,8 @@
           </div>
 
           <div class="flex flex-col min-w-0">
-            <span class="font-medium text-[#1B3C59] truncate"><span dir="ltr">@{{ (c.username || '').replace(/^@/, '') }}</span></span>
-            <span v-if="c.displayName" class="text-sm text-[#456173] truncate" dir="auto">{{ c.displayName }}</span>
+            <span class="font-medium text-ink truncate"><span dir="ltr">@{{ (c.username || '').replace(/^@/, '') }}</span></span>
+            <span v-if="c.displayName" class="text-sm text-muted truncate" dir="auto">{{ c.displayName }}</span>
           </div>
         </div>
 
@@ -60,7 +60,7 @@
       </li>
     </transition-group>
 
-    <p v-if="contacts.length === 0" class="text-sm text-[#456173]">{{ $t('contacts.empty') }}</p>
+    <p v-if="contacts.length === 0" class="text-sm text-muted">{{ $t('contacts.empty') }}</p>
 
     <!-- Sticky add button when embedded as modal content -->
     <div v-if="inModal" class="sticky bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t p-3">
@@ -74,8 +74,8 @@
   <ModalSheet :open="showAdd" @close="showAdd=false">
     <div class="p-5 w-[420px] max-w-full">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-bold text-[#1B3C59]">{{ $t('contacts.add') }}</h2>
-        <button class="px-2 py-1 rounded text-[#456173] hover:text-[#1B3C59] hover:bg-[#F2F2F0]" @click="showAdd=false" v-ripple :aria-label="$t('common.close')">
+        <h2 class="text-lg font-bold text-ink">{{ $t('contacts.add') }}</h2>
+        <button class="px-2 py-1 rounded text-muted hover:text-ink hover:bg-canvas" @click="showAdd=false" v-ripple :aria-label="$t('common.close')">
           <X class="w-5 h-5" />
         </button>
       </div>
@@ -186,24 +186,24 @@ function openChat(c: Contact) {
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 /* palette-based controls (same across app) */
 .input {
-  @apply border rounded-lg px-3 py-2 outline-none bg-white
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+  @apply border rounded-lg px-3 py-2 outline-none bg-surface
+         focus:ring-2 focus:ring-accent/60 focus:border-accent;
 }
 .btn-primary {
-  @apply bg-[#11BFAE] text-white rounded-lg px-4 py-2 hover:bg-[#10B2A3] transition disabled:opacity-60;
+  @apply bg-accent text-white rounded-lg px-4 py-2 hover:bg-accent-strong transition disabled:opacity-60;
 }
 .btn-outline {
-  @apply border border-[#456173]/40 text-[#1B3C59] rounded-lg px-3 py-2 hover:bg-[#F2F2F0] transition;
+  @apply border border-muted/40 text-ink rounded-lg px-3 py-2 hover:bg-canvas transition;
 }
 .btn-text {
-  @apply text-[#11BFAE] hover:underline px-2 py-1 rounded;
+  @apply text-accent hover:underline px-2 py-1 rounded;
 }
 .btn-danger {
-  @apply text-red-600 px-2 py-1 rounded hover:bg-red-50;
+  @apply text-danger px-2 py-1 rounded hover:bg-danger/10;
 }
 
 /* list enter/leave */

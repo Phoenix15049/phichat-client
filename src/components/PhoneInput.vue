@@ -65,23 +65,23 @@ function close()  { open.value = false }
 
 <template>
   <div class="w-full">
-    <label v-if="label" class="mb-1 block text-sm text-[#456173]">{{ label }}</label>
+    <label v-if="label" class="mb-1 block text-sm text-muted">{{ label }}</label>
 
     <div class="relative">
       <!-- shell: phone numbers always read left-to-right, even in an RTL layout -->
       <div
         dir="ltr"
-        class="flex items-stretch bg-white border rounded-lg overflow-hidden
-               focus-within:ring-2 focus-within:ring-[#11BFAE]/50 focus-within:border-[#11BFAE]
+        class="flex items-stretch bg-surface border rounded-lg overflow-hidden
+               focus-within:ring-2 focus-within:ring-accent/50 focus-within:border-accent
                transition"
       >
         <!-- country button (left) -->
-        <button type="button" class="px-3 flex items-center gap-2 border-r bg-[#F2F2F0] hover:bg-[#F2F2F0]/70
-                                  text-[#1B3C59] disabled:opacity-50"
+        <button type="button" class="px-3 flex items-center gap-2 border-r bg-canvas hover:bg-canvas/70
+                                  text-ink disabled:opacity-50"
                 @click="toggle" :disabled="disabled" v-ripple>
           <span class="text-lg">{{ selected.flag }}</span>
           <span class="text-sm">+{{ selected.dial }}</span>
-          <ChevronDown class="w-4 h-4 text-[#456173] transition-transform"
+          <ChevronDown class="w-4 h-4 text-muted transition-transform"
                       :class="open ? 'rotate-180' : ''" />
         </button>
 
@@ -93,7 +93,7 @@ function close()  { open.value = false }
           inputmode="numeric"
           autocomplete="tel"
           :placeholder="$t('phone.placeholder')"
-          class="flex-1 px-3 py-2 outline-none text-[#1B3C59] placeholder:text-[#456173] selection:bg-[#11BFAE]/20"
+          class="flex-1 px-3 py-2 outline-none text-ink placeholder:text-muted selection:bg-accent/20"
         />
       </div>
 
@@ -101,10 +101,10 @@ function close()  { open.value = false }
       <transition name="dropdown">
         <div
           v-if="open"
-          class="absolute z-20 mt-2 w-full max-h-80 overflow-auto rounded-lg border bg-white shadow-xl ring-1 ring-[#606060]"
+          class="absolute z-20 mt-2 w-full max-h-80 overflow-auto rounded-lg border bg-surface shadow-xl ring-1 ring-line"
         >
-          <div class="p-2 sticky top-0 bg-white border-b relative">
-            <Search class="w-4.2 h-4.2 text-[#456173] absolute start-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div class="p-2 sticky top-0 bg-surface border-b relative">
+            <Search class="w-4.2 h-4.2 text-muted absolute start-4 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input v-model="q" :placeholder="$t('phone.searchCountry')"
                   class="pi-input w-full ps-9" @keydown.stop />
           </div>
@@ -113,17 +113,17 @@ function close()  { open.value = false }
             <li v-for="c in filtered" :key="c.iso2">
               <button
                 type="button"
-                class="w-full text-start px-3 py-2 hover:bg-[#11BFAE]/5 flex items-center gap-3 transition"
-                :class="c.iso2 === selected.iso2 ? 'bg-[#11BFAE]/5' : ''"
+                class="w-full text-start px-3 py-2 hover:bg-accent/5 flex items-center gap-3 transition"
+                :class="c.iso2 === selected.iso2 ? 'bg-accent/5' : ''"
                 @click="pick(c)"
                 v-ripple
               >
                 <span class="text-lg">{{ c.flag }}</span>
                 <span class="flex-1 min-w-0">
-                  <span class="font-medium text-[#1B3C59] truncate">{{ c.name }}</span>
-                  <span class="text-[#456173] text-xs ms-2">{{ c.iso2 }}</span>
+                  <span class="font-medium text-ink truncate">{{ c.name }}</span>
+                  <span class="text-muted text-xs ms-2">{{ c.iso2 }}</span>
                 </span>
-                <span class="text-[#1B3C59]" dir="ltr">+{{ c.dial }}</span>
+                <span class="text-ink" dir="ltr">+{{ c.dial }}</span>
               </button>
             </li>
           </ul>
@@ -132,7 +132,7 @@ function close()  { open.value = false }
     </div>
 
     <!-- show chosen E.164 -->
-    <p v-if="e164" class="mt-1 text-xs text-[#456173]"><span dir="ltr">{{ e164 }}</span></p>
+    <p v-if="e164" class="mt-1 text-xs text-muted"><span dir="ltr">{{ e164 }}</span></p>
   </div>
 
   <!-- click outside to close -->
@@ -140,7 +140,7 @@ function close()  { open.value = false }
 </template>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 /* dropdown animation */
 .dropdown-enter-from { opacity: 0; transform: translateY(6px) scale(.98); }
@@ -150,9 +150,9 @@ function close()  { open.value = false }
 
 /* search input (unified look with palette) */
 .pi-input {
-  @apply border rounded-lg px-3 py-2 outline-none bg-white
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
-  @apply text-[#1B3C59] placeholder:text-[#456173];
+  @apply border rounded-lg px-3 py-2 outline-none bg-surface
+         focus:ring-2 focus:ring-accent/60 focus:border-accent;
+  @apply text-ink placeholder:text-muted;
 }
 
 </style>
