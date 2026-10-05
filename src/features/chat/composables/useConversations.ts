@@ -2,7 +2,7 @@ import { t } from '../../../i18n'
 import type { Ref } from 'vue'
 import { toAbsoluteServerUrl } from '../../../config/server'
 import type { getConversations } from '../../../services/api'
-import { decryptAES } from '../../../services/crypto'
+import type { OpenedMessage } from '../../../stores/e2ee'
 import type { ChatUser, ServerMessage, UiConversation, UiMessage } from '../../../types/chat'
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 import { normalizeUsername } from '../../../utils/username'
@@ -23,7 +23,8 @@ type UseConversationsOptions = {
   conversations: Ref<UiConversation[]>
   selectedUser: Ref<Pick<ChatUser, 'id' | 'username'> | null>
   peers: Pick<ReturnType<typeof usePeerDirectory>, 'displayById' | 'avatarById' | 'ensurePeerCached'>
-  loadExistingChatKey: (partnerId: string) => Promise<CryptoKey | null>
+  /** Decrypts a message of the conversation with `peerId` sent by `senderId`. */
+  openMessage: (raw: string, senderId: string, peerId: string) => Promise<OpenedMessage>
 }
 
 function toAbsoluteUrlOrNull(url: string | null): string | null {
@@ -35,7 +36,7 @@ export function useConversations({
   conversations,
   selectedUser,
   peers,
-  loadExistingChatKey
+  openMessage
 }: UseConversationsOptions) {
   const { displayById, avatarById, ensurePeerCached } = peers
 
@@ -65,7 +66,7 @@ export function useConversations({
 
     for (const c of data) {
       if (c.lastEncryptedContent && !c.lastFileUrl) {
-        void refreshConversationPreview(c.peerId, c.lastEncryptedContent)
+        void refreshConversationPreview(c.peerId, c.lastEncryptedContent, c.lastSenderId || c.peerId)
       }
     }
   }
@@ -202,16 +203,20 @@ export function useConversations({
   /** Latest preview request per conversation; older decryptions finishing late are ignored. */
   const previewRequests = new Map<string, string>()
 
-  async function refreshConversationPreview(peerId: string, cipher: string) {
+  async function refreshConversationPreview(peerId: string, cipher: string, senderId: string) {
     previewRequests.set(peerId, cipher)
 
     try {
-      const key = await loadExistingChatKey(peerId)
-      if (!key) return
-
-      const plain = await decryptAES(key, cipher)
+      const opened = await openMessage(cipher, senderId, peerId)
       if (previewRequests.get(peerId) !== cipher) return
-      if (!plain || plain === EMPTY_MSG_MARKER) return
+
+      let plain: string
+      if (opened.state === 'ok') {
+        plain = opened.envelope.text
+        if (!plain || plain === EMPTY_MSG_MARKER) return
+      } else {
+        plain = t('e2ee.unreadablePreview')
+      }
 
       const conversation = conversations.value.find(item => item.peerId === peerId)
       // Only fill in if nothing newer replaced the preview meanwhile.

@@ -52,6 +52,11 @@
         </div>
       </div>
 
+      <PeerSecurityCode
+        v-if="user?.id"
+        :peer-id="user.id"
+        :peer-name="user.displayName || '@' + user.username"
+      />
 
       <!-- Actions -->
       <div class="mt-6 grid grid-cols-2 gap-2">
@@ -91,6 +96,7 @@
 import { initialsOf } from '../utils/avatar'
 import { formatAbsolute } from '../utils/time'
 import ModalSheet from './ModalSheet.vue'
+import PeerSecurityCode from '../features/e2ee/PeerSecurityCode.vue'
 import type { ChatUser } from '../types/chat'
 import { X, Phone, FileText, MessageSquare, Share2, UserPlus, UserMinus, Ban } from 'lucide-vue-next'
 

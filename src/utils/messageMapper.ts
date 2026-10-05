@@ -1,5 +1,5 @@
 import { toAbsoluteServerUrl } from '../config/server'
-import { decryptAES } from '../services/crypto'
+import type { OpenedMessage } from '../stores/e2ee'
 import type {
   ServerMessage,
   UiMessage,
@@ -7,15 +7,11 @@ import type {
 } from '../types/chat'
 import { EMPTY_MSG_MARKER } from './messageText'
 
-type CipherSource = 'content' | 'text'
-
 type MapServerMessageOptions = {
-  aesKey: CryptoKey
   myId: string
-  cipherSource: CipherSource
-  decryptFailureText?: string
+  /** Decrypts a body sent by `senderId` in the current conversation. */
+  open: (raw: string, senderId: string) => Promise<OpenedMessage>
   fallbackSentAt?: string
-  retryKey?: () => Promise<CryptoKey>
 }
 
 export function dedupeReactions(
@@ -58,23 +54,14 @@ function normalizeReactions(
   )
 }
 
-function getEncryptedValue(
-  message: ServerMessage,
-  source: CipherSource
-): string {
-  const content =
+/** The encrypted body: `encryptedContent` from the API, `encryptedText` from the hub. */
+export function encryptedBodyOf(message: ServerMessage): string {
+  return String(
     message.encryptedContent ??
     message.EncryptedContent ??
-    ''
-
-  if (source === 'content') {
-    return String(content)
-  }
-
-  return String(
     message.encryptedText ??
     message.EncryptedText ??
-    content
+    ''
   )
 }
 
@@ -82,44 +69,30 @@ export async function mapServerMessage(
   message: ServerMessage,
   options: MapServerMessageOptions
 ): Promise<UiMessage> {
-  const raw = getEncryptedValue(
-    message,
-    options.cipherSource
-  )
-
-  let decrypted = ''
-
-  if (raw.trim()) {
-    try {
-      let value = await decryptAES(
-        options.aesKey,
-        raw
-      )
-
-      if (!value && options.retryKey) {
-        const retryKey = await options.retryKey()
-
-        if (retryKey !== options.aesKey) {
-          value = await decryptAES(retryKey, raw)
-        }
-      }
-
-      decrypted =
-        value ||
-        options.decryptFailureText ||
-        ''
-    } catch {
-      decrypted =
-        options.decryptFailureText ||
-        ''
-    }
-  }
-
   const senderId = String(
     message.senderId ??
     message.SenderId ??
     ''
   )
+
+  const raw = encryptedBodyOf(message)
+  const isDeleted = !!(message.isDeleted ?? message.IsDeleted)
+
+  let plainText = ''
+  let file: UiMessage['file'] = null
+  let cipher: UiMessage['cipher'] = 'ok'
+
+  if (raw.trim() && !isDeleted) {
+    const opened = await options.open(raw, senderId)
+
+    if (opened.state === 'ok') {
+      const text = opened.envelope.text
+      plainText = text && text !== EMPTY_MSG_MARKER ? text : ''
+      file = opened.envelope.file ?? null
+    } else {
+      cipher = opened.state
+    }
+  }
 
   const isRead =
     message.isRead ??
@@ -146,11 +119,9 @@ export async function mapServerMessage(
 
     senderId,
 
-    plainText:
-      decrypted &&
-      decrypted !== EMPTY_MSG_MARKER
-        ? decrypted
-        : '',
+    plainText,
+    file,
+    cipher,
 
     fileUrl: fileUrl
       ? toAbsoluteServerUrl(fileUrl)
@@ -178,10 +149,7 @@ export async function mapServerMessage(
       message.ReplyToMessageId ||
       null,
 
-    isDeleted: !!(
-      message.isDeleted ??
-      message.IsDeleted
-    ),
+    isDeleted,
 
     updatedAtUtc:
       message.updatedAtUtc ||

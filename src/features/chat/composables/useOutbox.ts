@@ -5,14 +5,16 @@ type Attempt = () => Promise<void>
 
 type UseOutboxOptions = {
   messages: Ref<UiMessage[]>
+  /** Told about every failed attempt, e.g. to explain why it failed. */
+  onError?: (error: unknown) => void
 }
 
 /**
  * Tracks outgoing messages until the server accepts them. A failed send keeps its
- * attempt (already-encrypted payload or file) so the user can retry it exactly, instead
- * of the bubble spinning on "sending" forever.
+ * attempt so the user can retry it, instead of the bubble spinning on "sending" forever.
+ * Attempts encrypt when they run, so a retry uses the recipient's current key.
  */
-export function useOutbox({ messages }: UseOutboxOptions) {
+export function useOutbox({ messages, onError }: UseOutboxOptions) {
   const attempts = new Map<string, Attempt>()
 
   function setStatus(clientId: string, status: UiMessage['status']) {
@@ -32,6 +34,7 @@ export function useOutbox({ messages }: UseOutboxOptions) {
       console.warn('send failed', error)
       attempts.set(clientId, attempt)
       setStatus(clientId, 'failed')
+      onError?.(error)
       return false
     }
   }

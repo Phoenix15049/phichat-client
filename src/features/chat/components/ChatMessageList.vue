@@ -45,7 +45,8 @@
             {{ $t('chat.forwardedFrom') }}
             <button
               type="button"
-              class="font-medium underline hover:opacity-90 text-[#c5ffff]"
+              class="font-medium underline hover:opacity-90"
+              :class="isMediaOnly(msg)?'text-[#11BFAE]':'text-[#c5ffff]'"
               @mouseenter="actions.cacheForwardName(msg.forwardedFromSenderId)"
               @click.stop="actions.openForwardUser(msg.forwardedFromSenderId)"
             >
@@ -71,25 +72,44 @@
             </template>
           </div>
 
-          <div v-if="msg.fileUrl&&isImageUrl(msg.fileUrl)" class="mt-1">
+          <div
+            v-if="unreadableNotice(msg)"
+            class="flex items-center gap-1.5 text-[13px] italic opacity-85"
+          >
+            <Lock class="w-3.5 h-3.5 shrink-0"/>
+            <span>{{ unreadableNotice(msg) }}</span>
+          </div>
+
+          <div v-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" class="mt-1">
             <img
-              :src="msg.fileUrl"
+              v-if="actions.mediaSrc(msg)"
+              :src="actions.mediaSrc(msg)!"
+              :alt="msg.file?.name||''"
               class="rounded-xl cursor-zoom-in max-h-[70vh] max-w-[75vw] md:max-w-[60%] lg:max-w-[640px] sm:min-w-[180px] min-w-[140px] h-auto w-auto object-contain"
               @click="actions.openImage(msg)"
             />
+            <div v-else class="media-placeholder">
+              <ImageOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
+              <Loader2 v-else class="w-6 h-6 animate-spin"/>
+            </div>
           </div>
 
-          <div v-else-if="msg.fileUrl&&isVideoUrl(msg.fileUrl)" class="mt-1">
+          <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" class="mt-1">
             <video
-              :src="msg.fileUrl"
+              v-if="actions.mediaSrc(msg)"
+              :src="actions.mediaSrc(msg)!"
               controls
               playsinline
               class="rounded-xl bg-black cursor-pointer max-h-[70vh] max-w-[75vw] md:max-w-[60%] lg:max-w-[640px] sm:min-w-[220px] min-w-[160px] h-auto w-auto"
               @dblclick.prevent="actions.openVideo(msg)"
             ></video>
+            <div v-else class="media-placeholder bg-black/80 text-white/80">
+              <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
+              <Loader2 v-else class="w-6 h-6 animate-spin"/>
+            </div>
           </div>
 
-          <div v-else-if="msg.fileUrl" class="mt-1">
+          <div v-else-if="hasViewableFile(msg)" class="mt-1">
             <div
               class="flex items-center gap-3 rounded px-3 py-2"
               :class="msg.senderId===myId?'bg-white/10':'bg-[#536e7e]'"
@@ -108,10 +128,10 @@
 
               <div class="flex-1 min-w-0">
                 <div class="font-medium truncate max-w-[16rem] min-w-0">
-                  {{ actions.fileNameFromUrl(msg.fileUrl) }}
+                  {{ msg.file?.name||actions.fileNameFromUrl(msg.fileUrl!) }}
                 </div>
                 <div class="text-xs opacity-70">
-                  {{ actions.humanFileSize(fileSizeMap[actions.fileKey(msg)]||0) }}
+                  {{ actions.humanFileSize(msg.file?msg.file.size:(fileSizeMap[actions.fileKey(msg)]||0)) }}
                 </div>
               </div>
             </div>
@@ -305,7 +325,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { AlertCircle, Check, CheckCheck, ChevronDown, Download, Loader2, RotateCw } from 'lucide-vue-next'
+import { AlertCircle, Check, CheckCheck, ChevronDown, Download, ImageOff, Loader2, Lock, RotateCw, VideoOff } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
@@ -340,6 +360,9 @@ type MessageActions={
   fileNameFromUrl:(url:string)=>string
   humanFileSize:(bytes:number)=>string
   downloadFile:(message:UiMessage)=>MaybePromise
+  fileKind:(message:UiMessage)=>'image'|'video'|'file'
+  mediaSrc:(message:UiMessage)=>string|null
+  mediaState:(message:UiMessage)=>'idle'|'loading'|'ready'|'error'
   applyReaction:(message:UiMessage,emoji:string)=>MaybePromise
   keepHoverBar:()=>void
   hideHoverBarSoon:()=>void
@@ -414,16 +437,25 @@ function messageKey(message:UiMessage,index:number){
   return message.clientId||message.id||index
 }
 
-function isImageUrl(url?:string|null){
-  return !!url&&/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(url.split('?')[0]||'')
-}
-
-function isVideoUrl(url?:string|null){
-  return !!url&&/\.(mp4|webm|ogg|mov|m4v)$/i.test(url.split('?')[0]||'')
+/** An attachment that can be shown: not one of an undecryptable message (its key is lost with it). */
+function hasViewableFile(message:UiMessage){
+  return !!message.fileUrl&&message.cipher!=='old-key'&&message.cipher!=='failed'
 }
 
 function isMediaOnly(message:UiMessage){
-  return !!message.fileUrl&&(isImageUrl(message.fileUrl)||isVideoUrl(message.fileUrl))&&!message.plainText
+  if(!hasViewableFile(message)||message.plainText) return false
+  const kind=props.actions.fileKind(message)
+  return kind==='image'||kind==='video'
+}
+
+/** Why a message's text cannot be shown, or '' when it can. */
+function unreadableNotice(message:UiMessage){
+  switch(message.cipher){
+    case 'legacy': return message.fileUrl?'':t('e2ee.legacyMessage')
+    case 'old-key': return t('e2ee.oldKeyMessage')
+    case 'failed': return t('chat.decryptFailed')
+    default: return ''
+  }
 }
 
 function bubbleClasses(message:UiMessage){
@@ -499,6 +531,10 @@ function showDayHeader(index:number){
 
 <style scoped>
 @reference "tailwindcss";
+
+.media-placeholder{
+  @apply grid place-items-center rounded-xl bg-black/5 text-gray-500 w-[220px] h-[160px] max-w-[75vw];
+}
 
 .bubble-enter-from{opacity:0;transform:translateY(6px) scale(.98)}
 .bubble-enter-active{transition:opacity .15s ease,transform .15s ease}

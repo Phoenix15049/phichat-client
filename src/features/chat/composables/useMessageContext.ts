@@ -277,7 +277,8 @@ export function useMessageContext({
     return (
       isMine(message) &&
       !message?.fileUrl &&
-      !message?.isDeleted
+      !message?.isDeleted &&
+      (!message?.cipher || message.cipher === 'ok')
     )
   }
 

@@ -66,6 +66,10 @@
 
     </div>
 
+    <hr class="my-6 border-[#456173]/20">
+
+    <E2eeSettings />
+
     <!-- Divider -->
     <hr class="my-6 border-[#456173]/20">
 
@@ -116,6 +120,8 @@ import { ref, onMounted } from 'vue'
 import { getErrorMessage, getMeProfile, logout, updateMyProfile, uploadAvatar } from '../services/api'
 import { disconnectFromChatHub } from '../services/signalr'
 import { useSessionStore } from '../stores/session'
+import { useE2eeStore } from '../stores/e2ee'
+import E2eeSettings from '../features/e2ee/E2eeSettings.vue'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import { t } from '../i18n'
 import { useRouter } from 'vue-router'
@@ -124,6 +130,7 @@ const avatarUrl   = ref<string>('')
 const bio         = ref<string>('')
 
 const router = useRouter()
+const e2ee = useE2eeStore()
 const session = useSessionStore()
 
 const saving = ref(false)
@@ -208,6 +215,7 @@ async function doLogout() {
   // Revokes the refresh token on the server, then clears local auth data.
   await logout()
   session.reset()
+  e2ee.resetState()
   await router.replace('/login')
 }
 </script>

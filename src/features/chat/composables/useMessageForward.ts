@@ -7,7 +7,7 @@ import {
 } from 'vue'
 
 import { getUserById } from '../../../services/api'
-import { encryptAES } from '../../../services/crypto'
+import type { FileMeta } from '../../../services/e2ee/messageCodec'
 import { sendMessage } from '../../../services/signalr'
 
 import type {
@@ -16,6 +16,7 @@ import type {
   UiMessage
 } from '../../../types/chat'
 import type { Outbox } from './useOutbox'
+import type { SealAndSend } from '../attachments'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
@@ -29,6 +30,7 @@ type ForwardOutgoingInput = {
   clientId?: string
   plainText: string
   fileUrl: string | null
+  file?: FileMeta | null
   forwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
 }
@@ -48,8 +50,9 @@ type UseMessageForwardOptions = {
   clearSelection: () => void
   showToast: (text: string) => void
 
-  getOrLoadKey:
-    (userId: string) => Promise<CryptoKey>
+  sealAndSend: SealAndSend
+
+  onForwardError: (error: unknown) => void
 
   appendOutgoingMessage: (
     peerId: string,
@@ -76,12 +79,12 @@ export function useMessageForward({
   selectedUser,
   selectedMessages,
   selectedCount,
-  myId,
   getContextMessage,
   closeMenu,
   clearSelection,
   showToast,
-  getOrLoadKey,
+  sealAndSend,
+  onForwardError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   openUserChat,
@@ -249,232 +252,139 @@ export function useMessageForward({
     }
   }
 
+  /**
+   * Readable messages can be forwarded (the text and the attachment key are re-encrypted
+   * for the new chat; the server copies the stored ciphertext). An unreadable one cannot,
+   * except an old unencrypted attachment, which is forwarded as it is.
+   */
+  function canForward(message: UiMessage) {
+    if (!message.cipher || message.cipher === 'ok') return true
+    return message.cipher === 'legacy' && !!message.fileUrl
+  }
+
+  function forwardOf(source: UiMessage): ForwardOutgoingInput {
+    return {
+      plainText: source.plainText,
+      fileUrl: source.fileUrl || null,
+      file: source.file ?? null,
+      forwardedFromMessageId:
+        source.forwardedFromMessageId ||
+        source.id ||
+        null,
+      forwardedFromSenderId:
+        source.forwardedFromSenderId ||
+        source.senderId ||
+        null
+    }
+  }
+
+  function sendForward(
+    toPeerId: string,
+    source: UiMessage,
+    clientId: string | null
+  ) {
+    const input = forwardOf(source)
+
+    return outbox.send(clientId, () =>
+      sealAndSend(
+        toPeerId,
+        {
+          text: source.plainText || '',
+          ...(source.file ? { file: source.file } : {})
+        },
+        body => sendMessage(
+          toPeerId,
+          body,
+          null,
+          clientId,
+          null,
+          input.forwardedFromMessageId
+        )
+      )
+    )
+  }
+
   async function doForward(
     toPeerId: string
   ) {
     const mode = forwardPicker.mode
-    const source = forwardPicker.src
-    const sources = forwardPicker.srcList
 
-    forwardPicker.visible = false
-
-    try {
-      const aesKey =
-        await getOrLoadKey(toPeerId)
-
-      const sameChat =
-        selectedUser.value?.id ===
-        toPeerId
-
-      if (
-        mode === 'single' &&
-        source
-      ) {
-        const encrypted =
-          await encryptAES(
-            aesKey,
-            source.plainText || ''
-          )
-
-        const clientId =
-          sameChat
-            ? crypto.randomUUID()
-            : null
-
-        const outgoing = sameChat
-          ? await appendOutgoingMessage(
-              toPeerId,
-              {
-                clientId:
-                  clientId ?? undefined,
-
-                plainText:
-                  source.plainText,
-
-                fileUrl:
-                  source.fileUrl || null,
-
-                forwardedFromMessageId:
-                  source
-                    .forwardedFromMessageId ||
-                  source.id ||
-                  null,
-
-                forwardedFromSenderId:
-                  source
-                    .forwardedFromSenderId ||
-                  source.senderId ||
-                  null
-              }
-            )
-          : {
-              senderId: myId.value,
-
-              plainText:
-                source.plainText,
-
-              fileUrl:
-                source.fileUrl || null,
-
-              sentAt:
-                new Date().toISOString()
-            }
-
-        await outbox.send(clientId, () =>
-          sendMessage(
-            toPeerId,
-            encrypted,
-            source.fileUrl || null,
-            clientId,
-            null,
-
-            source.forwardedFromMessageId ||
-              source.id ||
-              null
-          )
-        )
-
-        updateConversationAfterSend(
-          toPeerId,
-          outgoing
-        )
-
-        return
-      }
-
-      if (
-        mode !== 'multi' ||
-        !sources.length
-      ) {
-        return
-      }
-
-      const list = [...sources].sort(
+    const sources = (
+      mode === 'single'
+        ? (forwardPicker.src ? [forwardPicker.src] : [])
+        : [...forwardPicker.srcList]
+    )
+      .filter(canForward)
+      .sort(
         (a, b) =>
           (a.sentAt || '').localeCompare(
             b.sentAt || ''
           )
       )
 
-      const clientIds =
-        new Map<string, string>()
+    forwardPicker.visible = false
 
-      let lastOutgoing:
-        UiMessage | null = null
+    if (!sources.length) {
+      showToast(t('e2ee.cannotForward'))
+      return
+    }
 
-      if (sameChat) {
-        for (
-          const sourceMessage of list
-        ) {
-          const sourceKey =
-            sourceMessage.id ||
-            sourceMessage.clientId
+    const sameChat =
+      selectedUser.value?.id ===
+      toPeerId
 
-          if (!sourceKey) continue
+    let lastOutgoing:
+      Pick<UiMessage, 'plainText' | 'fileUrl' | 'sentAt'> | null = null
 
-          const clientId =
-            crypto.randomUUID()
+    try {
+      for (const source of sources) {
+        // In the open chat the forward appears at once (with a retry button if it fails).
+        const clientId =
+          sameChat
+            ? crypto.randomUUID()
+            : null
 
-          clientIds.set(
-            sourceKey,
-            clientId
-          )
-
+        if (clientId) {
           lastOutgoing =
             await appendOutgoingMessage(
               toPeerId,
               {
                 clientId,
-
-                plainText:
-                  sourceMessage.plainText,
-
-                fileUrl:
-                  sourceMessage.fileUrl ||
-                  null,
-
-                forwardedFromMessageId:
-                  sourceMessage
-                    .forwardedFromMessageId ||
-                  sourceMessage.id ||
-                  null,
-
-                forwardedFromSenderId:
-                  sourceMessage
-                    .forwardedFromSenderId ||
-                  sourceMessage.senderId ||
-                  null
+                ...forwardOf(source)
               }
             )
+        } else {
+          lastOutgoing = {
+            plainText: source.plainText,
+            fileUrl: source.fileUrl || null,
+            sentAt: new Date().toISOString()
+          }
         }
-      }
 
-      for (
-        const sourceMessage of list
-      ) {
-        const encrypted =
-          await encryptAES(
-            aesKey,
-            sourceMessage.plainText || ''
-          )
-
-        const sourceKey =
-          sourceMessage.id ||
-          sourceMessage.clientId
-
-        const clientId =
-          sameChat && sourceKey
-            ? clientIds.get(sourceKey) ??
-              null
-            : null
-
-        await outbox.send(clientId, () =>
-          sendMessage(
-            toPeerId,
-            encrypted,
-
-            sourceMessage.fileUrl ||
-              null,
-
-            clientId,
-            null,
-
-            sourceMessage
-              .forwardedFromMessageId ||
-              sourceMessage.id ||
-              null
-          )
+        await sendForward(
+          toPeerId,
+          source,
+          clientId
         )
       }
 
-      if (!lastOutgoing) {
-        const last =
-          list[list.length - 1]
-
-        lastOutgoing = {
-          senderId: myId.value,
-          plainText: last.plainText,
-
-          fileUrl:
-            last.fileUrl || null,
-
-          sentAt:
-            new Date().toISOString()
-        }
+      if (lastOutgoing) {
+        updateConversationAfterSend(
+          toPeerId,
+          lastOutgoing
+        )
       }
 
-      updateConversationAfterSend(
-        toPeerId,
-        lastOutgoing
-      )
-
-      clearSelection()
-      showToast(t('chat.sent'))
+      if (mode === 'multi') {
+        clearSelection()
+        showToast(t('chat.sent'))
+      }
     } catch (error) {
       console.warn(
         'forward failed',
         error
       )
+      onForwardError(error)
     }
   }
 

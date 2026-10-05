@@ -4,22 +4,20 @@ import {
   type Ref
 } from 'vue'
 
-import {
-  sendMessageWithFileFD
-} from '../../../services/api'
-
-import {
-  encryptAES
-} from '../../../services/crypto'
-
 import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
+import type { FileMeta } from '../../../services/e2ee/messageCodec'
 import type { Outbox } from './useOutbox'
+import {
+  prepareAttachment,
+  sendAttachment,
+  type PreparedAttachment,
+  type SealAndSend
+} from '../attachments'
+import type { useSecureFiles } from './useSecureFiles'
 
-
-import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
 
@@ -27,6 +25,7 @@ type FileOutgoingInput = {
   clientId?: string
   plainText: string
   fileUrl: string | null
+  file?: FileMeta | null
   sentAt?: string
   replyToMessageId?: string | null
 }
@@ -35,8 +34,15 @@ type UseMessageFilesOptions = {
   selectedUser: Ref<SelectedUser>
   replyingTo: Ref<UiMessage | null>
 
-  getOrLoadKey:
-    (partnerId: string) => Promise<CryptoKey>
+  sealAndSend: SealAndSend
+
+  secureFiles: Pick<
+    ReturnType<typeof useSecureFiles>,
+    'registerLocal' | 'downloadDecrypted'
+  >
+
+  /** Explains a file that could not be sent or saved. */
+  onFileError: (error: unknown) => void
 
   appendOutgoingMessage: (
     peerId: string,
@@ -58,7 +64,9 @@ type UseMessageFilesOptions = {
 export function useMessageFiles({
   selectedUser,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend,
+  secureFiles,
+  onFileError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   outbox
@@ -223,6 +231,13 @@ export function useMessageFiles({
     downloading[key] = true
 
     try {
+      if (message.file) {
+        // End-to-end encrypted: download, decrypt here, save under the original name.
+        await secureFiles.downloadDecrypted(message)
+        downloaded[key] = true
+        return
+      }
+
       void ensureFileSize(
         message.fileUrl,
         key
@@ -243,6 +258,9 @@ export function useMessageFiles({
       anchor.remove()
 
       downloaded[key] = true
+    } catch (error) {
+      console.warn('download failed', error)
+      onFileError(error)
     } finally {
       downloading[key] = false
     }
@@ -266,17 +284,8 @@ export function useMessageFiles({
     sendingFile.value = true
 
     try {
-      const key =
-        await getOrLoadKey(partnerId)
-
       const caption =
         pendingCaption.value.trim()
-
-      const encryptedCaption =
-        await encryptAES(
-          key,
-          caption || EMPTY_MSG_MARKER
-        )
 
       const sentAt =
         new Date().toISOString()
@@ -287,8 +296,25 @@ export function useMessageFiles({
       for (
         const file of pendingFiles.value
       ) {
+        let attachment: PreparedAttachment
+
+        try {
+          attachment =
+            await prepareAttachment(file)
+        } catch (error) {
+          // Too large or unreadable: skip it and say why; the others still go.
+          onFileError(error)
+          continue
+        }
+
         const clientId =
           crypto.randomUUID()
+
+        secureFiles.registerLocal(
+          clientId,
+          file,
+          attachment.meta
+        )
 
         const outgoing =
           await appendOutgoingMessage(
@@ -297,6 +323,7 @@ export function useMessageFiles({
               clientId,
               plainText: caption,
               fileUrl: '(pending)',
+              file: attachment.meta,
               sentAt,
               replyToMessageId:
                 replyId
@@ -305,42 +332,19 @@ export function useMessageFiles({
 
         lastOutgoing = outgoing
 
-        const formData =
-          new FormData()
-
-        formData.append(
-          'receiverId',
-          partnerId
-        )
-
-        formData.append(
-          'encryptedText',
-          encryptedCaption
-        )
-
-        formData.append(
-          'file',
-          file
-        )
-
-        if (replyId) {
-          formData.append(
-            'replyToMessageId',
-            replyId
-          )
-        }
-
-        formData.append(
-          'clientId',
-          clientId
-        )
-
         // One failed file does not stop the others; it can be retried from its bubble.
-        await outbox.send(clientId, async () => {
-          await sendMessageWithFileFD(
-            formData
+        await outbox.send(clientId, () =>
+          sendAttachment(
+            sealAndSend,
+            partnerId,
+            attachment,
+            {
+              caption,
+              clientId,
+              replyToMessageId: replyId
+            }
           )
-        })
+        )
       }
 
       if (lastOutgoing) {
