@@ -154,6 +154,22 @@ export default {
     comingSoon: 'به‌زودی'
   },
   settings: {
+    sections: {
+      account: 'حساب کاربری',
+      accountHint: 'نام، تصویر و بیوگرافی',
+      appearance: 'ظاهر',
+      appearanceHint: 'پوسته، اندازه متن، شکل حباب‌ها',
+      general: 'عمومی',
+      generalHint: 'زبان و ارسال پیام',
+      privacy: 'حریم خصوصی و امنیت',
+      privacyHint: 'رمزنگاری سرتاسری و عبارت بازیابی'
+    },
+    languageDescription: 'زبان رابط کاربری برنامه',
+    bubbleRadius: 'گردی گوشه حباب‌ها',
+    radiusSharp: 'تیز',
+    radiusRound: 'گرد',
+    bubbleBorder: 'حاشیه دور حباب‌ها',
+    bubbleBorderHint: 'یک خط نازک دور هر پیام',
     appearance: 'ظاهر',
     theme: 'پوسته',
     themes: { system: 'مطابق سیستم', light: 'روشن', dark: 'تیره' },

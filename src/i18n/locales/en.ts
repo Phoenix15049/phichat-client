@@ -154,6 +154,22 @@ export default {
     comingSoon: 'Coming soon'
   },
   settings: {
+    sections: {
+      account: 'Account',
+      accountHint: 'Name, photo and bio',
+      appearance: 'Appearance',
+      appearanceHint: 'Theme, text size, bubble shape',
+      general: 'General',
+      generalHint: 'Language and sending',
+      privacy: 'Privacy & security',
+      privacyHint: 'End-to-end encryption and recovery passphrase'
+    },
+    languageDescription: 'The language of the app',
+    bubbleRadius: 'Message corners',
+    radiusSharp: 'Sharp',
+    radiusRound: 'Round',
+    bubbleBorder: 'Bubble outline',
+    bubbleBorderHint: 'A thin line around each message',
     appearance: 'Appearance',
     theme: 'Theme',
     themes: { system: 'System', light: 'Light', dark: 'Dark' },

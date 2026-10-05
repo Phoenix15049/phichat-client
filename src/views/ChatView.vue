@@ -219,14 +219,8 @@
                 @edit="openSettings()" />
 
   <!-- Settings Modal: reuse SettingsView inside ModalSheet -->
-  <ModalSheet :open="showSettings" @close="showSettings=false">
-    <div class="p-4">
-      <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">{{ $t('settings.title') }}</div>
-        <button class="text-muted hover:text-ink" :aria-label="$t('common.close')" @click="showSettings=false">✕</button>
-      </div>
-      <SettingsView/>
-    </div>
+  <ModalSheet wide :open="showSettings" @close="showSettings=false">
+    <SettingsView in-modal @close="showSettings=false"/>
   </ModalSheet>
 
     <!-- Contacts Modal -->

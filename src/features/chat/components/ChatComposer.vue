@@ -1,6 +1,6 @@
 <template>
   <div v-if="props.visible" class="composer shrink-0 bg-surface border-t border-line">
-    <div class="mx-auto w-full max-w-[900px] px-2 sm:px-4">
+    <div class="w-full px-2 sm:px-4">
       <!-- Reply / edit banner -->
       <Transition name="banner">
         <div v-if="props.replying || props.editing" class="flex items-center gap-3 pt-2 ps-2">
