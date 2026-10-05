@@ -145,7 +145,7 @@
           <div
             class="truncate text-[15px] leading-5 font-semibold"
           >
-            {{ props.selectedLabel }}
+            <bdi>{{ props.selectedLabel }}</bdi>
           </div>
 
           <div

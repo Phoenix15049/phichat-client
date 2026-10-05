@@ -21,7 +21,7 @@
             </div>
             <div class="min-w-0">
               <div class="font-semibold text-[#1B3C59] truncate" dir="auto">
-                {{ me?.displayName || '@' + (me?.username || '') }}
+                <bdi>{{ me?.displayName || '@' + (me?.username || '') }}</bdi>
               </div>
               <div class="text-xs text-[#456173] truncate">
                 <span dir="ltr">@{{ (me?.username || '').replace(/^@/,'') }}</span>

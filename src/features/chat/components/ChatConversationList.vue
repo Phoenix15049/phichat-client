@@ -126,10 +126,10 @@
                   : 'text-gray-900'
               "
             >
-              {{
+              <bdi>{{
                 conversation.displayName ||
                 '@' + conversation.username
-              }}
+              }}</bdi>
             </div>
 
             <div
@@ -159,10 +159,10 @@
               </template>
 
               <template v-else>
-                {{
+                <bdi>{{
                   conversation.lastPreview ||
                   ''
-                }}
+                }}</bdi>
               </template>
             </span>
 
