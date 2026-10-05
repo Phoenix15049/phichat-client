@@ -49,7 +49,7 @@
               @mouseenter="actions.cacheForwardName(msg.forwardedFromSenderId)"
               @click.stop="actions.openForwardUser(msg.forwardedFromSenderId)"
             >
-              {{ actions.resolveForwardLabel(msg.forwardedFromSenderId) }}
+              <bdi>{{ actions.resolveForwardLabel(msg.forwardedFromSenderId) }}</bdi>
             </button>
           </div>
 
@@ -162,10 +162,13 @@
           <Transition name="fade-scale">
             <div
               v-if="hoverReactFor===(msg.id||msg.clientId)&&!selectionMode&&!contextMenu.visible"
+              :ref="element=>bindHoverBar(element,msg.senderId===myId)"
               class="absolute z-20 pointer-events-auto select-none"
-              :class="msg.senderId===myId
-                ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
-                :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
+              :class="hoverBarAbove
+                ?(msg.senderId===myId?'bottom-full end-0 mb-1':'bottom-full start-0 mb-1')
+                :msg.senderId===myId
+                  ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
+                  :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
               @mouseenter="actions.keepHoverBar"
               @mouseleave="actions.hideHoverBarSoon"
             >
@@ -300,6 +303,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { AlertCircle, Check, CheckCheck, ChevronDown, Download, Loader2, RotateCw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -375,8 +379,31 @@ const props=defineProps<{
   setMenuElement:(element:HTMLElement|null)=>void
 }>()
 
+let scrollElement:HTMLElement|null=null
+
 function bindScroll(element:Element|ComponentPublicInstance|null){
-  props.setScrollElement(element instanceof HTMLElement?element:null)
+  scrollElement=element instanceof HTMLElement?element:null
+  props.setScrollElement(scrollElement)
+}
+
+/** The quick-reaction bar sits beside its bubble, or above it when the side has no room. */
+const hoverBarAbove=ref(false)
+
+function bindHoverBar(element:Element|ComponentPublicInstance|null,mine:boolean){
+  if(!(element instanceof HTMLElement)||!scrollElement)return
+  const bubble=element.parentElement
+  if(!bubble)return
+
+  const bubbleRect=bubble.getBoundingClientRect()
+  const listRect=scrollElement.getBoundingClientRect()
+  const scrollbar=scrollElement.offsetWidth-scrollElement.clientWidth
+  const rtl=getComputedStyle(scrollElement).direction==='rtl'
+  const onLeft=mine!==rtl
+  const room=onLeft
+    ?bubbleRect.left-listRect.left-(rtl?scrollbar:0)
+    :listRect.right-bubbleRect.right-(rtl?0:scrollbar)
+
+  hoverBarAbove.value=room<element.offsetWidth+8
 }
 
 function bindMenu(element:Element|ComponentPublicInstance|null){

@@ -12,7 +12,7 @@
           class="w-full text-start px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
           @click="emit('select',conversation.peerId)"
         >
-          {{ conversation.displayName || `@${conversation.username}` }}
+          <bdi>{{ conversation.displayName || `@${conversation.username}` }}</bdi>
         </button>
       </div>
 

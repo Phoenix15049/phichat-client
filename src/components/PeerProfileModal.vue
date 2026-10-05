@@ -21,7 +21,7 @@
         <!-- Title & meta -->
         <div class="flex-1 min-w-0">
           <div class="text-lg font-bold text-[#1B3C59] truncate" dir="auto">
-            {{ user?.displayName || '@' + (user?.username || '') }}
+            <bdi>{{ user?.displayName || '@' + (user?.username || '') }}</bdi>
           </div>
           <div class="text-sm text-[#456173] truncate">
             <span dir="ltr">@{{ user?.username }}</span>

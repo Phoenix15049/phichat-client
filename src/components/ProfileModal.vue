@@ -25,7 +25,7 @@
         <!-- Names -->
         <div class="min-w-0">
           <div class="text-xl font-bold text-[#1B3C59] truncate" dir="auto">
-            {{ me?.displayName || '@' + (me?.username || '') }}
+            <bdi>{{ me?.displayName || '@' + (me?.username || '') }}</bdi>
           </div>
           <div class="text-sm text-[#456173] truncate">
             <span dir="ltr">@{{ (me?.username || '').replace(/^@/, '') }}</span>
