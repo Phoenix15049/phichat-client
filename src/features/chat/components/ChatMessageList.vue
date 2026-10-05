@@ -13,7 +13,7 @@
           v-for="(msg,index) in messages"
           :key="messageKey(msg,index)"
           class="relative"
-          :class="[mine(msg)?'text-end':'text-start',isGroupStart(index)?'mt-2.5':'mt-0.5',selectionMode?'cursor-pointer ps-7':'']"
+          :class="[mine(msg)?'text-end':'text-start',isGroupStart(index)?'mt-2.5':'mt-0.5',selectionMode?'cursor-pointer ps-7':'',hoverReactFor===(msg.id||msg.clientId)?'':'msg-row-lazy']"
           @click.stop="actions.onRowClick($event,msg)"
           @contextmenu.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
           @mousedown.left="actions.onRowMouseDown($event,msg)"
@@ -77,6 +77,15 @@
             >
               <template v-for="(part,i) in toParts(msg.plainText)" :key="i">
                 <span v-if="part.t==='text'">{{ part.s }}</span>
+                <a
+                  v-else-if="part.t==='link'"
+                  :href="part.href"
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  dir="ltr"
+                  class="text-accent hover:underline break-all"
+                  @click.stop
+                >{{ part.s }}</a>
                 <span
                   v-else
                   dir="ltr"
@@ -86,6 +95,22 @@
                 >@{{ part.u }}</span>
               </template>
             </div>
+
+            <a
+              v-if="msg.preview&&!msg.fileUrl"
+              :href="msg.preview.url"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              class="link-preview"
+              @click.stop
+            >
+              <span class="min-w-0 flex-1">
+                <span v-if="msg.preview.siteName" class="block text-[12.5px] font-semibold text-accent truncate">{{ msg.preview.siteName }}</span>
+                <span v-if="msg.preview.title" class="block text-[13.5px] font-semibold line-clamp-2" dir="auto">{{ msg.preview.title }}</span>
+                <span v-if="msg.preview.description" class="block text-[12.5px] opacity-80 line-clamp-3" dir="auto">{{ msg.preview.description }}</span>
+              </span>
+              <img v-if="msg.preview.image" :src="msg.preview.image" alt="" class="w-16 h-16 shrink-0 rounded-lg object-cover"/>
+            </a>
 
             <div v-if="unreadableNotice(msg)" class="flex items-center gap-1.5 text-[13px] italic text-meta">
               <Lock class="w-3.5 h-3.5 shrink-0"/>
@@ -119,6 +144,10 @@
                 <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
                 <Loader2 v-else class="w-6 h-6 animate-spin"/>
               </div>
+            </div>
+
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='voice'" class="mt-0.5">
+              <VoiceMessage :src="actions.mediaSrc(msg)" :voice="msg.file!.voice!" :state="actions.mediaState(msg)"/>
             </div>
 
             <div v-else-if="hasViewableFile(msg)" class="mt-0.5">
@@ -315,6 +344,16 @@
             type="button"
             @click="actions.edit"
           ><Pencil class="w-4 h-4"/> {{ $t('chat.edit') }}</button>
+          <button
+            v-if="contextMenu.msg?.id"
+            class="menu-item"
+            type="button"
+            @click="contextMenu.msg&&actions.togglePin(contextMenu.msg)"
+          >
+            <PinOff v-if="actions.isPinned(contextMenu.msg)" class="w-4 h-4"/>
+            <Pin v-else class="w-4 h-4"/>
+            {{ actions.isPinned(contextMenu.msg) ? $t('chat.unpin') : $t('chat.pin') }}
+          </button>
           <button class="menu-item" type="button" @click="actions.openForwardPicker">
             <Forward class="w-4 h-4 rtl:-scale-x-100"/> {{ $t('chat.forwardMenu') }}
           </button>
@@ -341,12 +380,13 @@ import { ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import {
   AlertCircle, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, FileDown, Forward,
-  ImageOff, Loader2, Lock, Pencil, Reply, RotateCw, Trash2, VideoOff
+  ImageOff, Loader2, Lock, Pencil, Pin, PinOff, Reply, RotateCw, Trash2, VideoOff
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
 import EmojiPicker from '../../emoji/EmojiPicker.vue'
+import VoiceMessage from './VoiceMessage.vue'
 
 type MaybePromise=void|Promise<void>
 type ContextMenuState={
@@ -378,7 +418,7 @@ type MessageActions={
   fileNameFromUrl:(url:string)=>string
   humanFileSize:(bytes:number)=>string
   downloadFile:(message:UiMessage)=>MaybePromise
-  fileKind:(message:UiMessage)=>'image'|'video'|'file'
+  fileKind:(message:UiMessage)=>'image'|'video'|'voice'|'file'
   mediaSrc:(message:UiMessage)=>string|null
   mediaState:(message:UiMessage)=>'idle'|'loading'|'ready'|'error'
   applyReaction:(message:UiMessage,emoji:string)=>MaybePromise
@@ -398,6 +438,8 @@ type MessageActions={
   discardFailed:(message:UiMessage)=>void
   canRetry:(message:UiMessage)=>boolean
   copied:()=>void
+  togglePin:(message:UiMessage)=>MaybePromise
+  isPinned:(message:UiMessage|null)=>boolean
 }
 
 const { t }=useI18n()
@@ -563,19 +605,30 @@ function bubbleClasses(message:UiMessage,index:number){
   return classes
 }
 
-type Part={t:'text';s:string}|{t:'mention';u:string}
+type Part={t:'text';s:string}|{t:'mention';u:string}|{t:'link';s:string;href:string}
+
+/** http(s) links (other schemes such as javascript: are never linked) and @mentions. */
+const TOKENS=/(https?:\/\/[^\s<>"'`]+)|(?<![\w/@])@([A-Za-z0-9_]{3,32})/g
 
 function toParts(text?:string|null):Part[]{
   if(!text) return []
 
-  const regex=/@([A-Za-z0-9_]{3,32})/g
   const parts:Part[]=[]
   let last=0
   let match:RegExpExecArray|null
+  TOKENS.lastIndex=0
 
-  while((match=regex.exec(text))!==null){
+  while((match=TOKENS.exec(text))!==null){
     if(match.index>last) parts.push({t:'text',s:text.slice(last,match.index)})
-    parts.push({t:'mention',u:match[1]})
+    if(match[1]){
+      // Sentence punctuation right after a link is not part of it.
+      const url=match[1].replace(/[.,;:!?)\]}»"']+$/,'')
+      parts.push({t:'link',s:url,href:url})
+      last=match.index+url.length
+      TOKENS.lastIndex=last
+      continue
+    }
+    parts.push({t:'mention',u:match[2]})
     last=match.index+match[0].length
   }
 
@@ -628,6 +681,17 @@ function showDayHeader(index:number){
 
 .reply-quote{
   @apply block w-full max-w-[320px] mb-1 rounded-lg bg-accent/10 border-s-[3px] border-accent px-2 py-1 text-[13px] text-start text-current hover:bg-accent/15 transition;
+}
+
+/* Long chats: the browser skips layout and paint of rows far off screen. Off for the
+   hovered row, whose reaction bar may sit outside the row box (paint containment clips it). */
+.msg-row-lazy{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 64px;
+}
+
+.link-preview{
+  @apply mt-1.5 flex gap-2.5 rounded-lg bg-accent/10 border-s-[3px] border-accent px-2.5 py-1.5 text-start text-current max-w-[400px] hover:bg-accent/15 transition;
 }
 
 .media-placeholder{

@@ -13,6 +13,12 @@
       :label="$t('settings.sendWithEnter')"
       :description="prefs.sendWithEnter ? $t('settings.sendWithEnterOn') : $t('settings.sendWithEnterOff')"
     />
+
+    <SettingToggle
+      v-model="prefs.linkPreviews"
+      :label="$t('settings.linkPreviews')"
+      :description="$t('settings.linkPreviewsHint')"
+    />
   </div>
 </template>
 

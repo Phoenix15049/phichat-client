@@ -143,8 +143,9 @@
             <GeneralSettings />
           </div>
 
-          <div v-else-if="active === 'privacy'" class="card">
-            <E2eeSettings />
+          <div v-else-if="active === 'privacy'" class="space-y-4">
+            <div class="card"><E2eeSettings /></div>
+            <div class="card"><BlockedUsersSettings /></div>
           </div>
         </div>
       </div>
@@ -183,6 +184,7 @@ import { useE2eeStore } from '../stores/e2ee'
 import E2eeSettings from '../features/e2ee/E2eeSettings.vue'
 import AppearanceSettings from '../features/settings/AppearanceSettings.vue'
 import GeneralSettings from '../features/settings/GeneralSettings.vue'
+import BlockedUsersSettings from '../features/settings/BlockedUsersSettings.vue'
 import { t } from '../i18n'
 
 type SectionKey = 'account' | 'appearance' | 'general' | 'privacy'

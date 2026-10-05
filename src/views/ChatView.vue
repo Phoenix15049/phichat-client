@@ -66,7 +66,29 @@
       @clear-selection="
         clearSelection
       "
+      @search="search.show()"
     />
+
+      <ChatSearchBar
+        v-if="selectedUser && search.open.value"
+        v-model:query="search.query.value"
+        :index="search.index.value"
+        :total="search.results.value.length"
+        :has-more="hasMore"
+        :loading-older="search.loadingOlder.value"
+        @go="search.go"
+        @search-older="search.searchOlder()"
+        @close="search.close()"
+      />
+
+      <ChatPinnedBar
+        v-if="selectedUser && pins.current.value"
+        :text="pins.current.value.text"
+        :index="pins.index.value"
+        :count="pins.pins.value.length"
+        @open="pins.showCurrent()"
+        @unpin="pins.unpinCurrent()"
+      />
 
       <ChatSecurityBanner
         v-if="selectedUser"
@@ -102,11 +124,25 @@
         </span>
       </div>
 
+      <!-- Blocked: no composer, offer to unblock -->
+      <div v-if="selectedUser && peerBlocked" class="shrink-0 bg-surface border-t border-line p-3 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
+        <span class="text-sm text-muted">{{ $t('chat.youBlockedUser') }}</span>
+        <button type="button" class="btn-secondary px-4 py-1.5 text-sm" @click="blocks.unblock(selectedUser.id)">
+          {{ $t('profile.unblock') }}
+        </button>
+      </div>
+
       <ChatComposer
         v-model="text"
 
-        :visible="!!selectedUser"
+        :visible="!!selectedUser && !peerBlocked"
         :can-send="canSend"
+        :can-record="!!selectedUser && !peerBlocked && !e2ee.peerMissingKey[selectedUser.id]"
+        :link-preview="linkPreview.preview.value"
+        :link-preview-loading="linkPreview.loading.value"
+        @dismiss-preview="linkPreview.dismiss()"
+        @send-voice="onSendVoice"
+        @voice-error="onVoiceError"
 
         :replying="!!replyingTo"
         :reply-preview="
@@ -262,12 +298,26 @@
   :open="showPeerProfile"
   :user="peerProfile"
   :isContact="isPeerInContacts"
+  :is-blocked="blocks.isBlocked(peerProfile?.id)"
+  @block="askBlock"
+  @unblock="onUnblock"
   @close="showPeerProfile=false"
   @send-message="onPeerSendMessage"
   @add-contact="onPeerAddContact"
   @remove-contact="onPeerRemoveContact"
   @share-contact="onPeerShareContact"
 />
+
+  <ConfirmDialog
+    :open="!!blockTarget"
+    :title="$t('profile.blockTitle')"
+    :message="$t('profile.blockConfirm', { name: blockTargetName })"
+    :confirm-label="$t('profile.block')"
+    :busy="blocking"
+    danger
+    @cancel="blockTarget = null"
+    @confirm="confirmBlock"
+  />
 
   <!-- Until this device has the account's encryption key nothing else is usable. -->
   <E2eeGate v-if="e2ee.status !== 'ready' && e2ee.status !== 'idle'" />
@@ -323,6 +373,14 @@ import { useSessionStore } from '../stores/session'
 import { useE2eeStore } from '../stores/e2ee'
 import E2eeGate from '../features/e2ee/E2eeGate.vue'
 import ChatSecurityBanner from '../features/chat/components/ChatSecurityBanner.vue'
+import ChatSearchBar from '../features/chat/components/ChatSearchBar.vue'
+import ChatPinnedBar from '../features/chat/components/ChatPinnedBar.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { useBlocksStore } from '../stores/blocks'
+import { useLinkPreview } from '../features/chat/composables/useLinkPreview'
+import { useMessageSearch } from '../features/chat/composables/useMessageSearch'
+import { usePinnedMessages } from '../features/chat/composables/usePinnedMessages'
+import type { RecordedVoice } from '../features/chat/composables/useVoiceRecorder'
 
 import type {
   ChatUser,
@@ -332,7 +390,7 @@ import type {
   UiMessage,
   UserApiItem
 } from '../types/chat'
-import { mapServerMessage } from '../utils/messageMapper'
+import { encryptedBodyOf, mapServerMessage } from '../utils/messageMapper'
 import { EMPTY_MSG_MARKER } from '../utils/messageText'
 import { formatRelative } from '../utils/time'
 import { useI18n } from 'vue-i18n'
@@ -445,8 +503,7 @@ const {
   updateConversationAfterSend,
   upsertIncomingConversation,
   updateIncomingPreview,
-  refreshConversationPreview,
-  incomingFileUrl
+  refreshConversationPreview
 } = useConversations({
   conversations,
   selectedUser,
@@ -1126,7 +1183,8 @@ const {
   fileNameFromUrl,
   humanFileSize,
   ensureFileSize,
-  downloadFile
+  downloadFile,
+  sendVoice
 } = useMessageFiles({
   selectedUser,
   replyingTo,
@@ -1169,6 +1227,71 @@ const {
   outbox
 })
 
+// Blocking, link previews, search and pins.
+const blocks = useBlocksStore()
+const peerBlocked = computed(() => blocks.isBlocked(selectedUser.value?.id))
+
+const linkPreview = useLinkPreview(
+  text,
+  computed(() => !!selectedUser.value && !editingMessage.value)
+)
+
+const search = useMessageSearch({
+  messages,
+  hasMore,
+  loadOlderMessages,
+  jumpTo: id => jumpToReplied(id, 60)
+})
+
+const pins = usePinnedMessages({
+  selectedUser,
+  myId,
+  openMessage,
+  jumpTo: id => jumpToReplied(id, 60),
+  onError: showSendError
+})
+
+const blockTarget = ref<string | null>(null)
+const blocking = ref(false)
+const blockTargetName = computed(() =>
+  peerProfile.value?.id === blockTarget.value
+    ? (peerProfile.value?.displayName || '@' + (peerProfile.value?.username || ''))
+    : ''
+)
+
+function askBlock(userId: string) {
+  blockTarget.value = userId
+}
+
+async function confirmBlock() {
+  const userId = blockTarget.value
+  if (!userId) return
+  blocking.value = true
+  try {
+    await blocks.block(userId)
+    markOffline(userId, new Date().toISOString())
+    showPeerProfile.value = false
+  } catch (error) {
+    showSendError(error)
+  } finally {
+    blocking.value = false
+    blockTarget.value = null
+  }
+}
+
+function onUnblock(userId: string) {
+  void blocks.unblock(userId).catch(showSendError)
+}
+
+function onSendVoice(recorded: RecordedVoice) {
+  void sendVoice(recorded.blob, recorded.mime, recorded.voice)
+}
+
+function onVoiceError(error: unknown) {
+  console.warn('voice recording failed', error)
+  showToast(t('chat.micError'))
+}
+
 const {
   canSend,
   loadDraft,
@@ -1186,6 +1309,7 @@ const {
   sealAndSend: e2ee.sealAndSend,
   peerMissingKey: e2ee.peerMissingKey,
   onSendError: showSendError,
+  takeLinkPreview: () => linkPreview.take(),
   appendOutgoingMessage,
   updateConversationAfterSend,
   completeEdit,
@@ -1235,7 +1359,9 @@ const messageListActions={
   retrySend:(message:UiMessage)=>{ void outbox.retry(message) },
   discardFailed:(message:UiMessage)=>outbox.discard(message),
   canRetry:(message:UiMessage)=>outbox.canRetry(message),
-  copied:()=>showToast(t('chat.copied'))
+  copied:()=>showToast(t('chat.copied')),
+  togglePin:(message:UiMessage)=>{ closeMenu(); return pins.toggle(message) },
+  isPinned:(message:UiMessage|null)=>pins.isPinned(message)
 }
 
 // Encrypted images and videos are downloaded and decrypted as they appear in the chat.
@@ -1258,6 +1384,13 @@ watch(
 watch(selectedUser, async (current, previous) => {
   // Learn early whether the peer can receive encrypted messages and whether their key changed.
   if (current) void e2ee.getActivePeerKey(current.id).catch(() => {})
+
+  if (current?.id !== previous?.id) {
+    linkPreview.reset()
+    search.close()
+    pins.reset()
+    if (current) void pins.load()
+  }
 
   clearSelection()
   resetReactionUi()
@@ -1380,11 +1513,11 @@ function scrollToMessageEl(el: HTMLElement) {
   sc.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
 }
 
-async function jumpToReplied(replyId: string) {
+async function jumpToReplied(replyId: string, maxPages = 5) {
   let el = messageEls.get(replyId)
 
   if (!el) {
-    for (let i = 0; i < 5 && !el; i++) {
+    for (let i = 0; i < maxPages && !el; i++) {
       const loaded = await loadOlderMessages()
 
       await nextTick()
@@ -1399,15 +1532,15 @@ async function jumpToReplied(replyId: string) {
 
     el.classList.add(
       'ring-2',
-      'ring-yellow-400'
+      'ring-accent'
     )
 
     setTimeout(() => {
       el?.classList.remove(
         'ring-2',
-        'ring-yellow-400'
+        'ring-accent'
       )
-    }, 1000)
+    }, 1200)
   } else {
     showToast(t('chat.scrollUpForOlder'))
   }
@@ -1624,6 +1757,7 @@ async function initializeChatPage() {
     await e2ee.whenReady()
     if (!pageAlive) return
 
+    void blocks.load()
     wireSignalR()
 
     try {
@@ -1729,8 +1863,8 @@ function wireSignalR() {
     void ensurePeerCached(senderId)
 
     if (!active) {
-      const cipher = message.encryptedText ?? message.EncryptedText
-      if (cipher && !incomingFileUrl(message)) void refreshConversationPreview(senderId, cipher, senderId)
+      const cipher = encryptedBodyOf(message)
+      if (cipher) void refreshConversationPreview(senderId, cipher, senderId)
       return
     }
 
@@ -1870,6 +2004,7 @@ function wireSignalR() {
   })
 
   signalR.onMessageDeleted((p) => {
+    pins.forget(p.messageId)
     const i = messages.value.findIndex(x => x.id === p.messageId)
     if (i < 0) return
     // if (p.scope === 'all') {
@@ -1883,6 +2018,9 @@ function wireSignalR() {
     // }
     messages.value.splice(i, 1)
 })
+
+  signalR.onPinsChanged(payload => pins.onPinsChanged(payload))
+  signalR.onBlockListChanged(() => { void blocks.load() })
 
   signalR.onIdentityKeyChanged(payload => {
     void e2ee.onIdentityKeyChanged(String(payload.userId), String(payload.keyId))

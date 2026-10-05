@@ -104,6 +104,17 @@
             </div>
           </div>
         </button>
+
+        <button
+          v-if="props.selectedUser"
+          type="button"
+          class="icon-btn shrink-0"
+          :title="$t('chat.searchInChat')"
+          :aria-label="$t('chat.searchInChat')"
+          @click.stop="emit('search')"
+        >
+          <Search class="w-5 h-5" />
+        </button>
       </div>
     </Transition>
   </div>
@@ -111,7 +122,7 @@
 
 <script setup lang="ts">
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { ArrowLeft, Copy, Forward, Trash2, X } from 'lucide-vue-next'
+import { ArrowLeft, Copy, Forward, Search, Trash2, X } from 'lucide-vue-next'
 import type { ChatUser } from '../../../types/chat'
 
 type HeaderUser = Pick<ChatUser, 'id' | 'username'>
@@ -136,6 +147,7 @@ const emit = defineEmits<{
   (event: 'delete-selected'): void
   (event: 'copy-selected'): void
   (event: 'clear-selection'): void
+  (event: 'search'): void
 }>()
 </script>
 

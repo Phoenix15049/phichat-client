@@ -1,4 +1,4 @@
-import type { FileMeta } from '../services/e2ee/messageCodec'
+import type { FileMeta, LinkPreviewMeta } from '../services/e2ee/messageCodec'
 
 export type MessageStatus = 'sending' | 'failed' | 'delivered' | 'read'
 
@@ -23,6 +23,8 @@ export type UiMessage = {
   fileUrl: string | null
   /** Key and metadata of an encrypted attachment, from the decrypted message. */
   file?: FileMeta | null
+  /** Link preview made by the sender (inside the encrypted message). */
+  preview?: LinkPreviewMeta | null
   cipher?: CipherState
   status?: MessageStatus
   sentAt?: string

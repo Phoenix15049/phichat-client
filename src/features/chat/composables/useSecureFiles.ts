@@ -10,7 +10,7 @@ const entries = reactive(new Map<string, Entry>())
 const loads = new Map<string, Promise<Blob>>()
 const blobs = new Map<string, Blob>()
 
-export type FileKind = 'image' | 'video' | 'file'
+export type FileKind = 'image' | 'video' | 'voice' | 'file'
 
 /**
  * Object URLs share the app's origin, so a sender-chosen type such as text/html or SVG could
@@ -27,6 +27,7 @@ const VIDEO_EXT = /\.(mp4|webm|ogg|mov|m4v)$/i
 
 export function fileKindOf(message: Pick<UiMessage, 'file' | 'fileUrl'>): FileKind {
   if (message.file) {
+    if (message.file.voice) return 'voice'
     const mime = safeMime(message.file.mime)
     if (mime.startsWith('image/')) return 'image'
     if (mime.startsWith('video/')) return 'video'
@@ -88,7 +89,7 @@ export function useSecureFiles() {
     return load
   }
 
-  /** Starts decrypting an image or video so it can be shown. */
+  /** Starts decrypting an image, video or voice message so it can be shown or played. */
   function ensureMedia(message: UiMessage) {
     const url = message.fileUrl
     if (!message.file || !url || url === '(pending)' || entryFor(message)) return

@@ -80,6 +80,7 @@ export async function mapServerMessage(
 
   let plainText = ''
   let file: UiMessage['file'] = null
+  let preview: UiMessage['preview'] = null
   let cipher: UiMessage['cipher'] = 'ok'
 
   if (raw.trim() && !isDeleted) {
@@ -89,6 +90,7 @@ export async function mapServerMessage(
       const text = opened.envelope.text
       plainText = text && text !== EMPTY_MSG_MARKER ? text : ''
       file = opened.envelope.file ?? null
+      preview = opened.envelope.preview ?? null
     } else {
       cipher = opened.state
     }
@@ -121,6 +123,7 @@ export async function mapServerMessage(
 
     plainText,
     file,
+    preview,
     cipher,
 
     fileUrl: fileUrl

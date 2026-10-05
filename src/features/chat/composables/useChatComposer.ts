@@ -19,7 +19,7 @@ import type {
   UiMessage
 } from '../../../types/chat'
 import type { Outbox } from './useOutbox'
-import type { MessageEnvelope } from '../../../services/e2ee/messageCodec'
+import type { LinkPreviewMeta, MessageEnvelope } from '../../../services/e2ee/messageCodec'
 import { E2eeError } from '../../../services/e2ee/primitives'
 
 type SelectedUser =
@@ -29,6 +29,7 @@ type ComposerOutgoingInput = {
   clientId?: string
   plainText: string
   fileUrl: string | null
+  preview?: LinkPreviewMeta | null
   sentAt?: string
   replyToMessageId?: string | null
 }
@@ -60,6 +61,9 @@ type UseChatComposerOptions = {
   /** Explains a send or edit that could not be done. */
   onSendError: (error: unknown) => void
 
+  /** The link preview to send with the current text (and clears it). */
+  takeLinkPreview: () => LinkPreviewMeta | null
+
   appendOutgoingMessage: (
     peerId: string,
     input: ComposerOutgoingInput
@@ -90,6 +94,7 @@ export function useChatComposer({
   sealAndSend,
   peerMissingKey,
   onSendError,
+  takeLinkPreview,
   appendOutgoingMessage,
   updateConversationAfterSend,
   completeEdit,
@@ -376,11 +381,14 @@ export function useChatComposer({
     ) {
       const messageId =
         editingMessage.value.id
+      const keptPreview =
+        editingMessage.value.preview
+      takeLinkPreview()
 
       try {
         await sealAndSend(
           user.id,
-          { text: draft.trim() },
+          { text: draft.trim(), ...(keptPreview ? { preview: keptPreview } : {}) },
           body => editMessage(messageId, body)
         )
 
@@ -402,12 +410,16 @@ export function useChatComposer({
       replyingTo.value?.id ??
       null
 
+    const preview =
+      takeLinkPreview()
+
     const outgoing =
       await appendOutgoingMessage(
         user.id,
         {
           plainText: draft,
           fileUrl: null,
+          preview,
           replyToMessageId:
             replyId
         }
@@ -423,7 +435,7 @@ export function useChatComposer({
     await outbox.send(outgoing.clientId, () =>
       sealAndSend(
         user.id,
-        { text: draft },
+        { text: draft, ...(preview ? { preview } : {}) },
         body => sendMessage(
           user.id,
           body,

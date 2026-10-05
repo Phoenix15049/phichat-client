@@ -24,6 +24,24 @@
         </div>
       </Transition>
 
+      <!-- Link preview for the first link in the text -->
+      <Transition name="banner">
+        <div v-if="(props.linkPreview || props.linkPreviewLoading) && !recorder.recording.value" class="flex items-center gap-3 pt-2 ps-2">
+          <Link2 class="w-5 h-5 shrink-0 text-accent" />
+          <div class="flex-1 min-w-0 border-s-2 border-accent ps-2">
+            <template v-if="props.linkPreview">
+              <div class="text-[13px] font-semibold text-accent truncate">{{ props.linkPreview.siteName || props.linkPreview.title }}</div>
+              <div class="text-[13px] text-muted truncate" dir="auto">{{ props.linkPreview.title || props.linkPreview.description }}</div>
+            </template>
+            <div v-else class="text-[13px] text-muted py-1">{{ $t('chat.loadingPreview') }}</div>
+          </div>
+          <img v-if="props.linkPreview?.image" :src="props.linkPreview.image" alt="" class="w-10 h-10 rounded-md object-cover shrink-0" />
+          <button type="button" class="icon-btn w-8 h-8" :aria-label="$t('chat.removePreview')" @click="emit('dismiss-preview')">
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </Transition>
+
       <form class="flex items-end gap-1 py-2" @submit.prevent="emit('send')">
         <!-- Emoji -->
         <div class="relative shrink-0">
@@ -46,8 +64,18 @@
           </Transition>
         </div>
 
+        <!-- Recording a voice message -->
+        <div v-if="recorder.recording.value" class="flex-1 min-w-0 h-11 flex items-center gap-3 rounded-[22px] bg-surface-2 px-4">
+          <span class="w-2.5 h-2.5 rounded-full bg-danger animate-pulse"></span>
+          <span class="text-sm tabular-nums text-ink" dir="ltr">{{ formatSeconds(recorder.elapsed.value) }}</span>
+          <span class="flex-1 text-sm text-muted truncate">{{ $t('chat.recording') }}</span>
+          <button type="button" class="text-sm font-medium text-danger hover:underline" @click="recorder.cancel()">
+            {{ $t('common.cancel') }}
+          </button>
+        </div>
+
         <!-- Message -->
-        <div class="flex-1 min-w-0 rounded-[22px] bg-surface-2 ring-accent/40 focus-within:ring-2 transition">
+        <div v-show="!recorder.recording.value" class="flex-1 min-w-0 rounded-[22px] bg-surface-2 ring-accent/40 focus-within:ring-2 transition">
           <textarea
             :ref="bindMessageInput"
             :value="props.modelValue"
@@ -63,7 +91,7 @@
         </div>
 
         <!-- Attach -->
-        <div class="relative shrink-0">
+        <div v-show="!recorder.recording.value" class="relative shrink-0">
           <button
             type="button"
             class="icon-btn"
@@ -90,8 +118,30 @@
           </Transition>
         </div>
 
+        <!-- Voice: record when there is nothing to send, then send the recording -->
+        <button
+          v-if="recorder.recording.value"
+          type="button"
+          class="shrink-0 w-11 h-11 rounded-full grid place-items-center bg-accent text-white shadow-sm transition hover:bg-accent-strong active:scale-95"
+          :aria-label="$t('chat.sendVoice')"
+          @click="finishRecording"
+        >
+          <SendHorizontal class="w-5 h-5 rtl:-scale-x-100" />
+        </button>
+        <button
+          v-else-if="showMic"
+          type="button"
+          class="shrink-0 w-11 h-11 rounded-full grid place-items-center text-muted hover:text-accent hover:bg-surface-2 transition active:scale-95"
+          :title="$t('chat.recordVoice')"
+          :aria-label="$t('chat.recordVoice')"
+          @click="startRecording"
+        >
+          <Mic class="w-6 h-6" />
+        </button>
+
         <!-- Send -->
         <button
+          v-else
           type="submit"
           class="shrink-0 w-11 h-11 rounded-full grid place-items-center bg-accent text-white shadow-sm transition hover:bg-accent-strong active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
           :disabled="!props.canSend"
@@ -120,10 +170,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, type ComponentPublicInstance } from 'vue'
+import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue'
 import {
-  Check, File as FileIcon, Image as ImageIcon, Paperclip, Pencil, Reply, SendHorizontal, Smile, X
+  Check, File as FileIcon, Image as ImageIcon, Link2, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, X
 } from 'lucide-vue-next'
+import type { LinkPreviewMeta } from '../../../services/e2ee/messageCodec'
+import { useVoiceRecorder, type RecordedVoice } from '../composables/useVoiceRecorder'
 import EmojiPicker from '../../emoji/EmojiPicker.vue'
 import { usePreferencesStore } from '../../../stores/preferences'
 
@@ -134,6 +186,10 @@ const props = defineProps<{
   replying: boolean
   replyPreview: string
   editing: boolean
+  /** Whether a voice message could be sent now (the peer can receive messages). */
+  canRecord: boolean
+  linkPreview: LinkPreviewMeta | null
+  linkPreviewLoading: boolean
   setMessageInput: (element: HTMLTextAreaElement | null) => void
   setFileInput: (element: HTMLInputElement | null) => void
   setMediaInput: (element: HTMLInputElement | null) => void
@@ -150,7 +206,32 @@ const emit = defineEmits<{
   (event: 'composer-input', value: Event): void
   (event: 'files-chosen', value: Event): void
   (event: 'media-chosen', value: Event): void
+  (event: 'dismiss-preview'): void
+  (event: 'send-voice', value: RecordedVoice): void
+  (event: 'voice-error', value: unknown): void
 }>()
+
+const recorder = useVoiceRecorder()
+
+/** The mic replaces the send button while there is nothing to send (like Telegram). */
+const showMic = computed(() => recorder.supported && props.canRecord && !props.editing && !props.modelValue.trim())
+
+async function startRecording() {
+  try {
+    await recorder.start()
+  } catch (error) {
+    emit('voice-error', error)
+  }
+}
+
+async function finishRecording() {
+  const recorded = await recorder.stop()
+  if (recorded) emit('send-voice', recorded)
+}
+
+function formatSeconds(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
 
 const preferences = usePreferencesStore()
 const emojiOpen = ref(false)

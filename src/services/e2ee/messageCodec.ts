@@ -7,6 +7,13 @@
 import { fromBase64, fromUtf8, toBase64, utf8 } from './bytes'
 import { E2eeError, openBytes, sealBytes } from './primitives'
 
+export type VoiceMeta = {
+  /** Seconds. */
+  duration: number
+  /** Bar heights 0..31 for the waveform. */
+  waveform: number[]
+}
+
 export type FileMeta = {
   /** base64 AES-256-GCM key of the uploaded ciphertext. */
   key: string
@@ -14,11 +21,24 @@ export type FileMeta = {
   name: string
   mime: string
   size: number
+  /** Present for voice messages. */
+  voice?: VoiceMeta
+}
+
+/** Made by the sender's client; the recipient never contacts the linked site. */
+export type LinkPreviewMeta = {
+  url: string
+  siteName?: string
+  title?: string
+  description?: string
+  /** Small JPEG thumbnail as a data: URL. */
+  image?: string
 }
 
 export type MessageEnvelope = {
   text: string
   file?: FileMeta
+  preview?: LinkPreviewMeta
 }
 
 export type MessageHeader = {
@@ -92,7 +112,38 @@ function parseEnvelope(json: string): MessageEnvelope {
       mime: String(file.mime).slice(0, 255),
       size: Math.max(0, Math.floor(file.size))
     }
+
+    const voice = file.voice
+    if (voice && typeof voice === 'object' && Number.isFinite(voice.duration) && Array.isArray(voice.waveform)) {
+      envelope.file.voice = {
+        duration: Math.min(3600, Math.max(0, Number(voice.duration))),
+        waveform: voice.waveform.slice(0, 128).map((v: unknown) => Math.min(31, Math.max(0, Math.round(Number(v) || 0))))
+      }
+    }
   }
 
+  const preview = parsePreview(value.preview)
+  if (preview) envelope.preview = preview
+
   return envelope
+}
+
+const text = (value: unknown, max: number) =>
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined
+
+/** Untrusted input from the other side: only http(s) links and small inline JPEG/PNG thumbnails. */
+function parsePreview(value: any): LinkPreviewMeta | undefined {
+  if (!value || typeof value !== 'object' || typeof value.url !== 'string') return undefined
+  if (!/^https?:\/\//i.test(value.url) || value.url.length > 2048) return undefined
+
+  const preview: LinkPreviewMeta = {
+    url: value.url,
+    siteName: text(value.siteName, 80),
+    title: text(value.title, 200),
+    description: text(value.description, 300)
+  }
+  if (typeof value.image === 'string' && value.image.length < 200_000 && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(value.image)) {
+    preview.image = value.image
+  }
+  return preview.title || preview.description ? preview : undefined
 }
