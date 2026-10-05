@@ -1,4 +1,12 @@
+import type { FileMeta } from '../services/e2ee/messageCodec'
+
 export type MessageStatus = 'sending' | 'failed' | 'delivered' | 'read'
+
+/**
+ * Why a message's content is unavailable: sent before end-to-end encryption ('legacy'),
+ * encrypted for a key this account no longer has ('old-key'), or corrupt ('failed').
+ */
+export type CipherState = 'ok' | 'legacy' | 'old-key' | 'failed'
 
 export type UiReaction = {
   emoji: string
@@ -11,7 +19,11 @@ export type UiMessage = {
   clientId?: string
   senderId: string
   plainText: string
+  /** Server URL of the attachment (ciphertext for end-to-end encrypted files). */
   fileUrl: string | null
+  /** Key and metadata of an encrypted attachment, from the decrypted message. */
+  file?: FileMeta | null
+  cipher?: CipherState
   status?: MessageStatus
   sentAt?: string
   deliveredAtUtc?: string | null

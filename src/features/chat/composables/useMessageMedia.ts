@@ -5,14 +5,6 @@ import {
 } from 'vue'
 
 import {
-  sendMessageWithFileFD
-} from '../../../services/api'
-
-import {
-  encryptAES
-} from '../../../services/crypto'
-
-import {
   sendMessage
 } from '../../../services/signalr'
 
@@ -20,10 +12,16 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
+import type { FileMeta } from '../../../services/e2ee/messageCodec'
 import type { Outbox } from './useOutbox'
+import {
+  prepareAttachment,
+  sendAttachment,
+  type PreparedAttachment,
+  type SealAndSend
+} from '../attachments'
+import type { useSecureFiles } from './useSecureFiles'
 
-
-import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
 
@@ -31,6 +29,7 @@ type MediaOutgoingInput = {
   clientId?: string
   plainText: string
   fileUrl: string | null
+  file?: FileMeta | null
   sentAt?: string
   replyToMessageId?: string | null
   groupId?: string | null
@@ -40,8 +39,15 @@ type UseMessageMediaOptions = {
   selectedUser: Ref<SelectedUser>
   replyingTo: Ref<UiMessage | null>
 
-  getOrLoadKey:
-    (partnerId: string) => Promise<CryptoKey>
+  sealAndSend: SealAndSend
+
+  secureFiles: Pick<
+    ReturnType<typeof useSecureFiles>,
+    'registerLocal'
+  >
+
+  /** Explains an item that could not be sent. */
+  onMediaError: (error: unknown) => void
 
   appendOutgoingMessage: (
     peerId: string,
@@ -63,7 +69,9 @@ type UseMessageMediaOptions = {
 export function useMessageMedia({
   selectedUser,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend,
+  secureFiles,
+  onMediaError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   outbox
@@ -342,19 +350,8 @@ export function useMessageMedia({
     sendingMedia.value = true
 
     try {
-      const key =
-        await getOrLoadKey(partnerId)
-
       const hasCaption =
         caption.length > 0
-
-      const encryptedCaption =
-        await encryptAES(
-          key,
-          hasCaption
-            ? caption
-            : EMPTY_MSG_MARKER
-        )
 
       let lastOutgoing:
         UiMessage | null = null
@@ -373,12 +370,16 @@ export function useMessageMedia({
           )
 
         await outbox.send(captionMessage.clientId, () =>
-          sendMessage(
+          sealAndSend(
             partnerId,
-            encryptedCaption,
-            null,
-            captionMessage.clientId ??
-              null
+            { text: caption },
+            body => sendMessage(
+              partnerId,
+              body,
+              null,
+              captionMessage.clientId ??
+                null
+            )
           )
         )
 
@@ -413,6 +414,17 @@ export function useMessageMedia({
           } catch {}
         }
 
+        let attachment: PreparedAttachment
+
+        try {
+          attachment =
+            await prepareAttachment(file)
+        } catch (error) {
+          // Too large or unreadable: skip it and say why; the others still go.
+          onMediaError(error)
+          continue
+        }
+
         const clientId =
           crypto.randomUUID()
 
@@ -422,6 +434,12 @@ export function useMessageMedia({
             ? caption
             : ''
 
+        secureFiles.registerLocal(
+          clientId,
+          file,
+          attachment.meta
+        )
+
         const outgoing =
           await appendOutgoingMessage(
             partnerId,
@@ -429,6 +447,7 @@ export function useMessageMedia({
               clientId,
               plainText,
               fileUrl: '(pending)',
+              file: attachment.meta,
               sentAt,
               replyToMessageId:
                 replyId,
@@ -438,58 +457,19 @@ export function useMessageMedia({
 
         lastOutgoing = outgoing
 
-        const formData =
-          new FormData()
-
-        formData.append(
-          'receiverId',
-          partnerId
-        )
-
-        const encryptedText =
-          groupItems &&
-          index === 0
-            ? encryptedCaption
-            : await encryptAES(
-                key,
-                EMPTY_MSG_MARKER
-              )
-
-        formData.append(
-          'encryptedText',
-          encryptedText
-        )
-
-        formData.append(
-          'file',
-          file
-        )
-
-        if (replyId) {
-          formData.append(
-            'replyToMessageId',
-            replyId
-          )
-        }
-
-        if (groupId) {
-          formData.append(
-            'groupId',
-            groupId
-          )
-        }
-
-        formData.append(
-          'clientId',
-          clientId
-        )
-
         // One failed item does not stop the others; it can be retried from its bubble.
-        await outbox.send(clientId, async () => {
-          await sendMessageWithFileFD(
-            formData
+        await outbox.send(clientId, () =>
+          sendAttachment(
+            sealAndSend,
+            partnerId,
+            attachment,
+            {
+              caption: plainText,
+              clientId,
+              replyToMessageId: replyId
+            }
           )
-        })
+        )
       }
 
       if (lastOutgoing) {

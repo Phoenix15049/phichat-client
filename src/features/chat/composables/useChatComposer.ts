@@ -9,10 +9,6 @@ import {
 } from '../../../services/api'
 
 import {
-  encryptAES
-} from '../../../services/crypto'
-
-import {
   sendMessage,
   startTyping,
   stopTyping
@@ -23,9 +19,9 @@ import type {
   UiMessage
 } from '../../../types/chat'
 import type { Outbox } from './useOutbox'
+import type { MessageEnvelope } from '../../../services/e2ee/messageCodec'
+import { E2eeError } from '../../../services/e2ee/primitives'
 
-
-import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
 
@@ -51,8 +47,18 @@ type UseChatComposerOptions = {
   replyingTo:
     Ref<UiMessage | null>
 
-  getOrLoadKey:
-    (partnerId: string) => Promise<CryptoKey>
+  /** Encrypts for the peer's current key and hands the body to `send`. */
+  sealAndSend: (
+    peerId: string,
+    envelope: MessageEnvelope,
+    send: (body: string) => Promise<unknown>
+  ) => Promise<void>
+
+  /** Peers that cannot receive encrypted messages yet. */
+  peerMissingKey: Record<string, boolean>
+
+  /** Explains a send or edit that could not be done. */
+  onSendError: (error: unknown) => void
 
   appendOutgoingMessage: (
     peerId: string,
@@ -81,7 +87,9 @@ export function useChatComposer({
   msgInput,
   editingMessage,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend,
+  peerMissingKey,
+  onSendError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   completeEdit,
@@ -95,6 +103,7 @@ export function useChatComposer({
   const canSend = computed(
     () =>
       !!selectedUser.value &&
+      !peerMissingKey[selectedUser.value.id] &&
       !!text.value.trim()
   )
 
@@ -353,24 +362,23 @@ export function useChatComposer({
       return
     }
 
-    const aesKey =
-      await getOrLoadKey(user.id)
+    if (peerMissingKey[user.id]) {
+      onSendError(new E2eeError('recipient_no_key'))
+      return
+    }
 
     if (
       editingMessage.value &&
       editingMessage.value.id
     ) {
-      const encrypted =
-        await encryptAES(
-          aesKey,
-          draft.trim() ||
-            EMPTY_MSG_MARKER
-        )
+      const messageId =
+        editingMessage.value.id
 
       try {
-        await editMessage(
-          editingMessage.value.id,
-          encrypted
+        await sealAndSend(
+          user.id,
+          { text: draft.trim() },
+          body => editMessage(messageId, body)
         )
 
         completeEdit(
@@ -381,6 +389,7 @@ export function useChatComposer({
           'edit failed',
           error
         )
+        onSendError(error)
       }
 
       return
@@ -389,12 +398,6 @@ export function useChatComposer({
     const replyId =
       replyingTo.value?.id ??
       null
-
-    const encrypted =
-      await encryptAES(
-        aesKey,
-        draft
-      )
 
     const outgoing =
       await appendOutgoingMessage(
@@ -413,14 +416,18 @@ export function useChatComposer({
       user.username
     )
 
-    // A failed send stays in the chat marked as failed, with a retry button.
+    // Encrypted when the attempt runs; a failed send stays in the chat with a retry button.
     await outbox.send(outgoing.clientId, () =>
-      sendMessage(
+      sealAndSend(
         user.id,
-        encrypted,
-        null,
-        outgoing.clientId ?? null,
-        replyId
+        { text: draft },
+        body => sendMessage(
+          user.id,
+          body,
+          null,
+          outgoing.clientId ?? null,
+          replyId
+        )
       )
     )
 

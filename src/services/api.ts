@@ -3,6 +3,8 @@ import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
 import { getToken, clearAuthLocal, clearToken, isJwtExpired, setToken } from './auth'
 import { i18n, t } from '../i18n'
+import { deleteOtherIdentities } from './e2ee/keyStore'
+import type { KeyBackup } from './e2ee/primitives'
 import type {
   Contact,
   ConversationPage,
@@ -134,6 +136,9 @@ export function getErrorMessage(err: unknown, fallback?: string): string {
   const defaultMessage = fallback ?? t('errors.generic')
 
   if (!e?.response) {
+    // Hub and encryption errors carry a code without an HTTP response.
+    const code = getErrorCode(err)
+    if (code && i18n.global.te(`errors.${code}`)) return t(`errors.${code}`)
     return e?.message === 'Network Error' ? t('errors.network') : defaultMessage
   }
 
@@ -154,10 +159,19 @@ export function getErrorMessage(err: unknown, fallback?: string): string {
   return defaultMessage
 }
 
-/** Machine-readable error code from a ProblemDetails response (e.g. "no_account"). */
+/**
+ * Machine-readable error code (e.g. "no_account") from a ProblemDetails response, an
+ * E2eeError, or a hub error ("HubException: code: message").
+ */
 export function getErrorCode(err: unknown): string | null {
   const data = (err as AxiosError<any>)?.response?.data
-  return data && typeof data === 'object' && typeof data.code === 'string' ? data.code : null
+  if (data && typeof data === 'object' && typeof data.code === 'string') return data.code
+
+  const code = (err as { code?: unknown })?.code
+  if ((err as Error)?.name === 'E2eeError' && typeof code === 'string') return code
+
+  const hub = /HubException: ([a-z_]+):/.exec(String((err as Error)?.message ?? ''))
+  return hub ? hub[1] : null
 }
 
 // ---------------- Auth ----------------
@@ -214,12 +228,16 @@ export async function registerWithPhone(payload: RegisterWithPhoneRequest): Prom
   return data;
 }
 
-/** Revokes the session on the server (best effort) and forgets local auth data. */
+/**
+ * Revokes the session on the server (best effort) and forgets local auth data, including
+ * this device's encryption key: signing in again needs the recovery passphrase.
+ */
 export async function logout() {
   try {
     await API.post('/auth/logout')
   } catch {}
   clearAuthLocal()
+  await deleteOtherIdentities(null)
 }
 
 // ---------------- Users / contacts ----------------
@@ -231,22 +249,57 @@ function withAbsoluteAvatar<T extends { avatarUrl?: string | null; AvatarUrl?: s
   return raw ? { ...user, avatarUrl: toAbsoluteServerUrl(raw) } : user
 }
 
-export async function getChatKey(userId: string): Promise<string | null> {
+// ---------------- End-to-end encryption keys ----------------
+
+export type PublicIdentityKey = {
+  userId: string
+  keyId: string
+  publicKey: string
+  createdAtUtc: string
+  revokedAtUtc?: string | null
+}
+
+export type MyIdentityKey = {
+  keyId: string
+  publicKey: string
+  createdAtUtc: string
+  backup: KeyBackup
+}
+
+export type PublishIdentityKeyPayload = { publicKey: string; backup: KeyBackup }
+
+/** The signed-in user's key and its encrypted backup, or null before the first setup. */
+export async function getMyIdentityKey(): Promise<MyIdentityKey | null> {
+  const res = await API.get<MyIdentityKey | ''>('/keys/me')
+  return res.status === 204 || !res.data ? null : res.data
+}
+
+export async function createIdentityKey(payload: PublishIdentityKeyPayload): Promise<MyIdentityKey> {
+  return (await API.post<MyIdentityKey>('/keys/me', payload)).data
+}
+
+/** Replaces the key (lost passphrase): earlier messages become unreadable on every device. */
+export async function replaceIdentityKey(payload: PublishIdentityKeyPayload): Promise<MyIdentityKey> {
+  return (await API.put<MyIdentityKey>('/keys/me', payload)).data
+}
+
+export async function updateKeyBackup(keyId: string, backup: KeyBackup): Promise<void> {
+  await API.put('/keys/me/backup', { keyId, backup })
+}
+
+/** A user's current public key, or null if they have not set up encryption yet. */
+export async function getActiveIdentityKey(userId: string): Promise<PublicIdentityKey | null> {
   try {
-    const res = await API.get(`/keys/${userId}`)
-    return res.data
-  } catch (err: any) {
-    if (err.response?.status === 404) return null
+    return (await API.get<PublicIdentityKey>(`/keys/${userId}`)).data
+  } catch (err) {
+    if (getErrorCode(err) === 'no_identity_key') return null
     throw err
   }
 }
 
-export type StoreChatKeyPayload = { receiverId: string; encryptedKey: string }
-
-export async function storeChatKey(payload: StoreChatKeyPayload) {
-  return API.post('/keys', payload, {
-    headers: { 'Content-Type': 'application/json' }
-  })
+/** A specific (possibly replaced) public key, to read older messages. */
+export async function getIdentityKeyById(userId: string, keyId: string): Promise<PublicIdentityKey> {
+  return (await API.get<PublicIdentityKey>(`/keys/${userId}/${encodeURIComponent(keyId)}`)).data
 }
 
 
@@ -296,6 +349,7 @@ export async function getConversations() {
     peerUsername: string
     peerDisplayName?: string
     peerAvatarUrl?: string
+    lastSenderId?: string
     lastEncryptedContent?: string
     lastFileUrl?: string
     lastSentAt: string

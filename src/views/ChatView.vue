@@ -68,6 +68,15 @@
       "
     />
 
+      <ChatSecurityBanner
+        v-if="selectedUser"
+        :peer-name="selectedLabel"
+        :key-changed="!!e2ee.keyChanged[selectedUser.id]"
+        :missing-key="!!e2ee.peerMissingKey[selectedUser.id]"
+        @view-code="openPeerProfile"
+        @acknowledge="e2ee.trustPeerKey(selectedUser.id, false)"
+      />
+
       <ChatMessageList
         :messages="messages"
         :my-id="myId"
@@ -260,6 +269,9 @@
   @share-contact="onPeerShareContact"
 />
 
+  <!-- Until this device has the account's encryption key nothing else is usable. -->
+  <E2eeGate v-if="e2ee.status !== 'ready' && e2ee.status !== 'idle'" />
+
 </template>
 
 
@@ -290,6 +302,7 @@ import {
   addContact,
   getConversationPaged,
   getConversations,
+  getErrorMessage,
   getMessageBrief,
   getMyContacts,
   getUserByUsername,
@@ -304,10 +317,12 @@ import {
   stopTyping,
   fetchOnlineUsers
 } from '../services/signalr'
-import { decryptAES } from '../services/crypto'
 import { isJwtExpired, getToken } from '../services/auth'
 import { toAbsoluteServerUrl } from '../config/server'
 import { useSessionStore } from '../stores/session'
+import { useE2eeStore } from '../stores/e2ee'
+import E2eeGate from '../features/e2ee/E2eeGate.vue'
+import ChatSecurityBanner from '../features/chat/components/ChatSecurityBanner.vue'
 
 import type {
   ChatUser,
@@ -323,7 +338,8 @@ import { formatRelative } from '../utils/time'
 import { useI18n } from 'vue-i18n'
 import { normalizeUsername } from '../utils/username'
 
-import { useChatKeys } from '../features/chat/composables/useChatKeys'
+import { useSecureFiles, fileKindOf } from '../features/chat/composables/useSecureFiles'
+import type { FileMeta } from '../services/e2ee/messageCodec'
 import { usePeerDirectory } from '../features/chat/composables/usePeerDirectory'
 import { useConversations, type IncomingMessage } from '../features/chat/composables/useConversations'
 import { useOutbox } from '../features/chat/composables/useOutbox'
@@ -342,7 +358,7 @@ function resolveReplyPreview(replyId?: string | null): string {
   if (!replyId) return ''
 
   const same = messages.value.find(m => m.id === replyId || m.clientId === replyId)
-  if (same) return same.plainText || (same.fileUrl ? t('common.media') : '—')
+  if (same) return previewOf(same)
 
   const cached = replyPreviewCache[replyId]
   if (cached) return cached
@@ -364,14 +380,29 @@ const { userId: myId, me: meProfile } = storeToRefs(session)
 const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
-const outbox = useOutbox({ messages })
+const outbox = useOutbox({ messages, onError: showSendError })
 
-const {
-  getOrLoadKey,
-  loadExistingChatKey,
-  invalidateChatKeyRequests,
-  rememberActiveUser
-} = useChatKeys({ myId })
+// End-to-end encryption: this account's identity key, peers' keys, encrypt / decrypt.
+const e2ee = useE2eeStore()
+const secureFiles = useSecureFiles()
+
+/** Decrypts a message of the conversation with `peerId`. */
+function openMessage(raw: string, senderId: string, peerId: string) {
+  return e2ee.open(raw, senderId, peerId)
+}
+
+/** Short text for a message in replies and previews. */
+function previewOf(message: UiMessage): string {
+  if (message.cipher && message.cipher !== 'ok' && !(message.cipher === 'legacy' && message.fileUrl)) {
+    return t('e2ee.unreadablePreview')
+  }
+  return message.plainText || (message.fileUrl ? (message.file?.name || t('common.media')) : '—')
+}
+
+/** Toast for a send, edit or forward that failed (e.g. the peer has no key yet). */
+function showSendError(error: unknown) {
+  showToast(getErrorMessage(error))
+}
 
 const isPeerTyping = ref(false)
 let typingTimer: number | null = null
@@ -420,7 +451,7 @@ const {
   conversations,
   selectedUser,
   peers: { displayById, avatarById, ensurePeerCached },
-  loadExistingChatKey
+  openMessage
 })
 
 
@@ -551,7 +582,6 @@ function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
 function resetState() {
   chatSessionId++
   resetPeers()
-  invalidateChatKeyRequests()
 
   conversations.value = []
   messages.value = []
@@ -581,6 +611,7 @@ type OutgoingMessageInput = {
   clientId?: string
   plainText: string
   fileUrl: string | null
+  file?: FileMeta | null
   sentAt?: string
   replyToMessageId?: string | null
   forwardedFromMessageId?: string | null
@@ -599,6 +630,8 @@ async function appendOutgoingMessage(
     senderId: myId.value,
     plainText: input.plainText,
     fileUrl: input.fileUrl,
+    file: input.file ?? null,
+    cipher: 'ok',
     status: 'sending',
 
     sentAt:
@@ -658,12 +691,12 @@ function onConvDblClick(conv: UiConversation) {
 
 
 function openImage(msg: UiMessage){
-  viewerImageSrc.value = msg.fileUrl || ''
+  viewerImageSrc.value = secureFiles.mediaSrc(msg) || ''
   viewerCaption.value = msg.plainText || ''
   showImageViewer.value = true
 }
 function openVideo(msg: UiMessage){
-  playerVideoSrc.value = msg.fileUrl || ''
+  playerVideoSrc.value = secureFiles.mediaSrc(msg) || ''
   playerCaption.value = msg.plainText || ''
   showVideoPlayer.value = true
 }
@@ -739,8 +772,7 @@ async function onPeerShareContact(u: ChatUser) {
 async function fetchReplyPreview(id: string) {
   try {
     const dto = await getMessageBrief(id)
-    const plain = await decryptMessageText(dto.encryptedContent)
-    replyPreviewCache[id] = plain || (dto.fileUrl ? t('common.media') : '—')
+    replyPreviewCache[id] = await briefPreview(dto)
   } catch {
     replyPreviewCache[id] = t('common.unknown')
   } finally {
@@ -749,15 +781,16 @@ async function fetchReplyPreview(id: string) {
 }
 
 
-async function decryptMessageText(base64?: string | null): Promise<string> {
-  if (!base64 || !selectedUser.value) return ''
-  try {
-    const key = await getOrLoadKey(selectedUser.value.id)
-    const plain = await decryptAES(key, base64)
-    return plain && plain !== EMPTY_MSG_MARKER ? plain : ''
-  } catch {
-    return t('chat.decryptFailed')
-  }
+async function briefPreview(dto: Awaited<ReturnType<typeof getMessageBrief>>): Promise<string> {
+  const peerId = selectedUser.value?.id
+  if (!peerId) return ''
+
+  const opened = await openMessage(dto.encryptedContent || '', dto.senderId, peerId)
+  if (opened.state !== 'ok') return dto.fileUrl && opened.state === 'legacy' ? t('common.media') : t('e2ee.unreadablePreview')
+
+  const text = opened.envelope.text
+  if (text && text !== EMPTY_MSG_MARKER) return text
+  return opened.envelope.file?.name || (dto.fileUrl ? t('common.media') : '—')
 }
 
 function currentChatRef(): ChatTarget | null {
@@ -1058,7 +1091,8 @@ const {
   closeMenu,
   clearSelection,
   showToast,
-  getOrLoadKey,
+  sealAndSend: e2ee.sealAndSend,
+  onForwardError: showSendError,
   appendOutgoingMessage,
   updateConversationAfterSend,
 
@@ -1096,7 +1130,9 @@ const {
 } = useMessageFiles({
   selectedUser,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend: e2ee.sealAndSend,
+  secureFiles,
+  onFileError: showSendError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   outbox
@@ -1125,7 +1161,9 @@ const {
 } = useMessageMedia({
   selectedUser,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend: e2ee.sealAndSend,
+  secureFiles,
+  onMediaError: showSendError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   outbox
@@ -1145,7 +1183,9 @@ const {
   msgInput,
   editingMessage,
   replyingTo,
-  getOrLoadKey,
+  sealAndSend: e2ee.sealAndSend,
+  peerMissingKey: e2ee.peerMissingKey,
+  onSendError: showSendError,
   appendOutgoingMessage,
   updateConversationAfterSend,
   completeEdit,
@@ -1173,6 +1213,9 @@ const messageListActions={
   fileNameFromUrl,
   humanFileSize,
   downloadFile,
+  fileKind:fileKindOf,
+  mediaSrc:secureFiles.mediaSrc,
+  mediaState:secureFiles.mediaState,
   applyReaction,
   keepHoverBar,
   hideHoverBarSoon,
@@ -1194,7 +1237,27 @@ const messageListActions={
   canRetry:(message:UiMessage)=>outbox.canRetry(message)
 }
 
+// Encrypted images and videos are downloaded and decrypted as they appear in the chat.
+watch(
+  () => messages.value.map(message => (message.file ? message.fileUrl : null)),
+  () => {
+    for (const message of messages.value) secureFiles.ensureMedia(message)
+  }
+)
+
+// This account's key was replaced on another device and has just been restored here:
+// everything on screen was decrypted with the old key, so load it again.
+watch(
+  () => e2ee.identity?.keyId,
+  (current, previous) => {
+    if (previous && current && current !== previous && pageAlive) void initializeChatPage()
+  }
+)
+
 watch(selectedUser, async (current, previous) => {
+  // Learn early whether the peer can receive encrypted messages and whether their key changed.
+  if (current) void e2ee.getActivePeerKey(current.id).catch(() => {})
+
   clearSelection()
   resetReactionUi()
   clearPeerTyping()
@@ -1402,17 +1465,11 @@ async function prepareMessagePage(
     }
   }
 
-  const aesKey = await getOrLoadKey(userId)
-
-  if (!isActiveChat(sessionId, userId)) return null
-
   const prepared = await Promise.all(
     visibleItems.map(async message => {
       const ui = await mapServerMessage(message, {
-        aesKey,
         myId: myId.value,
-        cipherSource: 'content',
-        decryptFailureText: t('chat.decryptFailed')
+        open: (raw, senderId) => openMessage(raw, senderId, userId)
       })
 
       if (ui.forwardedFromSenderId) {
@@ -1426,7 +1483,8 @@ async function prepareMessagePage(
   if (!isActiveChat(sessionId, userId)) return null
 
   for (const message of prepared) {
-    if (!message.fileUrl) continue
+    // Sizes of encrypted attachments are in the message; only old plain files need a HEAD.
+    if (!message.fileUrl || message.file) continue
 
     const key = fileKey(message)
     if (!fileSizeMap[key]) {
@@ -1558,7 +1616,12 @@ async function initializeChatPage() {
 
   if (token) {
     session.syncFromToken()
-    rememberActiveUser(myId.value)
+
+    // Nothing can be read or sent before this device has the account's key.
+    await e2ee.init(myId.value)
+    if (!pageAlive) return
+    await e2ee.whenReady()
+    if (!pageAlive) return
 
     wireSignalR()
 
@@ -1632,8 +1695,8 @@ onBeforeUnmount(() => {
   routeSyncRequestId++
   chatSessionId++
 
-  invalidateChatKeyRequests()
   resetPeers()
+  secureFiles.releaseAll()
 
   unregisterPageListeners()
   disposeSelection()
@@ -1666,20 +1729,15 @@ function wireSignalR() {
 
     if (!active) {
       const cipher = message.encryptedText ?? message.EncryptedText
-      if (cipher && !incomingFileUrl(message)) void refreshConversationPreview(senderId, cipher)
+      if (cipher && !incomingFileUrl(message)) void refreshConversationPreview(senderId, cipher, senderId)
       return
     }
 
     try {
-      const aesKey = await getOrLoadKey(senderId)
-      if (!isActiveChat(sessionId, senderId)) return
-
       const ui = await mapServerMessage(message, {
-        aesKey,
         myId: myId.value,
-        cipherSource: 'text',
-        fallbackSentAt: new Date().toISOString(),
-        retryKey: () => getOrLoadKey(senderId)
+        open: (raw, from) => openMessage(raw, from, senderId),
+        fallbackSentAt: new Date().toISOString()
       })
 
       if (!isActiveChat(sessionId, senderId)) return
@@ -1694,7 +1752,7 @@ function wireSignalR() {
       messages.value.push(ui)
       updateIncomingPreview(senderId, ui)
 
-      if (ui.fileUrl) {
+      if (ui.fileUrl && !ui.file) {
         const key = fileKey(ui)
         if (!fileSizeMap[key]) void ensureFileSize(ui.fileUrl, key)
       }
@@ -1735,24 +1793,15 @@ function wireSignalR() {
 
     m.status = 'delivered'
 
+    // The content is already shown from what was encrypted locally; only the stored URL is new.
     const fileUrl = info.fileUrl ?? info.FileUrl ?? null
     if (fileUrl) {
       m.fileUrl = toAbsoluteFileUrl(fileUrl)
-      const k = fileKey(m)
-      if (!fileSizeMap[k]) ensureFileSize(m.fileUrl!, k)
-    }
-
-    const raw: string = String(info.encryptedText ?? info.EncryptedText ?? '')
-    if (raw && raw.trim()) {
-      try {
-        const partnerId = selectedUser.value?.id
-        if (partnerId) {
-          const key = await getOrLoadKey(partnerId)
-          const txt = await decryptAES(key, raw)
-          if (txt && txt !== EMPTY_MSG_MARKER) m.plainText = txt
-          else m.plainText = ''
-        }
-      } catch { /* ignore */ }
+      if (m.clientId && m.fileUrl) secureFiles.adoptServerUrl(m.clientId, m.fileUrl)
+      if (!m.file) {
+        const k = fileKey(m)
+        if (!fileSizeMap[k]) ensureFileSize(m.fileUrl!, k)
+      }
     }
 
     await nextTick()
@@ -1802,10 +1851,17 @@ function wireSignalR() {
     const m = messages.value.find(x => x.id === p.messageId)
     if (!m) return
     try {
-      const partnerId = selectedUser.value?.id || m.senderId
-      const aesKey = await getOrLoadKey(partnerId)
-      const decrypted = await decryptAES(aesKey, p.encryptedContent)
-      m.plainText = decrypted && decrypted !== EMPTY_MSG_MARKER ? decrypted : ''
+      const partnerId = selectedUser.value?.id
+      if (!partnerId) return
+      const opened = await openMessage(p.encryptedContent, m.senderId, partnerId)
+      if (opened.state === 'ok') {
+        const edited = opened.envelope.text
+        m.plainText = edited && edited !== EMPTY_MSG_MARKER ? edited : ''
+        m.cipher = 'ok'
+      } else {
+        m.plainText = ''
+        m.cipher = opened.state
+      }
       m.updatedAtUtc = p.updatedAtUtc || new Date().toISOString()
     } catch (e) {
       console.warn('decrypt edited failed', e)
@@ -1826,6 +1882,10 @@ function wireSignalR() {
     // }
     messages.value.splice(i, 1)
 })
+
+  signalR.onIdentityKeyChanged(payload => {
+    void e2ee.onIdentityKeyChanged(String(payload.userId), String(payload.keyId))
+  })
 
   signalR.onReactionUpdated(
     handleReactionUpdated
@@ -1889,12 +1949,6 @@ async function handleUserSelect(user: ChatTarget) {
 }
 
 
-/**
- * The chat key if one already exists (cached locally or stored on the server).
- * Unlike getOrLoadKey it never creates a key, so it is safe for previews.
- */
-
-/** Decrypts a conversation's last message into its list preview (best effort). */
 function toAbsoluteFileUrl(url: string | null): string | null {
   return url ? toAbsoluteServerUrl(url) : null
 }

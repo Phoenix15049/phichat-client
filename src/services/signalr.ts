@@ -34,6 +34,11 @@ type ReactionPayload = {
   action: 'added' | 'removed'
 }
 
+export type IdentityKeyChangedPayload = {
+  userId: string
+  keyId: string
+}
+
 let connection: HubConnection | null = null
 let connectPromise: Promise<void> | null = null
 
@@ -65,6 +70,7 @@ const userLastSeenHandlers = new Set<Handler<[string, string]>>()
 const messageEditedHandlers = new Set<Handler<[EditedPayload]>>()
 const messageDeletedHandlers = new Set<Handler<[DeletedPayload]>>()
 const reactionUpdatedHandlers = new Set<Handler<[ReactionPayload]>>()
+const identityKeyChangedHandlers = new Set<Handler<[IdentityKeyChangedPayload]>>()
 
 function subscribe<TArgs extends unknown[]>(
   handlers: Set<Handler<TArgs>>,
@@ -267,6 +273,10 @@ function bindConnection(current: HubConnection) {
     dispatch(reactionUpdatedHandlers, payload)
   )
 
+  current.on('IdentityKeyChanged', payload =>
+    dispatch(identityKeyChangedHandlers, payload)
+  )
+
   current.onreconnecting(() => {
     if (connection === current) {
       // هنگام قطع اتصال، وضعیت آنلاین
@@ -360,6 +370,11 @@ export function createChatHubSubscriptionScope() {
     onReactionUpdated: createScopeMethod(
       unsubscribers,
       reactionUpdatedHandlers
+    ),
+
+    onIdentityKeyChanged: createScopeMethod(
+      unsubscribers,
+      identityKeyChangedHandlers
     ),
 
     dispose() {
