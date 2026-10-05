@@ -4,6 +4,7 @@ import { toAbsoluteServerUrl } from '../../../config/server'
 import type { getConversations } from '../../../services/api'
 import type { OpenedMessage } from '../../../stores/e2ee'
 import type { ChatUser, ServerMessage, UiConversation, UiMessage } from '../../../types/chat'
+import type { FileMeta } from '../../../services/e2ee/messageCodec'
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
 import { normalizeUsername } from '../../../utils/username'
 import { toDateSafe } from '../../../utils/time'
@@ -18,6 +19,22 @@ type ConversationSummary = Awaited<ReturnType<typeof getConversations>>[number]
 
 /** Shown for an incoming message until its text is decrypted. */
 const newMessagePlaceholder = () => t('chat.newMessage')
+
+/** "🎤 Voice message", "📷 Photo", ... for an attachment (from the decrypted message). */
+export function filePreviewLabel(file?: FileMeta | null): string | null {
+  if (!file) return null
+  if (file.voice) return '🎤 ' + t('chat.voiceMessage')
+  if (file.mime.startsWith('image/')) return '📷 ' + t('chat.photo')
+  if (file.mime.startsWith('video/')) return '🎬 ' + t('chat.video')
+  return '📎 ' + file.name
+}
+
+/** List preview of a message: its text (with the attachment's icon) or the attachment label. */
+export function previewText(message: Pick<UiMessage, 'plainText' | 'fileUrl' | 'file'>): string | null {
+  const label = filePreviewLabel(message.file)
+  if (message.plainText) return label ? `${label.split(' ')[0]} ${message.plainText}` : message.plainText
+  return label ?? (message.fileUrl ? null : '')
+}
 
 type UseConversationsOptions = {
   conversations: Ref<UiConversation[]>
@@ -65,7 +82,7 @@ export function useConversations({
     })
 
     for (const c of data) {
-      if (c.lastEncryptedContent && !c.lastFileUrl) {
+      if (c.lastEncryptedContent) {
         void refreshConversationPreview(c.peerId, c.lastEncryptedContent, c.lastSenderId || c.peerId)
       }
     }
@@ -83,7 +100,7 @@ export function useConversations({
     message: Pick<
       UiMessage,
       'plainText' | 'fileUrl' | 'sentAt'
-    >,
+    > & Partial<Pick<UiMessage, 'file'>>,
     username?: string
   ) {
     const index = conversations.value.findIndex(
@@ -111,9 +128,7 @@ export function useConversations({
         lastSentAt: sentAt,
         lastFileUrl: message.fileUrl,
 
-        lastPreview:
-          message.plainText ||
-          (message.fileUrl ? null : '')
+        lastPreview: previewText(message)
       })
 
       return
@@ -125,9 +140,7 @@ export function useConversations({
     conversation.lastSentAt = sentAt
     conversation.lastFileUrl = message.fileUrl
 
-    conversation.lastPreview =
-      message.plainText ||
-      (message.fileUrl ? null : '')
+    conversation.lastPreview = previewText(message)
 
     moveConversationToTop(index)
   }
@@ -194,8 +207,7 @@ export function useConversations({
 
     conversation.lastSentAt = message.sentAt ?? conversation.lastSentAt
     conversation.lastFileUrl = message.fileUrl
-    conversation.lastPreview =
-      message.plainText || (message.fileUrl ? null : '')
+    conversation.lastPreview = previewText(message)
 
     moveConversationToTop(index)
   }
@@ -210,17 +222,22 @@ export function useConversations({
       const opened = await openMessage(cipher, senderId, peerId)
       if (previewRequests.get(peerId) !== cipher) return
 
-      let plain: string
+      let plain: string | null
       if (opened.state === 'ok') {
-        plain = opened.envelope.text
-        if (!plain || plain === EMPTY_MSG_MARKER) return
+        const text = opened.envelope.text
+        plain = previewText({
+          plainText: text && text !== EMPTY_MSG_MARKER ? text : '',
+          file: opened.envelope.file ?? null,
+          fileUrl: null
+        })
+        if (!plain) return
       } else {
         plain = t('e2ee.unreadablePreview')
       }
 
       const conversation = conversations.value.find(item => item.peerId === peerId)
       // Only fill in if nothing newer replaced the preview meanwhile.
-      if (conversation && !conversation.lastFileUrl && (conversation.lastPreview == null || conversation.lastPreview === newMessagePlaceholder())) {
+      if (conversation && (conversation.lastPreview == null || conversation.lastPreview === newMessagePlaceholder())) {
         conversation.lastPreview = plain
       }
     } catch {}

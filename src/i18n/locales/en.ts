@@ -77,6 +77,26 @@ export default {
     settings: 'Settings'
   },
   chat: {
+    voiceMessage: 'Voice message',
+    photo: 'Photo',
+    video: 'Video',
+    play: 'Play',
+    pause: 'Pause',
+    removePreview: 'Remove link preview',
+    recording: 'Recording…',
+    recordVoice: 'Record a voice message',
+    sendVoice: 'Send voice message',
+    micError: 'Could not use the microphone. Check the microphone permission in your browser.',
+    searchInChat: 'Search in this chat',
+    searchPosition: '{current} of {total}',
+    searchOlder: 'Search older messages',
+    olderResult: 'Older result',
+    newerResult: 'Newer result',
+    pinnedMessage: 'Pinned message',
+    pinnedNumbered: 'Pinned message #{n}',
+    pin: 'Pin',
+    unpin: 'Unpin',
+    youBlockedUser: 'You blocked this user.',
     selectedCount: '{count} selected',
     searchChats: 'Search',
     noChats: 'No chats yet.',
@@ -143,6 +163,9 @@ export default {
     deleteForEveryone: 'Delete for everyone'
   },
   profile: {
+    unblock: 'Unblock',
+    blockTitle: 'Block user',
+    blockConfirm: 'Block {name}? They will no longer be able to message you, and neither of you will see the other online or their last seen time.',
     title: 'Profile',
     edit: 'Edit profile',
     lastSeen: 'Last seen: {when}',
@@ -154,6 +177,11 @@ export default {
     comingSoon: 'Coming soon'
   },
   settings: {
+    blockedUsers: 'Blocked users',
+    blockedUsersHint: 'They cannot message you or see when you are online.',
+    noBlockedUsers: 'You have not blocked anyone.',
+    linkPreviews: 'Link previews',
+    linkPreviewsHint: 'For links you send, the page title and image are fetched through the server and placed inside the encrypted message. The recipient never contacts the site.',
     sections: {
       account: 'Account',
       accountHint: 'Name, photo and bio',
@@ -282,6 +310,11 @@ export default {
     justNow: 'just now'
   },
   errors: {
+    user_blocked: 'You blocked this user. Unblock them to send messages.',
+    cannot_message_user: 'You cannot send messages to this user.',
+    cannot_block_self: 'You cannot block yourself.',
+    too_many_pins: 'This chat already has the maximum number of pinned messages.',
+    invalid_url: 'This link cannot be previewed.',
     generic: 'Something went wrong. Please try again.',
     network: 'Cannot reach the server. Check your connection.',
     rate_limited: 'Too many requests. Please wait a moment and try again.',

@@ -419,6 +419,68 @@ export async function getMessageBrief(id: string) {
   }
 }
 
+// ---------------- Pins, blocking, link previews ----------------
+
+export type PinnedMessageItem = {
+  messageId: string
+  senderId: string
+  encryptedContent: string
+  fileUrl: string | null
+  sentAt: string
+  pinnedById: string
+  pinnedAtUtc: string
+}
+
+/** Pinned messages of the conversation with `peerId`, newest pin first. */
+export async function getPinnedMessages(peerId: string): Promise<PinnedMessageItem[]> {
+  return (await API.get<PinnedMessageItem[]>(`/messages/pinned/${peerId}`)).data
+}
+
+export async function pinMessage(messageId: string) {
+  await API.post(`/messages/${messageId}/pin`)
+}
+
+export async function unpinMessage(messageId: string) {
+  await API.delete(`/messages/${messageId}/pin`)
+}
+
+export type BlockedUser = {
+  userId: string
+  username: string
+  displayName?: string | null
+  avatarUrl?: string | null
+  blockedAtUtc: string
+}
+
+export async function getBlockedUsers(): Promise<BlockedUser[]> {
+  const { data } = await API.get<BlockedUser[]>('/users/blocked')
+  return data.map(user => (user.avatarUrl ? { ...user, avatarUrl: toAbsoluteServerUrl(user.avatarUrl) } : user))
+}
+
+export async function blockUser(userId: string) {
+  await API.post(`/users/${userId}/block`)
+}
+
+export async function unblockUser(userId: string) {
+  await API.delete(`/users/${userId}/block`)
+}
+
+export type LinkPreviewResponse = {
+  url: string
+  siteName?: string | null
+  title?: string | null
+  description?: string | null
+  imageBase64?: string | null
+  imageType?: string | null
+}
+
+/** Page metadata fetched by the server (with SSRF protection); null when there is nothing to show. */
+export async function fetchLinkPreview(url: string, signal?: AbortSignal): Promise<LinkPreviewResponse | null> {
+  // POST keeps the link out of request logs (they record query strings).
+  const res = await API.post<LinkPreviewResponse | ''>('/link-preview', { url }, { signal })
+  return res.status === 204 || !res.data ? null : res.data
+}
+
 export async function uploadAvatar(formData: FormData): Promise<string> {
   const res = await API.post('/users/avatar', formData)
   const url: string = res.data.url

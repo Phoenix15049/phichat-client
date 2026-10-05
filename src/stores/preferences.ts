@@ -13,6 +13,8 @@ type Preferences = {
   bubbleRadius: number
   /** A thin outline around message bubbles. */
   bubbleBorder: boolean
+  /** Fetch a preview (via the server) for links in messages you write. */
+  linkPreviews: boolean
 }
 
 /** Read by the inline script in index.html too, so the theme applies before the app loads. */
@@ -21,7 +23,7 @@ export const PREFERENCES_KEY = 'phi.prefs'
 export const BUBBLE_RADIUS_MIN = 4
 export const BUBBLE_RADIUS_MAX = 24
 
-const DEFAULTS: Preferences = { theme: 'system', textSize: 'medium', sendWithEnter: true, bubbleRadius: 16, bubbleBorder: false }
+const DEFAULTS: Preferences = { theme: 'system', textSize: 'medium', sendWithEnter: true, bubbleRadius: 16, bubbleBorder: false, linkPreviews: true }
 const TEXT_SIZES: Record<TextSize, string> = { small: '14px', medium: '15px', large: '17px' }
 
 function load(): Preferences {
@@ -35,7 +37,8 @@ function load(): Preferences {
       bubbleRadius: Number.isFinite(radius)
         ? Math.min(BUBBLE_RADIUS_MAX, Math.max(BUBBLE_RADIUS_MIN, Math.round(radius)))
         : DEFAULTS.bubbleRadius,
-      bubbleBorder: typeof stored.bubbleBorder === 'boolean' ? stored.bubbleBorder : DEFAULTS.bubbleBorder
+      bubbleBorder: typeof stored.bubbleBorder === 'boolean' ? stored.bubbleBorder : DEFAULTS.bubbleBorder,
+      linkPreviews: typeof stored.linkPreviews === 'boolean' ? stored.linkPreviews : DEFAULTS.linkPreviews
     }
   } catch {
     return { ...DEFAULTS }

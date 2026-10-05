@@ -82,8 +82,14 @@
           <UserPlus class="w-4 h-4" /><span>{{ $t('profile.addContact') }}</span>
         </button>
 
-        <button class="btn-disabled col-span-2 inline-flex items-center justify-center gap-2"
-                :title="$t('profile.comingSoon')" disabled>
+        <button v-if="isBlocked"
+                class="btn-outline col-span-2 inline-flex items-center justify-center gap-2"
+                @click="$emit('unblock', user!.id)" v-ripple>
+          <Ban class="w-4 h-4" /><span>{{ $t('profile.unblock') }}</span>
+        </button>
+        <button v-else
+                class="btn-block col-span-2 inline-flex items-center justify-center gap-2"
+                @click="$emit('block', user!.id)" v-ripple>
           <Ban class="w-4 h-4" /><span>{{ $t('profile.block') }}</span>
         </button>
       </div>
@@ -104,9 +110,10 @@ defineProps<{
   open: boolean
   user: ChatUser | null
   isContact: boolean
+  isBlocked?: boolean
 }>()
 
-defineEmits(['close','send-message','add-contact','remove-contact','share-contact'])
+defineEmits(['close','send-message','add-contact','remove-contact','share-contact','block','unblock'])
 
 
 
@@ -124,6 +131,9 @@ defineEmits(['close','send-message','add-contact','remove-contact','share-contac
 }
 .btn-danger {
   @apply border border-red-500/30 text-danger rounded-lg px-4 py-2 hover:bg-danger/10 transition;
+}
+.btn-block {
+  @apply rounded-xl px-4 py-2 text-danger ring-1 ring-danger/25 hover:bg-danger/10 transition;
 }
 .btn-disabled {
   @apply border border-line text-muted rounded-lg px-4 py-2 cursor-not-allowed;

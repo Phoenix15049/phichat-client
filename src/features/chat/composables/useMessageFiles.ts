@@ -8,7 +8,7 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
-import type { FileMeta } from '../../../services/e2ee/messageCodec'
+import type { FileMeta, VoiceMeta } from '../../../services/e2ee/messageCodec'
 import type { Outbox } from './useOutbox'
 import {
   prepareAttachment,
@@ -373,7 +373,47 @@ export function useMessageFiles({
     }
   }
 
+  /** Sends a recorded voice message (encrypted like any attachment, with its waveform). */
+  async function sendVoice(blob: Blob, mime: string, voice: VoiceMeta) {
+    const user = selectedUser.value
+    if (!user) return
+
+    const partnerId = user.id
+    const replyId = replyingTo.value?.id ?? null
+    const extension = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm'
+    const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: mime })
+
+    let attachment: PreparedAttachment
+    try {
+      attachment = await prepareAttachment(file)
+    } catch (error) {
+      onFileError(error)
+      return
+    }
+    attachment.meta.voice = voice
+
+    const clientId = crypto.randomUUID()
+    secureFiles.registerLocal(clientId, file, attachment.meta)
+
+    const outgoing = await appendOutgoingMessage(partnerId, {
+      clientId,
+      plainText: '',
+      fileUrl: '(pending)',
+      file: attachment.meta,
+      replyToMessageId: replyId
+    })
+
+    if (selectedUser.value?.id === partnerId) replyingTo.value = null
+
+    await outbox.send(clientId, () =>
+      sendAttachment(sealAndSend, partnerId, attachment, { caption: '', clientId, replyToMessageId: replyId })
+    )
+
+    updateConversationAfterSend(partnerId, outgoing, user.username)
+  }
+
   return {
+    sendVoice,
     fileInput,
     pendingFiles,
     pendingCaption,

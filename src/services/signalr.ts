@@ -34,6 +34,19 @@ type ReactionPayload = {
   action: 'added' | 'removed'
 }
 
+export type PinsChangedPayload = {
+  messageId: string
+  pinned: boolean
+  by: string
+  senderId: string
+  receiverId: string
+}
+
+export type BlockListChangedPayload = {
+  userId: string
+  blocked: boolean
+}
+
 export type IdentityKeyChangedPayload = {
   userId: string
   keyId: string
@@ -71,6 +84,8 @@ const messageEditedHandlers = new Set<Handler<[EditedPayload]>>()
 const messageDeletedHandlers = new Set<Handler<[DeletedPayload]>>()
 const reactionUpdatedHandlers = new Set<Handler<[ReactionPayload]>>()
 const identityKeyChangedHandlers = new Set<Handler<[IdentityKeyChangedPayload]>>()
+const pinsChangedHandlers = new Set<Handler<[PinsChangedPayload]>>()
+const blockListChangedHandlers = new Set<Handler<[BlockListChangedPayload]>>()
 
 function subscribe<TArgs extends unknown[]>(
   handlers: Set<Handler<TArgs>>,
@@ -277,6 +292,14 @@ function bindConnection(current: HubConnection) {
     dispatch(identityKeyChangedHandlers, payload)
   )
 
+  current.on('PinsChanged', payload =>
+    dispatch(pinsChangedHandlers, payload)
+  )
+
+  current.on('BlockListChanged', payload =>
+    dispatch(blockListChangedHandlers, payload)
+  )
+
   current.onreconnecting(() => {
     if (connection === current) {
       // هنگام قطع اتصال، وضعیت آنلاین
@@ -375,6 +398,16 @@ export function createChatHubSubscriptionScope() {
     onIdentityKeyChanged: createScopeMethod(
       unsubscribers,
       identityKeyChangedHandlers
+    ),
+
+    onPinsChanged: createScopeMethod(
+      unsubscribers,
+      pinsChangedHandlers
+    ),
+
+    onBlockListChanged: createScopeMethod(
+      unsubscribers,
+      blockListChangedHandlers
     ),
 
     dispose() {

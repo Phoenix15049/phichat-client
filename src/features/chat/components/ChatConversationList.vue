@@ -60,7 +60,7 @@
 
           <div class="mt-0.5 flex items-center gap-2">
             <div class="flex-1 min-w-0 text-[13.5px] text-muted truncate">
-              <span v-if="conversation.lastFileUrl" class="inline-flex items-center gap-1">
+              <span v-if="conversation.lastFileUrl && !conversation.lastPreview" class="inline-flex items-center gap-1">
                 <Paperclip class="w-3.5 h-3.5 shrink-0" />
                 <span>{{ $t('common.media') }}</span>
               </span>
