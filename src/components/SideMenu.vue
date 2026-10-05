@@ -69,12 +69,8 @@ const props = defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: 'profile' | 'contacts' | 'saved' | 'settings'): void }>()
 
 const preferences = usePreferencesStore()
-const isDark = computed(() => document.documentElement.classList.contains('dark') && preferences.prefs.theme !== 'light')
-
-/** Switches between light and dark explicitly (leaving "follow system"). */
-function toggleDark() {
-  preferences.prefs.theme = isDark.value ? 'light' : 'dark'
-}
+const isDark = computed(() => preferences.isDark)
+const toggleDark = () => preferences.toggleDark()
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.open) emit('close')

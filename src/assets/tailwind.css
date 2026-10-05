@@ -34,6 +34,10 @@
     color-scheme: light;
     /* Message text size, from the appearance preference. */
     --chat-font-size: 15px;
+    /* Message bubbles, from the appearance preference. */
+    --bubble-radius: 16px;
+    --bubble-tail-radius: 5px;
+    --bubble-border: 0px;
   }
 
   :root.dark {

@@ -7,7 +7,7 @@
       <!-- Mode switch (segmented) -->
       <div class="relative rounded-xl bg-canvas p-1 mb-6 flex gap-1">
         <div
-          class="absolute inset-y-1 start-1 w-1/2 rounded-lg bg-surface shadow transition-transform duration-200"
+          class="absolute inset-y-1 start-1 w-[calc(50%-0.25rem)] rounded-lg bg-surface shadow transition-transform duration-200"
           :style="{ transform: mode === 'password' ? 'translateX(0)' : (isRtl() ? 'translateX(-100%)' : 'translateX(100%)') }"
         ></div>
         <button

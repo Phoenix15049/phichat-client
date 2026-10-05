@@ -3,6 +3,7 @@
  * and tags plus Persian keywords from Unicode CLDR for search. Loaded on first use only.
  */
 import { ref } from 'vue'
+import { supportsFlagEmoji } from '../../utils/emojiSupport'
 
 export type EmojiItem = {
   /** Default (yellow) form. */
@@ -83,23 +84,6 @@ function createSupportCheck(): (emoji: string) => boolean {
     try { localStorage.setItem(cacheKey, JSON.stringify([...found])) } catch {}
   })
   return check
-}
-
-/**
- * Whether this system draws flag emoji. Windows does not: a flag shows as two letters, so
- * the pair is about twice as wide as one regional indicator. Flags are hidden there.
- */
-function supportsFlagEmoji(): boolean {
-  try {
-    const context = document.createElement('canvas').getContext('2d')
-    if (!context) return true
-    context.font = "32px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
-    const pair = context.measureText('\u{1F1EE}\u{1F1F7}').width
-    const single = context.measureText('\u{1F1EE}').width
-    return pair < single * 1.5
-  } catch {
-    return true
-  }
 }
 
 export function loadEmojiGroups(): Promise<EmojiGroup[]> {

@@ -1,6 +1,6 @@
 <template>
   <div :ref="bindScroll" class="chat-scroll flex-1 overflow-y-auto bg-canvas" @scroll="actions.onScroll">
-    <div class="mx-auto w-full max-w-[900px] px-2 sm:px-4 py-3">
+    <div class="w-full px-3 sm:px-5 py-3">
       <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
         <div class="flex items-center gap-2 rounded-full bg-surface/90 backdrop-blur px-3 py-1 shadow-sm ring-1 ring-line">
           <Loader2 class="h-4 w-4 animate-spin text-accent"/>
@@ -264,7 +264,7 @@
         <div
           :ref="bindMenu"
           role="menu"
-          class="absolute z-50 min-w-[190px] text-start rounded-2xl bg-surface/95 backdrop-blur-md shadow-xl ring-1 ring-line py-1"
+          class="absolute z-50 min-w-[190px] text-start rounded-2xl bg-surface/95 backdrop-blur-md shadow-xl ring-1 ring-line"
           :style="{
             top:`${contextMenu.y}px`,
             left:`${contextMenu.x}px`,
@@ -301,6 +301,8 @@
             </div>
           </div>
 
+          <!-- Clips the hover background of the first/last item to the rounded corners. -->
+          <div class="rounded-2xl overflow-hidden py-1">
           <button class="menu-item" type="button" @click="actions.reply">
             <Reply class="w-4 h-4 rtl:-scale-x-100"/> {{ $t('chat.reply') }}
           </button>
@@ -327,6 +329,7 @@
             type="button"
             @click="contextMenu.msg&&actions.deleteMessage(contextMenu.msg)"
           ><Trash2 class="w-4 h-4"/> {{ $t('common.delete') }}</button>
+          </div>
         </div>
       </Transition>
     </div>
@@ -545,14 +548,15 @@ function bubbleClasses(message:UiMessage,index:number){
   const selected=props.selectionMode&&props.actions.isSelected(message)
 
   if(isMediaOnly(message)){
-    classes.push('rounded-2xl','overflow-hidden','bg-transparent')
+    classes.push('rounded-[var(--bubble-radius)]','overflow-hidden','bg-transparent')
   }else{
     classes.push(
-      'rounded-2xl','px-3','pt-1.5','pb-1','shadow-[0_1px_1.5px_rgb(0_0_0/0.08)]',
-      isMine?'bg-bubble-out text-bubble-out-ink':'bg-bubble-in text-bubble-in-ink'
+      'rounded-[var(--bubble-radius)]','px-3','pt-1.5','pb-1','shadow-[0_1px_1.5px_rgb(0_0_0/0.08)]',
+      'border-solid','border-[length:var(--bubble-border)]',
+      isMine?'bg-bubble-out text-bubble-out-ink border-accent/35':'bg-bubble-in text-bubble-in-ink border-line'
     )
     // The last bubble of a group gets the "tail" corner on the sender's side.
-    if(isGroupEnd(index)) classes.push(isMine?'rounded-ee-md':'rounded-es-md')
+    if(isGroupEnd(index)) classes.push(isMine?'rounded-ee-[var(--bubble-tail-radius)]':'rounded-es-[var(--bubble-tail-radius)]')
   }
 
   if(selected) classes.push('ring-2','ring-accent')

@@ -1,13 +1,24 @@
 <template>
-  <section class="space-y-4">
-    <div class="flex items-center gap-2 text-ink font-medium">
-      <Palette class="w-4 h-4 text-accent" />
-      <span>{{ $t('settings.appearance') }}</span>
+  <div class="space-y-6">
+    <!-- Live preview of the chat with the current choices -->
+    <div class="rounded-2xl bg-canvas p-4 space-y-1.5 ring-1 ring-line">
+      <div class="flex justify-start">
+        <div class="preview-bubble bg-bubble-in text-bubble-in-ink border-line" style="border-end-start-radius: var(--bubble-tail-radius)">
+          {{ $t('settings.previewIncoming') }}
+          <span class="preview-time">10:41</span>
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <div class="preview-bubble bg-bubble-out text-bubble-out-ink border-accent/35 rounded-ee-none">
+          {{ $t('settings.previewOutgoing') }}
+          <span class="preview-time">10:42 <CheckCheck class="inline w-3.5 h-3.5 text-accent" /></span>
+        </div>
+      </div>
     </div>
 
     <!-- Theme -->
-    <div class="space-y-2">
-      <div class="text-sm text-muted">{{ $t('settings.theme') }}</div>
+    <section class="space-y-2">
+      <h3 class="setting-title">{{ $t('settings.theme') }}</h3>
       <div class="grid grid-cols-3 gap-2" role="radiogroup">
         <button
           v-for="option in themes"
@@ -15,60 +26,70 @@
           type="button"
           role="radio"
           :aria-checked="prefs.theme === option.value"
-          class="flex flex-col items-center gap-1.5 rounded-xl py-3 text-sm ring-1 transition"
-          :class="prefs.theme === option.value ? 'ring-2 ring-accent bg-accent-soft text-ink' : 'ring-line bg-surface text-muted hover:text-ink'"
+          class="choice flex-col gap-1.5 py-3"
+          :class="prefs.theme === option.value ? 'choice-on' : ''"
           @click="prefs.theme = option.value"
         >
           <component :is="option.icon" class="w-5 h-5" />
           {{ $t(`settings.themes.${option.value}`) }}
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- Text size -->
-    <div class="space-y-2">
-      <div class="text-sm text-muted">{{ $t('settings.textSize') }}</div>
-      <div class="flex items-center gap-2" role="radiogroup">
+    <section class="space-y-2">
+      <h3 class="setting-title">{{ $t('settings.textSize') }}</h3>
+      <div class="grid grid-cols-3 gap-2" role="radiogroup">
         <button
           v-for="size in sizes"
           :key="size"
           type="button"
           role="radio"
           :aria-checked="prefs.textSize === size"
-          class="flex-1 rounded-xl py-2 text-sm ring-1 transition"
-          :class="prefs.textSize === size ? 'ring-2 ring-accent bg-accent-soft text-ink' : 'ring-line bg-surface text-muted hover:text-ink'"
+          class="choice py-2"
+          :class="prefs.textSize === size ? 'choice-on' : ''"
           @click="prefs.textSize = size"
         >
           {{ $t(`settings.sizes.${size}`) }}
         </button>
       </div>
+    </section>
 
-      <!-- Live preview -->
-      <div class="rounded-2xl bg-canvas p-3 space-y-1.5">
-        <div class="flex justify-start">
-          <div class="preview-bubble bg-bubble-in text-bubble-in-ink rounded-es-md">{{ $t('settings.previewIncoming') }}</div>
-        </div>
-        <div class="flex justify-end">
-          <div class="preview-bubble bg-bubble-out text-bubble-out-ink rounded-ee-md">{{ $t('settings.previewOutgoing') }}</div>
-        </div>
+    <!-- Bubble corners -->
+    <section class="space-y-2">
+      <div class="flex items-center justify-between">
+        <h3 class="setting-title">{{ $t('settings.bubbleRadius') }}</h3>
+        <span class="text-xs text-muted tabular-nums">{{ prefs.bubbleRadius }}px</span>
       </div>
-    </div>
+      <input
+        v-model.number="prefs.bubbleRadius"
+        type="range"
+        :min="BUBBLE_RADIUS_MIN"
+        :max="BUBBLE_RADIUS_MAX"
+        step="1"
+        class="w-full accent-[var(--color-accent)]"
+        :aria-label="$t('settings.bubbleRadius')"
+      />
+      <div class="flex justify-between text-[11px] text-muted">
+        <span>{{ $t('settings.radiusSharp') }}</span>
+        <span>{{ $t('settings.radiusRound') }}</span>
+      </div>
+    </section>
 
-    <!-- Send with Enter -->
-    <label class="flex items-center justify-between gap-4 cursor-pointer">
-      <span>
-        <span class="block text-sm text-ink">{{ $t('settings.sendWithEnter') }}</span>
-        <span class="block text-xs text-muted">{{ prefs.sendWithEnter ? $t('settings.sendWithEnterOn') : $t('settings.sendWithEnterOff') }}</span>
-      </span>
-      <input v-model="prefs.sendWithEnter" type="checkbox" class="peer sr-only" />
-      <span class="switch shrink-0" :class="prefs.sendWithEnter ? 'switch-on' : ''"><span class="switch-knob"></span></span>
-    </label>
-  </section>
+    <SettingToggle
+      v-model="prefs.bubbleBorder"
+      :label="$t('settings.bubbleBorder')"
+      :description="$t('settings.bubbleBorderHint')"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Monitor, Moon, Palette, Sun } from 'lucide-vue-next'
-import { usePreferencesStore, type TextSize, type ThemePreference } from '../../stores/preferences'
+import { CheckCheck, Monitor, Moon, Sun } from 'lucide-vue-next'
+import {
+  BUBBLE_RADIUS_MAX, BUBBLE_RADIUS_MIN, usePreferencesStore, type TextSize, type ThemePreference
+} from '../../stores/preferences'
+import SettingToggle from './SettingToggle.vue'
 
 const { prefs } = usePreferencesStore()
 
@@ -83,24 +104,25 @@ const sizes: TextSize[] = ['small', 'medium', 'large']
 <style scoped>
 @reference "../../assets/tailwind.css";
 
+.setting-title {
+  @apply text-sm font-medium text-ink;
+}
+.choice {
+  @apply flex items-center justify-center rounded-xl text-sm ring-1 ring-line bg-surface text-muted hover:text-ink transition;
+}
+.choice-on {
+  @apply ring-2 ring-accent bg-accent-soft text-ink;
+}
 .preview-bubble {
-  @apply max-w-[80%] rounded-2xl px-3 py-1.5 shadow-sm;
+  @apply max-w-[80%] px-3 pt-1.5 pb-1 shadow-sm border-solid;
   font-size: var(--chat-font-size);
+  border-radius: var(--bubble-radius);
+  border-width: var(--bubble-border);
 }
-
-.switch {
-  @apply relative w-9 h-5 rounded-full bg-line transition-colors;
+.preview-bubble.rounded-ee-none {
+  border-end-end-radius: var(--bubble-tail-radius);
 }
-.switch-on {
-  @apply bg-accent;
-}
-.switch-knob {
-  @apply absolute top-0.5 start-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform;
-}
-.switch-on .switch-knob {
-  transform: translateX(16px);
-}
-:global([dir="rtl"] .switch-on .switch-knob) {
-  transform: translateX(-16px);
+.preview-time {
+  @apply ms-2 text-[11px] text-meta inline-flex items-center gap-0.5 align-bottom;
 }
 </style>
