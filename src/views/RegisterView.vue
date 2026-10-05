@@ -1,25 +1,25 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-[#F2F2F0] p-4">
-    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl ring-1 ring-black/5 p-6">
+  <div class="min-h-screen flex items-center justify-center bg-canvas p-4">
+    <div class="w-full max-w-md bg-surface rounded-2xl shadow-xl ring-1 ring-line p-6">
       <div class="flex justify-end mb-2"><LanguageSwitch /></div>
-      <h1 class="text-xl font-bold mb-4 text-center text-[#1B3C59]">{{ $t('auth.registerTitle') }}</h1>
+      <h1 class="text-xl font-bold mb-4 text-center text-ink">{{ $t('auth.registerTitle') }}</h1>
 
 
             <transition name="fade-up" mode="out-in">
         <!-- Step 1: Phone & Code -->
         <div v-if="step === 1" key="step1" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step1') }}</div>
+          <div class="text-lg font-semibold text-ink">{{ $t('auth.step1') }}</div>
 
           <PhoneInput v-model="phoneE164" :defaultCountry="'IR'" />
 
           <div class="flex items-center gap-2">
             <button
-              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              class="px-3 py-2 rounded bg-accent hover:bg-accent-strong text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!phoneE164 || sending" @click="sendCode">
               <template v-if="sending"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('common.sending') }}</span></template>
               <template v-else><Send class="w-4 h-4" /><span>{{ $t('auth.sendCode') }}</span></template>
             </button>
-            <span v-if="smsSent" class="text-sm text-gray-600 inline-flex items-center gap-1.5">
+            <span v-if="smsSent" class="text-sm text-muted inline-flex items-center gap-1.5">
               <Check class="w-4 h-4" /><span>{{ $t('auth.codeSent') }}</span>
             </span>
 
@@ -28,7 +28,7 @@
           <div v-if="smsSent" class="mt-2 space-y-2">
             <input v-model.trim="smsCode" class="input" inputmode="numeric" maxlength="6" dir="ltr" :placeholder="$t('auth.codePlaceholder')" />
             <button type="button"
-              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              class="btn-secondary gap-2 disabled:opacity-50"
               :disabled="verifying || !/^\d{6}$/.test(smsCode)" @click="verifyCode">
               <template v-if="verifying"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('auth.verifying') }}</span></template>
               <template v-else><ShieldCheck class="w-4 h-4" /><span>{{ $t('auth.verifyContinue') }}</span></template>
@@ -36,17 +36,17 @@
 
           </div>
 
-          <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
+          <p v-if="error" class="text-xs text-danger mt-2">{{ error }}</p>
         </div>
 
         <!-- Step 2: Username (+ Password) -->
         <div v-else-if="step === 2" key="step2" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step2') }}</div>
+          <div class="text-lg font-semibold text-ink">{{ $t('auth.step2') }}</div>
 
-          <label class="text-sm text-[#456173]">{{ $t('auth.username') }}</label>
+          <label class="text-sm text-muted">{{ $t('auth.username') }}</label>
           <input v-model="username" class="input" dir="ltr" :placeholder="$t('auth.usernamePlaceholder')" />
           <div class="text-xs inline-flex items-center gap-1.5"
-              :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-red-600' : 'text-gray-500'">
+              :class="uCheck.ok === true ? 'text-green-600' : uCheck.ok === false ? 'text-danger' : 'text-muted'">
             <template v-if="uCheck.loading">
               <Loader2 class="w-3.5 h-3.5 animate-spin" /><span>{{ $t('auth.checking') }}</span>
             </template>
@@ -61,16 +61,16 @@
             </template>
           </div>
           <div></div>
-          <label class="text-sm text-[#456173]">{{ $t('auth.password') }}</label>
+          <label class="text-sm text-muted">{{ $t('auth.password') }}</label>
           <input type="password" v-model="password" class="input" dir="ltr" :placeholder="$t('auth.passwordPlaceholder', { min: PASSWORD_MIN })" />
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
+            <button class="px-3 py-2 rounded border border-muted/30 text-muted inline-flex items-center gap-2"
                     @click="step = 1">
               <ArrowLeft class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.back') }}</span>
             </button>
             <button
-              class="px-3 py-2 rounded bg-[#11BFAE] hover:bg-[#10B2A3] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              class="px-3 py-2 rounded bg-accent hover:bg-accent-strong text-white disabled:opacity-50 inline-flex items-center gap-2"
               :disabled="!username || uCheck.ok !== true || !password || password.length < PASSWORD_MIN"
               @click="goStep3">
               <ArrowRight class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.next') }}</span>
@@ -78,30 +78,30 @@
           </div>
 
 
-          <p v-if="error" class="text-xs text-red-600 mt-2">{{ error }}</p>
+          <p v-if="error" class="text-xs text-danger mt-2">{{ error }}</p>
         </div>
 
         <!-- Step 3: Names → displayName -->
         <div v-else key="step3" class="max-w-sm mx-auto p-4 space-y-3">
-          <div class="text-lg font-semibold text-[#1B3C59]">{{ $t('auth.step3') }}</div>
+          <div class="text-lg font-semibold text-ink">{{ $t('auth.step3') }}</div>
 
-          <label class="text-sm text-[#456173]">{{ $t('auth.firstName') }}</label>
+          <label class="text-sm text-muted">{{ $t('auth.firstName') }}</label>
           <input v-model="firstName" class="input" dir="auto" :placeholder="$t('auth.required')" />
 
-          <label class="text-sm text-[#456173]">{{ $t('auth.lastName') }}</label>
+          <label class="text-sm text-muted">{{ $t('auth.lastName') }}</label>
           <input v-model="lastName" class="input" dir="auto" :placeholder="$t('auth.optional')" />
 
-          <div class="text-xs text-gray-600">
+          <div class="text-xs text-muted">
             {{ $t('auth.displayNamePreview') }} <span class="font-medium" dir="auto">{{ displayName || '—' }}</span>
           </div>
 
           <div class="flex items-center justify-between mt-2">
-            <button class="px-3 py-2 rounded border border-[#456173]/30 text-[#456173] inline-flex items-center gap-2"
+            <button class="px-3 py-2 rounded border border-muted/30 text-muted inline-flex items-center gap-2"
                     @click="step = 2">
               <ArrowLeft class="w-4 h-4 rtl:rotate-180" /><span>{{ $t('common.back') }}</span>
             </button>
             <button
-              class="px-3 py-2 rounded bg-[#1B3C59] hover:bg-[#16344B] text-white disabled:opacity-50 inline-flex items-center gap-2"
+              class="btn-secondary gap-2 disabled:opacity-50"
               :disabled="!firstName || loading" @click="completeRegister">
               <template v-if="loading"><Loader2 class="w-4 h-4 animate-spin" /><span>{{ $t('common.saving') }}</span></template>
               <template v-else><Check class="w-4 h-4" /><span>{{ $t('auth.finish') }}</span></template>
@@ -109,7 +109,7 @@
           </div>
 
 
-          <p v-if="error" class="text-xs text-red-600 mt-2 inline-flex items-center gap-1.5">
+          <p v-if="error" class="text-xs text-danger mt-2 inline-flex items-center gap-1.5">
             <AlertCircle class="w-4 h-4" /><span>{{ error }}</span>
           </p>
 
@@ -117,7 +117,7 @@
       </transition>
 
       <div class="text-center mt-6">
-        <RouterLink to="/login" class="text-[#11BFAE] hover:underline">{{ $t('auth.haveAccount') }}</RouterLink>
+        <RouterLink to="/login" class="text-accent hover:underline">{{ $t('auth.haveAccount') }}</RouterLink>
       </div>
 
     </div>
@@ -308,10 +308,10 @@ async function completeRegister() {
 
 
 <style>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 .input {
-  @apply border rounded-lg px-3 py-2 w-full outline-none bg-white
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+  @apply border rounded-lg px-3 py-2 w-full outline-none bg-surface
+         focus:ring-2 focus:ring-accent/60 focus:border-accent;
 }
 
 /* step switch animation */

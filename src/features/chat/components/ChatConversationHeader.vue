@@ -1,91 +1,61 @@
 <template>
   <div
-    class="bg-[#1B3C59] text-white p-3 cursor-pointer select-none"
-    role="button"
-    :aria-label="$t('chat.viewProfile')"
-    @click="
-      !props.selectionMode &&
-      props.selectedUser &&
-      emit('open-profile')
-    "
+    v-if="props.selectedUser || props.selectionMode"
+    class="h-14 shrink-0 bg-surface border-b border-line px-2 sm:px-3 flex items-center select-none"
   >
-    <Transition
-      name="slide-down"
-      mode="out-in"
-    >
+    <Transition name="slide-down" mode="out-in">
       <!-- Selection header -->
-      <div
-        v-if="props.selectionMode"
-        key="selection"
-        class="flex items-center gap-3"
-      >
-        <button
-          v-ripple
-          type="button"
-          class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50 inline-flex items-center gap-0.5"
-          :disabled="!props.selectedCount"
-          :title="$t('chat.groupForward')"
-          @click.stop="
-            emit('forward-selected')
-          "
-        >
-          {{ $t('chat.forward') }}
-          <span
-            class="inline-flex items-center justify-center text-[11px] min-w-[18px] h-[18px] px-1 rounded-full bg-white text-blue-700"
-          >
-            {{ props.selectedCount }}
-          </span>
+      <div v-if="props.selectionMode" key="selection" class="flex-1 flex items-center gap-1">
+        <button type="button" class="icon-btn" :aria-label="$t('common.cancel')" @click.stop="emit('clear-selection')">
+          <X class="w-5 h-5" />
         </button>
 
-        <button
-          v-ripple
-          type="button"
-          class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-          :disabled="!props.selectedCount"
-          @click.stop="
-            emit('delete-selected')
-          "
-        >
-          {{ $t('common.delete') }}
-        </button>
-
-        <button
-          v-ripple
-          type="button"
-          class="px-2 py-1 rounded hover:bg-white/10 disabled:opacity-50"
-          :disabled="!props.selectedCount"
-          @click.stop="
-            emit('copy-selected')
-          "
-        >
-          {{ $t('chat.copyText') }}
-        </button>
+        <div class="px-1 font-semibold text-ink">
+          {{ $t('chat.selectedCount', { count: props.selectedCount }) }}
+        </div>
 
         <div class="flex-1"></div>
 
         <button
-          v-ripple
           type="button"
-          class="px-2 py-1 rounded hover:bg-white/10"
-          @click.stop="
-            emit('clear-selection')
-          "
+          class="icon-btn"
+          :disabled="!props.selectedCount"
+          :title="$t('chat.copyText')"
+          :aria-label="$t('chat.copyText')"
+          @click.stop="emit('copy-selected')"
         >
-          {{ $t('common.cancel') }}
+          <Copy class="w-5 h-5" />
+        </button>
+
+        <button
+          type="button"
+          class="icon-btn"
+          :disabled="!props.selectedCount"
+          :title="$t('chat.groupForward')"
+          :aria-label="$t('chat.groupForward')"
+          @click.stop="emit('forward-selected')"
+        >
+          <Forward class="w-5 h-5 rtl:-scale-x-100" />
+        </button>
+
+        <button
+          type="button"
+          class="icon-btn hover:!text-danger"
+          :disabled="!props.selectedCount"
+          :title="$t('common.delete')"
+          :aria-label="$t('common.delete')"
+          @click.stop="emit('delete-selected')"
+        >
+          <Trash2 class="w-5 h-5" />
         </button>
       </div>
 
       <!-- Normal header -->
-      <div
-        v-else
-        key="normal"
-        class="flex items-center gap-3"
-      >
+      <div v-else key="normal" class="flex-1 min-w-0 flex items-center gap-2">
         <button
           v-if="props.showBack"
-          v-ripple
           type="button"
-          class="ms-1 px-2 py-1 rounded hover:bg-white/10"
+          class="icon-btn shrink-0"
           :title="$t('common.back')"
           :aria-label="$t('common.back')"
           @click.stop="emit('back')"
@@ -93,110 +63,47 @@
           <ArrowLeft class="w-5 h-5 rtl:rotate-180" />
         </button>
 
-        <div
-          v-if="
-            props.isNarrow &&
-            props.selectedUser
-          "
-          class="relative shrink-0"
-          @click.stop="
-            emit('open-profile')
-          "
+        <button
+          v-if="props.selectedUser"
+          type="button"
+          class="flex-1 min-w-0 flex items-center gap-3 rounded-xl px-1.5 py-1 text-start hover:bg-surface-2 transition"
+          :aria-label="$t('chat.viewProfile')"
+          @click.stop="emit('open-profile')"
         >
-          <div
-            class="w-9 h-9 rounded-full overflow-hidden bg-white/10 grid place-items-center"
-          >
-            <img
-              v-if="props.avatarUrl"
-              :src="props.avatarUrl"
-              class="w-full h-full object-cover"
-              alt=""
-            />
+          <div class="relative shrink-0">
+            <div class="w-10 h-10 rounded-full overflow-hidden grid place-items-center">
+              <img v-if="props.avatarUrl" :src="props.avatarUrl" class="w-full h-full object-cover" alt="" />
+              <div
+                v-else
+                class="w-full h-full grid place-items-center text-sm font-semibold text-white"
+                :style="{ backgroundColor: colorFromString(props.selectedLabel || props.selectedUser.username) }"
+              >
+                {{ initialsOf(props.selectedLabel) }}
+              </div>
+            </div>
+            <span
+              v-if="props.isPeerOnline"
+              class="absolute bottom-0 end-0 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
+            ></span>
+          </div>
 
-            <div
-              v-else
-              class="w-full h-full grid place-items-center text-sm font-semibold"
-              :style="{
-                backgroundColor:
-                  colorFromString(
-                    props.selectedLabel ||
-                    props.selectedUser.username
-                  )
-              }"
-            >
-              <span class="text-white">
-                {{
-                  initialsOf(
-                    props.selectedLabel
-                  )
-                }}
-              </span>
+          <div class="min-w-0">
+            <div class="truncate text-[15px] leading-5 font-semibold text-ink">
+              <bdi>{{ props.selectedLabel }}</bdi>
+            </div>
+
+            <div class="h-4 flex items-center text-[12.5px] leading-4">
+              <div v-if="props.isPeerTyping" class="flex items-center gap-1 text-accent">
+                <span class="typing-dot"></span>
+                <span class="typing-dot" style="animation-delay: 150ms"></span>
+                <span class="typing-dot" style="animation-delay: 300ms"></span>
+                <span class="ms-0.5">{{ $t('chat.typing') }}</span>
+              </div>
+              <div v-else-if="props.isPeerOnline" class="text-accent">{{ $t('chat.online') }}</div>
+              <div v-else class="text-muted truncate">{{ props.peerStatus }}</div>
             </div>
           </div>
-        </div>
-
-        <div
-          v-if="props.selectedUser"
-          class="min-w-0 select-none"
-          @click.stop="
-            emit('open-profile')
-          "
-        >
-          <div
-            class="truncate text-[15px] leading-5 font-semibold"
-          >
-            <bdi>{{ props.selectedLabel }}</bdi>
-          </div>
-
-          <div
-            class="flex items-center gap-2 leading-4"
-          >
-            <template
-              v-if="props.isPeerTyping"
-            >
-              <div
-                class="flex items-center gap-1 text-[13px] text-[#A78BFA]"
-              >
-                <span
-                  class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce"
-                  style="animation-delay: 0ms"
-                ></span>
-
-                <span
-                  class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce"
-                  style="animation-delay: 120ms"
-                ></span>
-
-                <span
-                  class="inline-block w-1.5 h-1.5 rounded-full bg-[#A78BFA] animate-bounce"
-                  style="animation-delay: 240ms"
-                ></span>
-
-                <span>{{ $t('chat.typing') }}</span>
-              </div>
-            </template>
-
-            <template
-              v-else-if="
-                props.isPeerOnline
-              "
-            >
-              <div
-                class="text-[12px] text-white"
-              >
-                {{ $t('chat.online') }}
-              </div>
-            </template>
-
-            <template v-else>
-              <div
-                class="text-[12px] text-white/70 truncate"
-              >
-                {{ props.peerStatus }}
-              </div>
-            </template>
-          </div>
-        </div>
+        </button>
       </div>
     </Transition>
   </div>
@@ -204,68 +111,47 @@
 
 <script setup lang="ts">
 import { colorFromString, initialsOf } from '../../../utils/avatar'
+import { ArrowLeft, Copy, Forward, Trash2, X } from 'lucide-vue-next'
+import type { ChatUser } from '../../../types/chat'
 
-import {
-  ArrowLeft
-} from 'lucide-vue-next'
-
-import type {
-  ChatUser
-} from '../../../types/chat'
-
-type HeaderUser =
-  Pick<ChatUser, 'id' | 'username'>
+type HeaderUser = Pick<ChatUser, 'id' | 'username'>
 
 const props = defineProps<{
   selectionMode: boolean
   selectedCount: number
-
-  selectedUser:
-    HeaderUser | null
-
+  selectedUser: HeaderUser | null
   selectedLabel: string
   isNarrow: boolean
   showBack: boolean
-
-  avatarUrl:
-    string | null
-
+  avatarUrl: string | null
   isPeerTyping: boolean
   isPeerOnline: boolean
   peerStatus: string
 }>()
 
 const emit = defineEmits<{
-  (
-    event: 'open-profile'
-  ): void
-
-  (
-    event: 'back'
-  ): void
-
-  (
-    event: 'forward-selected'
-  ): void
-
-  (
-    event: 'delete-selected'
-  ): void
-
-  (
-    event: 'copy-selected'
-  ): void
-
-  (
-    event: 'clear-selection'
-  ): void
+  (event: 'open-profile'): void
+  (event: 'back'): void
+  (event: 'forward-selected'): void
+  (event: 'delete-selected'): void
+  (event: 'copy-selected'): void
+  (event: 'clear-selection'): void
 }>()
-
-
-
 </script>
 
 <style scoped>
+@reference "../../../assets/tailwind.css";
+
+.typing-dot {
+  @apply inline-block w-1.5 h-1.5 rounded-full bg-current;
+  animation: typing 1s infinite ease-in-out;
+}
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: .5; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
 /* header (selection/non-selection) slide */
 .slide-down-enter-from { transform: translateY(-6px); opacity: 0; }
 .slide-down-enter-active { transition: transform .1s ease, opacity .1s ease; }

@@ -1,11 +1,11 @@
 <template>
-  <div class="inline-flex rounded-lg bg-[#F2F2F0] p-0.5 text-xs" role="group" :aria-label="$t('common.language')">
+  <div class="inline-flex rounded-lg bg-canvas p-0.5 text-xs" role="group" :aria-label="$t('common.language')">
     <button
       v-for="option in options"
       :key="option.locale"
       type="button"
       class="rounded-md px-2.5 py-1 transition"
-      :class="locale === option.locale ? 'bg-white text-[#1B3C59] shadow-sm' : 'text-[#456173] hover:text-[#1B3C59]'"
+      :class="locale === option.locale ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'"
       :aria-pressed="locale === option.locale"
       :lang="option.locale"
       @click="setLocale(option.locale)"

@@ -14,7 +14,7 @@
     />
     <button
       type="button"
-      class="absolute inset-y-0 right-0 px-3 text-[#456173] hover:text-[#1B3C59]"
+      class="absolute inset-y-0 right-0 px-3 text-muted hover:text-ink"
       :aria-label="visible ? $t('e2ee.hide') : $t('e2ee.show')"
       @click="visible = !visible"
     >

@@ -2,29 +2,29 @@
   <ModalSheet :open="props.open" @close="emit('close')">
     <div class="p-5 w-[560px] max-w-full">
       <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-bold text-[#1B3C59]">{{ $t('chat.mediaTitle') }}</h3>
+        <h3 class="text-lg font-bold text-ink">{{ $t('chat.mediaTitle') }}</h3>
         <button class="btn-ghost" @click="emit('close')">✕</button>
       </div>
 
       <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
         <div v-for="(file,index) in props.files" :key="`${file.name}-${file.lastModified}-${index}`" class="relative group">
-          <img v-if="props.isImageFile(file)" :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"/>
-          <video v-else :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-[#456173]/15"></video>
-          <button class="absolute top-1 end-1 btn-ghost !bg-white/90 hover:!bg-white shadow" @click="emit('remove',index)">{{ $t('common.remove') }}</button>
+          <img v-if="props.isImageFile(file)" :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-muted/15"/>
+          <video v-else :src="props.previewUrl(file)" class="w-full h-28 object-cover rounded-lg ring-1 ring-muted/15"></video>
+          <button class="absolute top-1 end-1 btn-ghost !bg-white/90 hover:!bg-surface shadow" @click="emit('remove',index)">{{ $t('common.remove') }}</button>
         </div>
       </div>
 
-      <label v-if="props.allImagesSelected" class="mt-3 flex items-center gap-2 text-sm text-[#456173]">
+      <label v-if="props.allImagesSelected" class="mt-3 flex items-center gap-2 text-sm text-muted">
         <input type="checkbox" :checked="props.compressImages" @change="onCompressChange"/>
         <span>{{ $t('chat.compressImages') }}</span>
       </label>
 
-      <label class="mt-2 flex items-center gap-2 text-sm text-[#456173]">
+      <label class="mt-2 flex items-center gap-2 text-sm text-muted">
         <input type="checkbox" :checked="props.groupItems" @change="onGroupChange"/>
         <span>{{ $t('chat.groupItems') }}</span>
       </label>
 
-      <label class="block text-sm text-[#456173] mt-2 mb-1">{{ $t('chat.caption') }}</label>
+      <label class="block text-sm text-muted mt-2 mb-1">{{ $t('chat.caption') }}</label>
       <textarea
         :value="props.caption"
         rows="3"

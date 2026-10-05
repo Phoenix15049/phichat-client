@@ -2,12 +2,12 @@
   <!-- overlay fades; sheet pops -->
   <transition name="fade-overlay">
     <div v-if="open" class="fixed inset-0 z-[60]" role="dialog" aria-modal="true">
-      <div class="absolute inset-0 bg-black/30" @click="$emit('close')" @contextmenu.prevent="$emit('close')"></div>
+      <div class="absolute inset-0 bg-overlay" @click="$emit('close')" @contextmenu.prevent="$emit('close')"></div>
 
       <transition name="sheet-pop">
         <div
           class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
-                 bg-white rounded-2xl shadow-xl ring-1 ring-black/5
+                 bg-surface rounded-2xl shadow-xl ring-1 ring-line
                  w-[520px] max-w-[95vw] max-h-[90vh] overflow-auto"
         >
           <slot/>
@@ -31,7 +31,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../assets/tailwind.css";
 
 /* overlay fade */
 .fade-overlay-enter-from { opacity: 0; }

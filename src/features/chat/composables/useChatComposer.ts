@@ -293,6 +293,9 @@ export function useChatComposer({
         .catch(() => {})
     }
 
+    // While editing, the composer holds the message being edited, not a draft.
+    if (editingMessage.value) return
+
     saveDraft(
       user.id,
       text.value

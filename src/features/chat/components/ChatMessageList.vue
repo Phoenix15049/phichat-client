@@ -1,256 +1,257 @@
 <template>
-  <div :ref="bindScroll" class="flex-1 overflow-y-auto p-4 bg-[#F2F2F0]" @scroll="actions.onScroll">
-    <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
-      <div class="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur px-3 py-1 shadow">
-        <Loader2 class="h-4 w-4 animate-spin"/>
-        <span class="text-xs text-gray-600">{{ $t('common.loading') }}</span>
-      </div>
-    </div>
-
-    <TransitionGroup name="bubble" tag="div" class="space-y-2">
-      <div
-        v-for="(msg,index) in messages"
-        :key="messageKey(msg,index)"
-        :class="['relative',msg.senderId===myId?'text-end':'text-start']"
-        @click.stop="actions.onRowClick($event,msg)"
-        @contextmenu.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
-        @mousedown.left="actions.onRowMouseDown($event,msg)"
-        @mouseenter="actions.onRowMouseEnter(msg)"
-      >
-        <div v-if="showDayHeader(index)" class="flex justify-center my-2">
-          <span class="text-xs text-gray-500 bg-white/70 rounded-full px-3 py-1 shadow-sm">
-            {{ formatDayLabel(msg.sentAt) }}
-          </span>
+  <div :ref="bindScroll" class="chat-scroll flex-1 overflow-y-auto bg-canvas" @scroll="actions.onScroll">
+    <div class="mx-auto w-full max-w-[900px] px-2 sm:px-4 py-3">
+      <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
+        <div class="flex items-center gap-2 rounded-full bg-surface/90 backdrop-blur px-3 py-1 shadow-sm ring-1 ring-line">
+          <Loader2 class="h-4 w-4 animate-spin text-accent"/>
+          <span class="text-xs text-muted">{{ $t('common.loading') }}</span>
         </div>
+      </div>
 
+      <TransitionGroup name="bubble" tag="div">
         <div
-          :ref="bindMessageElement((msg.id||msg.clientId)!)"
-          :class="bubbleClasses(msg)"
-          @dblclick="actions.onBubbleDblClick($event,msg)"
-          @contextmenu.stop.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
-          @mouseenter="actions.onBubbleHoverStart(msg)"
-          @mouseleave="actions.onBubbleHoverEnd"
+          v-for="(msg,index) in messages"
+          :key="messageKey(msg,index)"
+          class="relative"
+          :class="[mine(msg)?'text-end':'text-start',isGroupStart(index)?'mt-2.5':'mt-0.5',selectionMode?'cursor-pointer ps-7':'']"
+          @click.stop="actions.onRowClick($event,msg)"
+          @contextmenu.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
+          @mousedown.left="actions.onRowMouseDown($event,msg)"
+          @mouseenter="actions.onRowMouseEnter(msg)"
         >
-          <div
-            v-if="msg.replyToMessageId"
-            class="mb-1 border-s-2 ps-2 text-xs opacity-80 cursor-pointer hover:underline"
-            @click="actions.jumpToReply(msg.replyToMessageId)"
-          >
-            <div class="truncate">{{ actions.resolveReplyPreview(msg.replyToMessageId) }}</div>
-          </div>
-
-          <div v-if="msg.isDeleted" class="text-xs text-gray-600 italic">{{ $t('chat.messageDeleted') }}</div>
-
-          <div v-if="msg.forwardedFromSenderId" class="mb-1 text-xs opacity-80 border-s-2 ps-2">
-            {{ $t('chat.forwardedFrom') }}
-            <button
-              type="button"
-              class="font-medium underline hover:opacity-90"
-              :class="isMediaOnly(msg)?'text-[#11BFAE]':'text-[#c5ffff]'"
-              @mouseenter="actions.cacheForwardName(msg.forwardedFromSenderId)"
-              @click.stop="actions.openForwardUser(msg.forwardedFromSenderId)"
-            >
-              <bdi>{{ actions.resolveForwardLabel(msg.forwardedFromSenderId) }}</bdi>
-            </button>
-          </div>
-
-          <div
-            v-if="!msg.fileUrl&&msg.plainText"
-            dir="auto"
-            class="whitespace-pre-wrap break-words select-text text-start auto-dir"
-            data-text-selectable
-          >
-            <template v-for="(part,i) in toParts(msg.plainText)" :key="i">
-              <span v-if="part.t==='text'">{{ part.s }}</span>
-              <span
-                v-else
-                dir="ltr"
-                class="text-[#c0fcff] underline cursor-pointer"
-                data-text-selectable
-                @click.stop="actions.openMention(part.u)"
-              >@{{ part.u }}</span>
-            </template>
-          </div>
-
-          <div
-            v-if="unreadableNotice(msg)"
-            class="flex items-center gap-1.5 text-[13px] italic opacity-85"
-          >
-            <Lock class="w-3.5 h-3.5 shrink-0"/>
-            <span>{{ unreadableNotice(msg) }}</span>
-          </div>
-
-          <div v-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" class="mt-1">
-            <img
-              v-if="actions.mediaSrc(msg)"
-              :src="actions.mediaSrc(msg)!"
-              :alt="msg.file?.name||''"
-              class="rounded-xl cursor-zoom-in max-h-[70vh] max-w-[75vw] md:max-w-[60%] lg:max-w-[640px] sm:min-w-[180px] min-w-[140px] h-auto w-auto object-contain"
-              @click="actions.openImage(msg)"
-            />
-            <div v-else class="media-placeholder">
-              <ImageOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
-              <Loader2 v-else class="w-6 h-6 animate-spin"/>
-            </div>
-          </div>
-
-          <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" class="mt-1">
-            <video
-              v-if="actions.mediaSrc(msg)"
-              :src="actions.mediaSrc(msg)!"
-              controls
-              playsinline
-              class="rounded-xl bg-black cursor-pointer max-h-[70vh] max-w-[75vw] md:max-w-[60%] lg:max-w-[640px] sm:min-w-[220px] min-w-[160px] h-auto w-auto"
-              @dblclick.prevent="actions.openVideo(msg)"
-            ></video>
-            <div v-else class="media-placeholder bg-black/80 text-white/80">
-              <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
-              <Loader2 v-else class="w-6 h-6 animate-spin"/>
-            </div>
-          </div>
-
-          <div v-else-if="hasViewableFile(msg)" class="mt-1">
-            <div
-              class="flex items-center gap-3 rounded px-3 py-2"
-              :class="msg.senderId===myId?'bg-white/10':'bg-[#536e7e]'"
-            >
-              <button
-                type="button"
-                class="w-8 h-8 rounded-full border flex items-center justify-center"
-                :class="msg.senderId===myId?'border-white/50 text-white':'border-gray-300 text-gray-600'"
-                :aria-label="$t('chat.download')"
-                @click="actions.downloadFile(msg)"
-              >
-                <Loader2 v-if="downloading[actions.fileKey(msg)]" class="w-4 h-4 animate-spin"/>
-                <Check v-else-if="downloaded[actions.fileKey(msg)]" class="w-4 h-4"/>
-                <Download v-else class="w-4 h-4"/>
-              </button>
-
-              <div class="flex-1 min-w-0">
-                <div class="font-medium truncate max-w-[16rem] min-w-0">
-                  {{ msg.file?.name||actions.fileNameFromUrl(msg.fileUrl!) }}
-                </div>
-                <div class="text-xs opacity-70">
-                  {{ actions.humanFileSize(msg.file?msg.file.size:(fileSizeMap[actions.fileKey(msg)]||0)) }}
-                </div>
-              </div>
-            </div>
-
-            <div
-              v-if="msg.plainText"
-              dir="auto"
-              class="mt-1 whitespace-pre-wrap break-words text-start auto-dir"
-            >{{ msg.plainText }}</div>
-          </div>
-
-          <div
-            class="mt-1 flex items-center gap-1 text-[11px]"
-            :class="timeColorClass(msg)"
-            :title="tooltipForMessage(msg)"
-          >
-            <span>{{ formatTime(msg.sentAt) }}</span>
-            <span v-if="msg.updatedAtUtc" class="ms-1 opacity-80">{{ $t('chat.edited') }}</span>
-
-            <span v-if="msg.senderId===myId">
-              <CheckCheck v-if="msg.status==='read'" class="w-3 h-3"/>
-              <Check v-else-if="msg.status==='delivered'" class="w-3 h-3"/>
-              <AlertCircle v-else-if="msg.status==='failed'" class="w-3.5 h-3.5 text-red-600" :aria-label="$t('chat.notSent')"/>
-              <Loader2 v-else class="w-3 h-3 animate-spin"/>
+          <div v-if="showDayHeader(index)" class="flex justify-center my-3">
+            <span class="text-[12px] font-medium text-muted bg-surface/85 backdrop-blur rounded-full px-3 py-1 shadow-sm">
+              {{ formatDayLabel(msg.sentAt) }}
             </span>
           </div>
 
           <div
-            v-if="msg.senderId===myId&&msg.status==='failed'"
-            class="mt-1 flex items-center justify-end gap-2 text-[12px]"
-          >
-            <span class="opacity-90">{{ $t('chat.notSent') }}</span>
-            <button
-              v-if="actions.canRetry(msg)"
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[#1B3C59] hover:bg-white"
-              @click.stop="actions.retrySend(msg)"
-            >
-              <RotateCw class="w-3 h-3"/> {{ $t('chat.retry') }}
-            </button>
-            <button
-              type="button"
-              class="rounded-full px-2 py-0.5 hover:bg-white/15"
-              @click.stop="actions.discardFailed(msg)"
-            >{{ $t('common.remove') }}</button>
-          </div>
-
-          <Transition name="fade-scale">
-            <div
-              v-if="hoverReactFor===(msg.id||msg.clientId)&&!selectionMode&&!contextMenu.visible"
-              :ref="element=>bindHoverBar(element,msg.senderId===myId)"
-              class="absolute z-20 pointer-events-auto select-none"
-              :class="hoverBarAbove
-                ?(msg.senderId===myId?'bottom-full end-0 mb-1':'bottom-full start-0 mb-1')
-                :msg.senderId===myId
-                  ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
-                  :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
-              @mouseenter="actions.keepHoverBar"
-              @mouseleave="actions.hideHoverBarSoon"
-            >
-              <div class="reaction-pill">
-                <button
-                  v-for="emoji in quickEmojis"
-                  :key="emoji"
-                  class="reaction-btn"
-                  @click.stop="actions.applyReaction(msg,emoji)"
-                >{{ emoji }}</button>
-              </div>
-            </div>
-          </Transition>
-
-          <div
-            v-if="msg.reactions?.length"
-            class="mt-1 flex flex-wrap gap-1"
-            :class="msg.senderId===myId?'justify-end':'justify-start'"
-          >
-            <button
-              v-for="reaction in msg.reactions"
-              :key="reaction.emoji"
-              class="px-1.5 py-[2px] text-[12px] rounded-full bg-black/5 hover:bg-black/10 ring-1 ring-black/5 transition"
-              :class="reaction.mine?'ring-2 ring-[#11BFAE]':''"
-              @click.stop="actions.applyReaction(msg,reaction.emoji)"
-            >
-              <span>{{ reaction.emoji }}</span>
-              <span class="ms-1 text-[11px] opacity-70">{{ reaction.count }}</span>
-            </button>
-          </div>
-
-          <div v-if="reactionPickerFor===(msg.id||msg.clientId)" class="mt-1 flex gap-1">
-            <button
-              v-for="emoji in quickEmojis"
-              :key="emoji"
-              class="px-2 py-[2px] text-[13px] rounded hover:bg-gray-100"
-              @click="actions.applyReaction(msg,emoji)"
-            >{{ emoji }}</button>
-
-            <button class="px-2 py-[2px] text-[11px] text-gray-500" @click="actions.closeReactionPicker">
-              {{ $t('common.close') }}
-            </button>
-          </div>
-
-          <button
             v-if="selectionMode"
-            class="absolute top-1"
-            :class="msg.senderId===myId?'start-1':'end-1'"
-            :title="actions.isSelected(msg)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
+            class="absolute bottom-2 start-0 z-10"
             @click.stop="actions.toggleSelect(msg)"
           >
             <span
-              class="w-5 h-5 inline-flex items-center justify-center rounded-full border text-[11px]"
-              :class="actions.isSelected(msg)
-                ?(msg.senderId===myId?'bg-white text-blue-600 border-white':'bg-blue-600 text-white border-blue-600')
-                :'bg-white/80 text-gray-400 border-gray-300'"
-            >{{ actions.isSelected(msg)?'✓':'' }}</span>
-          </button>
+              class="w-5 h-5 grid place-items-center rounded-full border-2 transition"
+              :class="actions.isSelected(msg)?'bg-accent border-accent text-white':'border-muted/50 bg-surface/70'"
+              :title="actions.isSelected(msg)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
+            ><Check v-if="actions.isSelected(msg)" class="w-3 h-3" :stroke-width="3"/></span>
+          </div>
+
+          <div
+            :ref="bindMessageElement((msg.id||msg.clientId)!)"
+            :class="bubbleClasses(msg,index)"
+            @dblclick="actions.onBubbleDblClick($event,msg)"
+            @contextmenu.stop.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
+            @mouseenter="actions.onBubbleHoverStart(msg)"
+            @mouseleave="actions.onBubbleHoverEnd"
+          >
+            <div v-if="msg.forwardedFromSenderId" class="mb-0.5 text-[12.5px] font-medium text-accent" :class="isMediaOnly(msg)?'px-1 pb-1':''">
+              {{ $t('chat.forwardedFrom') }}
+              <button
+                type="button"
+                class="font-semibold hover:underline"
+                @mouseenter="actions.cacheForwardName(msg.forwardedFromSenderId)"
+                @click.stop="actions.openForwardUser(msg.forwardedFromSenderId)"
+              >
+                <bdi>{{ actions.resolveForwardLabel(msg.forwardedFromSenderId) }}</bdi>
+              </button>
+            </div>
+
+            <button
+              v-if="msg.replyToMessageId"
+              type="button"
+              class="reply-quote"
+              @click.stop="actions.jumpToReply(msg.replyToMessageId)"
+            >
+              <span class="block truncate"><bdi>{{ actions.resolveReplyPreview(msg.replyToMessageId) }}</bdi></span>
+            </button>
+
+            <div v-if="msg.isDeleted" class="text-[13px] text-meta italic">{{ $t('chat.messageDeleted') }}</div>
+
+            <div
+              v-if="!msg.fileUrl&&msg.plainText"
+              dir="auto"
+              class="msg-text whitespace-pre-wrap break-words select-text text-start auto-dir"
+              :class="{ 'emoji-only': isEmojiOnly(msg.plainText) }"
+              data-text-selectable
+            >
+              <template v-for="(part,i) in toParts(msg.plainText)" :key="i">
+                <span v-if="part.t==='text'">{{ part.s }}</span>
+                <span
+                  v-else
+                  dir="ltr"
+                  class="text-accent font-medium hover:underline cursor-pointer"
+                  data-text-selectable
+                  @click.stop="actions.openMention(part.u)"
+                >@{{ part.u }}</span>
+              </template>
+            </div>
+
+            <div v-if="unreadableNotice(msg)" class="flex items-center gap-1.5 text-[13px] italic text-meta">
+              <Lock class="w-3.5 h-3.5 shrink-0"/>
+              <span>{{ unreadableNotice(msg) }}</span>
+            </div>
+
+            <div v-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
+              <img
+                v-if="actions.mediaSrc(msg)"
+                :src="actions.mediaSrc(msg)!"
+                :alt="msg.file?.name||''"
+                class="block rounded-xl cursor-zoom-in max-h-[60vh] max-w-full sm:min-w-[180px] min-w-[140px] h-auto w-auto object-contain"
+                @click="actions.openImage(msg)"
+              />
+              <div v-else class="media-placeholder">
+                <ImageOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
+                <Loader2 v-else class="w-6 h-6 animate-spin"/>
+              </div>
+            </div>
+
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
+              <video
+                v-if="actions.mediaSrc(msg)"
+                :src="actions.mediaSrc(msg)!"
+                controls
+                playsinline
+                class="block rounded-xl bg-black cursor-pointer max-h-[60vh] max-w-full sm:min-w-[220px] min-w-[160px] h-auto w-auto"
+                @dblclick.prevent="actions.openVideo(msg)"
+              ></video>
+              <div v-else class="media-placeholder bg-black/80 text-white/80">
+                <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
+                <Loader2 v-else class="w-6 h-6 animate-spin"/>
+              </div>
+            </div>
+
+            <div v-else-if="hasViewableFile(msg)" class="mt-0.5">
+              <div class="flex items-center gap-3 py-1 pe-2 min-w-[200px]">
+                <button
+                  type="button"
+                  class="w-11 h-11 shrink-0 rounded-full grid place-items-center bg-accent text-white hover:bg-accent-strong transition"
+                  :aria-label="$t('chat.download')"
+                  @click.stop="actions.downloadFile(msg)"
+                >
+                  <Loader2 v-if="downloading[actions.fileKey(msg)]" class="w-5 h-5 animate-spin"/>
+                  <Check v-else-if="downloaded[actions.fileKey(msg)]" class="w-5 h-5"/>
+                  <FileDown v-else class="w-5 h-5"/>
+                </button>
+
+                <div class="flex-1 min-w-0 text-start">
+                  <div class="font-medium truncate max-w-[16rem]" dir="auto">
+                    {{ msg.file?.name||actions.fileNameFromUrl(msg.fileUrl!) }}
+                  </div>
+                  <div class="text-[12px] text-meta">
+                    {{ actions.humanFileSize(msg.file?msg.file.size:(fileSizeMap[actions.fileKey(msg)]||0)) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="msg.fileUrl&&msg.plainText"
+              dir="auto"
+              class="msg-text mt-1 whitespace-pre-wrap break-words select-text text-start auto-dir"
+              data-text-selectable
+            >{{ msg.plainText }}</div>
+
+            <div
+              v-if="msg.reactions?.length"
+              class="mt-1 flex flex-wrap gap-1"
+              :class="isMediaOnly(msg)?'px-1 pb-1':''"
+            >
+              <button
+                v-for="reaction in msg.reactions"
+                :key="reaction.emoji"
+                type="button"
+                class="h-7 inline-flex items-center gap-1 rounded-full px-2 text-[13px] font-medium transition active:scale-95"
+                :class="reaction.mine?'bg-accent text-white':'bg-accent/15 text-accent-strong hover:bg-accent/25'"
+                @click.stop="actions.applyReaction(msg,reaction.emoji)"
+              >
+                <span class="emoji-font text-[15px] leading-none">{{ reaction.emoji }}</span>
+                <span>{{ reaction.count }}</span>
+              </button>
+            </div>
+
+            <div
+              class="meta"
+              :class="isMediaOnly(msg)?'meta-overlay':'meta-inline'"
+              :title="tooltipForMessage(msg)"
+            >
+              <span v-if="msg.updatedAtUtc">{{ $t('chat.edited') }}</span>
+              <span>{{ formatTime(msg.sentAt) }}</span>
+
+              <span v-if="mine(msg)" class="inline-flex">
+                <CheckCheck v-if="msg.status==='read'" class="w-4 h-4" :class="isMediaOnly(msg)?'':'text-accent'"/>
+                <Check v-else-if="msg.status==='delivered'" class="w-4 h-4"/>
+                <AlertCircle v-else-if="msg.status==='failed'" class="w-4 h-4 text-danger" :aria-label="$t('chat.notSent')"/>
+                <Clock3 v-else class="w-3.5 h-3.5"/>
+              </span>
+            </div>
+
+            <div
+              v-if="mine(msg)&&msg.status==='failed'"
+              class="mt-1 flex items-center justify-end gap-2 text-[12px]"
+              :class="isMediaOnly(msg)?'px-1 pb-1':''"
+            >
+              <span class="text-danger">{{ $t('chat.notSent') }}</span>
+              <button
+                v-if="actions.canRetry(msg)"
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-0.5 text-ink ring-1 ring-line hover:bg-surface-2"
+                @click.stop="actions.retrySend(msg)"
+              >
+                <RotateCw class="w-3 h-3"/> {{ $t('chat.retry') }}
+              </button>
+              <button
+                type="button"
+                class="rounded-full px-2 py-0.5 text-meta hover:bg-black/5"
+                @click.stop="actions.discardFailed(msg)"
+              >{{ $t('common.remove') }}</button>
+            </div>
+
+            <Transition name="fade-scale">
+              <div
+                v-if="hoverReactFor===(msg.id||msg.clientId)&&!selectionMode&&!contextMenu.visible&&!picker"
+                :ref="element=>bindHoverBar(element,mine(msg))"
+                class="absolute z-20 pointer-events-auto select-none"
+                :class="hoverBarAbove
+                  ?(mine(msg)?'bottom-full end-0 mb-1':'bottom-full start-0 mb-1')
+                  :mine(msg)
+                    ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
+                    :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
+                @mouseenter="actions.keepHoverBar"
+                @mouseleave="actions.hideHoverBarSoon"
+              >
+                <div class="reaction-pill">
+                  <button
+                    v-for="emoji in quickEmojis"
+                    :key="emoji"
+                    type="button"
+                    class="reaction-btn emoji-font"
+                    @click.stop="actions.applyReaction(msg,emoji)"
+                  >{{ emoji }}</button>
+                  <button
+                    type="button"
+                    class="reaction-more"
+                    :title="$t('emoji.more')"
+                    :aria-label="$t('emoji.more')"
+                    @click.stop="openPicker($event,msg)"
+                  ><ChevronDown class="w-4 h-4"/></button>
+                </div>
+              </div>
+            </Transition>
+          </div>
         </div>
-      </div>
-    </TransitionGroup>
+      </TransitionGroup>
+    </div>
   </div>
+
+  <!-- Full emoji picker for reactions -->
+  <Teleport to="body">
+    <div v-if="picker" class="fixed inset-0 z-[60]" @click="picker=null" @contextmenu.prevent="picker=null">
+      <div class="absolute" :style="{ top: picker.y + 'px', left: picker.x + 'px' }" @click.stop>
+        <EmojiPicker autofocus @select="onPickReaction"/>
+      </div>
+    </div>
+  </Teleport>
 
   <Transition name="fade">
     <div
@@ -263,7 +264,7 @@
         <div
           :ref="bindMenu"
           role="menu"
-          class="absolute z-50 min-w-[168px] text-start rounded-2xl border border-[#456173]/10 bg-white/80 backdrop-blur-md ring-1 ring-black/5"
+          class="absolute z-50 min-w-[190px] text-start rounded-2xl bg-surface/95 backdrop-blur-md shadow-xl ring-1 ring-line py-1"
           :style="{
             top:`${contextMenu.y}px`,
             left:`${contextMenu.x}px`,
@@ -274,48 +275,58 @@
           @click.stop
         >
           <div
-            class="absolute -top-11"
+            class="absolute -top-12"
             :class="contextMenu.pillAlign==='right'
-              ?'right-2'
-              :contextMenu.pillAlign==='left'?'left-2':'left-1/2 -translate-x-1/2'"
+              ?'right-0'
+              :contextMenu.pillAlign==='left'?'left-0':'left-1/2 -translate-x-1/2'"
           >
-            <div class="reaction-pill bg-white/80 backdrop-blur-md">
+            <div class="reaction-pill">
               <button
                 v-for="emoji in quickEmojis"
                 :key="emoji"
-                class="reaction-btn"
+                type="button"
+                class="reaction-btn emoji-font"
                 @click.stop="contextMenu.msg&&actions.applyReaction(contextMenu.msg,emoji)"
               >{{ emoji }}</button>
 
-              <button class="reaction-more" :title="$t('chat.more')" :aria-label="$t('chat.more')">
+              <button
+                type="button"
+                class="reaction-more"
+                :title="$t('emoji.more')"
+                :aria-label="$t('emoji.more')"
+                @click.stop="contextMenu.msg&&openPicker($event,contextMenu.msg)"
+              >
                 <ChevronDown class="w-4 h-4"/>
               </button>
             </div>
           </div>
 
-          <div class="max-w-[220px]">
-            <button
-              class="menu-item rounded-t-2xl"
-              @click="contextMenu.msg&&actions.startSelection(contextMenu.msg)"
-              v-ripple
-            >{{ $t('chat.select') }}</button>
-
-            <button class="menu-item" @click="actions.openForwardPicker" v-ripple>{{ $t('chat.forwardMenu') }}</button>
-            <button class="menu-item" @click="actions.reply" v-ripple>{{ $t('chat.reply') }}</button>
-
-            <button
-              v-if="actions.canEdit(contextMenu.msg)"
-              class="menu-item"
-              @click="actions.edit"
-              v-ripple
-            >{{ $t('chat.edit') }}</button>
-
-            <button
-              class="menu-item rounded-b-2xl"
-              @click="contextMenu.msg&&actions.deleteMessage(contextMenu.msg)"
-              v-ripple
-            >{{ $t('common.delete') }}</button>
-          </div>
+          <button class="menu-item" type="button" @click="actions.reply">
+            <Reply class="w-4 h-4 rtl:-scale-x-100"/> {{ $t('chat.reply') }}
+          </button>
+          <button v-if="contextMenu.msg?.plainText" class="menu-item" type="button" @click="copyText(contextMenu.msg)">
+            <Copy class="w-4 h-4"/> {{ $t('chat.copyText') }}
+          </button>
+          <button
+            v-if="actions.canEdit(contextMenu.msg)"
+            class="menu-item"
+            type="button"
+            @click="actions.edit"
+          ><Pencil class="w-4 h-4"/> {{ $t('chat.edit') }}</button>
+          <button class="menu-item" type="button" @click="actions.openForwardPicker">
+            <Forward class="w-4 h-4 rtl:-scale-x-100"/> {{ $t('chat.forwardMenu') }}
+          </button>
+          <button
+            class="menu-item"
+            type="button"
+            @click="contextMenu.msg&&actions.startSelection(contextMenu.msg)"
+          ><CircleCheck class="w-4 h-4"/> {{ $t('chat.select') }}</button>
+          <div class="my-1 border-t border-line"></div>
+          <button
+            class="menu-item !text-danger"
+            type="button"
+            @click="contextMenu.msg&&actions.deleteMessage(contextMenu.msg)"
+          ><Trash2 class="w-4 h-4"/> {{ $t('common.delete') }}</button>
         </div>
       </Transition>
     </div>
@@ -325,10 +336,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { AlertCircle, Check, CheckCheck, ChevronDown, Download, ImageOff, Loader2, Lock, RotateCw, VideoOff } from 'lucide-vue-next'
+import {
+  AlertCircle, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, FileDown, Forward,
+  ImageOff, Loader2, Lock, Pencil, Reply, RotateCw, Trash2, VideoOff
+} from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
+import EmojiPicker from '../../emoji/EmojiPicker.vue'
 
 type MaybePromise=void|Promise<void>
 type ContextMenuState={
@@ -379,6 +394,7 @@ type MessageActions={
   retrySend:(message:UiMessage)=>void
   discardFailed:(message:UiMessage)=>void
   canRetry:(message:UiMessage)=>boolean
+  copied:()=>void
 }
 
 const { t }=useI18n()
@@ -412,7 +428,7 @@ function bindScroll(element:Element|ComponentPublicInstance|null){
 /** The quick-reaction bar sits beside its bubble, or above it when the side has no room. */
 const hoverBarAbove=ref(false)
 
-function bindHoverBar(element:Element|ComponentPublicInstance|null,mine:boolean){
+function bindHoverBar(element:Element|ComponentPublicInstance|null,isMine:boolean){
   if(!(element instanceof HTMLElement)||!scrollElement)return
   const bubble=element.parentElement
   if(!bubble)return
@@ -421,7 +437,7 @@ function bindHoverBar(element:Element|ComponentPublicInstance|null,mine:boolean)
   const listRect=scrollElement.getBoundingClientRect()
   const scrollbar=scrollElement.offsetWidth-scrollElement.clientWidth
   const rtl=getComputedStyle(scrollElement).direction==='rtl'
-  const onLeft=mine!==rtl
+  const onLeft=isMine!==rtl
   const room=onLeft
     ?bubbleRect.left-listRect.left-(rtl?scrollbar:0)
     :listRect.right-bubbleRect.right-(rtl?0:scrollbar)
@@ -433,8 +449,61 @@ function bindMenu(element:Element|ComponentPublicInstance|null){
   props.setMenuElement(element instanceof HTMLElement?element:null)
 }
 
+// ---------- full emoji picker for reactions ----------
+
+const PICKER_WIDTH=344
+const PICKER_HEIGHT=400
+const picker=ref<{ msg:UiMessage; x:number; y:number }|null>(null)
+
+function openPicker(event:MouseEvent,message:UiMessage){
+  const anchor=(event.currentTarget as HTMLElement).getBoundingClientRect()
+  const margin=8
+  const width=Math.min(PICKER_WIDTH,window.innerWidth-2*margin)
+  const height=Math.min(PICKER_HEIGHT,window.innerHeight*0.6)
+  const x=Math.min(Math.max(margin,anchor.right-width),window.innerWidth-width-margin)
+  const below=anchor.bottom+6
+  const y=below+height+margin<=window.innerHeight?below:Math.max(margin,anchor.top-height-6)
+
+  props.actions.closeMenu()
+  picker.value={ msg:message, x, y }
+}
+
+function onPickReaction(emoji:string){
+  const target=picker.value?.msg
+  picker.value=null
+  if(target) void props.actions.applyReaction(target,emoji)
+}
+
+async function copyText(message:UiMessage|null){
+  props.actions.closeMenu()
+  if(!message?.plainText) return
+  try{
+    await navigator.clipboard.writeText(message.plainText)
+    props.actions.copied()
+  }catch{}
+}
+
+// ---------- layout helpers ----------
+
 function messageKey(message:UiMessage,index:number){
   return message.clientId||message.id||index
+}
+
+function mine(message:UiMessage){
+  return message.senderId===props.myId
+}
+
+/** Consecutive messages of one sender on one day form a group (tighter spacing, one tail). */
+function sameGroup(a?:UiMessage,b?:UiMessage){
+  return !!a&&!!b&&a.senderId===b.senderId&&dayKey(a.sentAt)===dayKey(b.sentAt)
+}
+
+function isGroupStart(index:number){
+  return !sameGroup(props.messages[index-1],props.messages[index])
+}
+
+function isGroupEnd(index:number){
+  return !sameGroup(props.messages[index],props.messages[index+1])
 }
 
 /** An attachment that can be shown: not one of an undecryptable message (its key is lost with it). */
@@ -448,6 +517,18 @@ function isMediaOnly(message:UiMessage){
   return kind==='image'||kind==='video'
 }
 
+const EMOJI_ONLY=/^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️|\s){1,24}$/u
+
+/** Up to three emoji and nothing else are shown large, like Telegram. */
+function isEmojiOnly(text:string){
+  if(!EMOJI_ONLY.test(text)||/^[\d#*\s]+$/.test(text)) return false
+  const Segmenter=(Intl as any).Segmenter
+  const count=Segmenter
+    ?[...new Segmenter(undefined,{ granularity:'grapheme' }).segment(text.trim())].length
+    :(text.match(/\p{Extended_Pictographic}/gu)||[]).length
+  return count<=3
+}
+
 /** Why a message's text cannot be shown, or '' when it can. */
 function unreadableNotice(message:UiMessage){
   switch(message.cipher){
@@ -458,34 +539,24 @@ function unreadableNotice(message:UiMessage){
   }
 }
 
-function bubbleClasses(message:UiMessage){
-  const classes=['relative','inline-block','max-w-[80%]','transition','duration-150','ease-out']
+function bubbleClasses(message:UiMessage,index:number){
+  const isMine=mine(message)
+  const classes=['bubble','relative','inline-block','text-start','align-top','max-w-[min(85%,560px)]','transition-[box-shadow]']
   const selected=props.selectionMode&&props.actions.isSelected(message)
 
   if(isMediaOnly(message)){
-    classes.push('rounded-xl','p-0','bg-transparent','text-current')
-    if(selected) classes.push('ring-2','ring-blue-300/60')
-    return classes
-  }
-
-  classes.push(
-    'rounded-2xl','px-3','py-2',
-    message.senderId===props.myId?'bg-[#11BFAE] text-white':'bg-[#456173] text-white'
-  )
-
-  if(selected){
+    classes.push('rounded-2xl','overflow-hidden','bg-transparent')
+  }else{
     classes.push(
-      'ring-2',
-      message.senderId===props.myId?'ring-white/80':'ring-[#11BFAE]/50',
-      'shadow-md'
+      'rounded-2xl','px-3','pt-1.5','pb-1','shadow-[0_1px_1.5px_rgb(0_0_0/0.08)]',
+      isMine?'bg-bubble-out text-bubble-out-ink':'bg-bubble-in text-bubble-in-ink'
     )
+    // The last bubble of a group gets the "tail" corner on the sender's side.
+    if(isGroupEnd(index)) classes.push(isMine?'rounded-ee-md':'rounded-es-md')
   }
 
+  if(selected) classes.push('ring-2','ring-accent')
   return classes
-}
-
-function timeColorClass(message:UiMessage){
-  return isMediaOnly(message)?'text-gray-500':'text-white/80'
 }
 
 type Part={t:'text';s:string}|{t:'mention';u:string}
@@ -526,14 +597,37 @@ function showDayHeader(index:number){
   if(index===0) return true
   return dayKey(props.messages[index].sentAt)!==dayKey(props.messages[index-1].sentAt)
 }
-
 </script>
 
 <style scoped>
-@reference "tailwindcss";
+@reference "../../../assets/tailwind.css";
+
+.msg-text{
+  font-size:var(--chat-font-size);
+  line-height:1.45;
+}
+.msg-text.emoji-only{
+  font-family:var(--font-emoji);
+  font-size:calc(var(--chat-font-size) * 2.6);
+  line-height:1.15;
+}
+
+.meta{
+  @apply flex items-center justify-end gap-1 text-[11.5px] leading-none whitespace-nowrap select-none;
+}
+.meta-inline{
+  @apply mt-0.5 -me-1 text-meta;
+}
+.meta-overlay{
+  @apply absolute bottom-1.5 end-1.5 rounded-full bg-black/45 px-2 py-1 text-white;
+}
+
+.reply-quote{
+  @apply block w-full max-w-[320px] mb-1 rounded-lg bg-accent/10 border-s-[3px] border-accent px-2 py-1 text-[13px] text-start text-current hover:bg-accent/15 transition;
+}
 
 .media-placeholder{
-  @apply grid place-items-center rounded-xl bg-black/5 text-gray-500 w-[220px] h-[160px] max-w-[75vw];
+  @apply grid place-items-center rounded-xl bg-black/5 text-muted w-[240px] h-[180px] max-w-[75vw];
 }
 
 .bubble-enter-from{opacity:0;transform:translateY(6px) scale(.98)}
@@ -554,25 +648,18 @@ function showDayHeader(index:number){
 .ctx-pop-leave-to{opacity:0;transform:translateY(2px) scale(.98)}
 
 .reaction-pill{
-  @apply bg-white/95 backdrop-blur rounded-full px-2 py-1 border border-[#456173]/10 flex items-center gap-1;
+  @apply bg-surface/95 backdrop-blur rounded-full px-1.5 py-1 shadow-lg ring-1 ring-line flex items-center gap-0.5;
 }
 .reaction-btn{
-  @apply w-8 h-8 grid place-items-center rounded-full hover:bg-[#11BFAE]/10 active:scale-95 transition;
+  @apply w-9 h-9 grid place-items-center rounded-full text-[22px] leading-none hover:bg-surface-2 hover:scale-110 active:scale-95 transition;
 }
 .reaction-more{
-  @apply w-6 h-6 grid place-items-center rounded-full text-[#1B3C59] hover:bg-black/5 transition;
+  @apply w-8 h-8 grid place-items-center rounded-full text-muted hover:text-ink hover:bg-surface-2 transition;
 }
 .menu-item{
-  @apply w-full text-start px-3 py-2 text-[14px] text-[#1B3C59] hover:bg-[#11BFAE]/10 active:bg-[#11BFAE]/15 transition outline-none focus-visible:ring-2 focus-visible:ring-[#11BFAE]/40;
+  @apply w-full flex items-center gap-3 text-start px-4 py-2 text-[14px] text-ink hover:bg-surface-2 transition outline-none focus-visible:bg-surface-2;
 }
-.menu-item:first-child{
-  position:relative;
-  z-index:0;
-  overflow:hidden;
-  border-top-left-radius:1rem;
-  border-top-right-radius:1rem
+.menu-item svg{
+  @apply text-muted shrink-0;
 }
-.menu-item+.menu-item{border-top:1px solid rgba(69,97,115,.1)}
-.auto-dir{unicode-bidi:plaintext}
-.text-start{text-align:start}
 </style>

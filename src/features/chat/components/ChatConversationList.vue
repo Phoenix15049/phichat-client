@@ -1,192 +1,94 @@
 <template>
-  <div
-    class="flex flex-col border-gray-200"
-    :class="
-      props.isNarrow
-        ? 'w-full border-e-0'
-        : 'w-80 md:w-96 border-e'
-    "
+  <aside
+    class="flex flex-col bg-surface border-line"
+    :class="props.isNarrow ? 'w-full' : 'w-80 lg:w-[380px] border-e'"
   >
-    <div
-      class="px-3 py-2 font-semibold text-gray-800 border-b border-gray-200 flex items-center justify-between"
-    >
-      <button
-        class="px-2 py-1 rounded hover:bg-gray-100"
-        :aria-label="$t('menu.open')"
-        @click="emit('open-menu')"
-      >
+    <div class="h-14 shrink-0 px-2 flex items-center gap-1">
+      <button type="button" class="icon-btn shrink-0" :aria-label="$t('menu.open')" @click="emit('open-menu')">
         <Menu class="w-5 h-5" />
       </button>
 
-      <span>{{ $t('chat.chats') }}</span>
-      <span class="w-6"></span>
+      <div class="relative flex-1">
+        <Search class="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-muted pointer-events-none" />
+        <input
+          v-model="query"
+          type="search"
+          class="w-full h-10 rounded-full bg-surface-2 ps-9 pe-3 text-sm text-ink placeholder:text-muted outline-none ring-accent/50 focus:ring-2 transition"
+          :placeholder="$t('chat.searchChats')"
+        />
+      </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
+    <div class="flex-1 overflow-y-auto px-2 pb-2">
       <button
-        v-for="conversation in props.conversations"
+        v-for="conversation in filtered"
         :key="conversation.peerId"
         v-ripple
-        class="relative overflow-hidden w-full px-3 py-3 border-b border-gray-100 hover:bg-[#11BFAE]/5 flex gap-3 items-center text-start"
-        :class="{
-          'bg-[#11BFAE]/10':
-            props.selectedUserId ===
-            conversation.peerId
-        }"
-        @click.stop="
-          emit('select', conversation)
-        "
-        @dblclick.stop="
-          emit('select', conversation)
-        "
+        type="button"
+        class="relative overflow-hidden w-full px-2.5 py-2 rounded-xl flex gap-3 items-center text-start transition-colors"
+        :class="props.selectedUserId === conversation.peerId ? 'bg-accent-soft' : 'hover:bg-surface-2'"
+        @click.stop="emit('select', conversation)"
       >
-        <span
-          v-if="
-            props.selectedUserId ===
-            conversation.peerId
-          "
-          class="absolute start-0 top-0 h-full w-[3px] bg-[#11BFAE] rounded-e"
-        ></span>
-
-        <div
-          class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500"
-        >
+        <div class="relative shrink-0">
           <div
-            class="relative w-10 h-10 overflow-hidden flex items-center justify-center"
+            class="w-12 h-12 rounded-full overflow-hidden grid place-items-center"
+            :style="!props.avatarById[conversation.peerId] ? { backgroundColor: colorFromString(nameOf(conversation)) } : {}"
           >
-            <span
-              v-if="
-                props.onlineIds.has(
-                  conversation.peerId
-                )
-              "
-              class="absolute bottom-0 end-0 w-2.5 h-2.5 z-10 bg-green-500 rounded-full ring-2 ring-white"
-            ></span>
-
-            <div
-              class="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center"
-              :style="
-                !props.avatarById[
-                  conversation.peerId
-                ]
-                  ? {
-                      backgroundColor:
-                        colorFromString(
-                          props.displayById[
-                            conversation.peerId
-                          ] ||
-                            conversation.username
-                        )
-                    }
-                  : {}
-              "
-            >
-              <img
-                v-if="
-                  props.avatarById[
-                    conversation.peerId
-                  ]
-                "
-                :src="
-                  props.avatarById[
-                    conversation.peerId
-                  ] || ''
-                "
-                class="w-full h-full object-cover"
-              />
-
-              <span
-                v-else
-                class="text-white text-sm"
-              >
-                {{
-                  initialsOf(
-                    props.displayById[
-                      conversation.peerId
-                    ] ||
-                      conversation.displayName ||
-                      conversation.username
-                  )
-                }}
-              </span>
-            </div>
+            <img
+              v-if="props.avatarById[conversation.peerId]"
+              :src="props.avatarById[conversation.peerId] || ''"
+              class="w-full h-full object-cover"
+              alt=""
+            />
+            <span v-else class="text-white font-semibold">{{ initialsOf(nameOf(conversation)) }}</span>
           </div>
+          <span
+            v-if="props.onlineIds.has(conversation.peerId)"
+            class="absolute bottom-0.5 end-0.5 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
+          ></span>
         </div>
 
         <div class="flex-1 min-w-0">
-          <div
-            class="flex items-center justify-between"
-          >
-            <div
-              class="font-medium truncate max-w-[10rem]"
-              :class="
-                props.selectedUserId ===
-                conversation.peerId
-                  ? 'text-[#1B3C59]'
-                  : 'text-gray-900'
-              "
-            >
-              <bdi>{{
-                conversation.displayName ||
-                '@' + conversation.username
-              }}</bdi>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0 font-semibold text-[15px] text-ink truncate">
+              <bdi>{{ nameOf(conversation) }}</bdi>
             </div>
-
-            <div
-              class="text-[11px] text-gray-500 whitespace-nowrap"
-            >
-              {{
-                formatRelative(
-                  conversation.lastSentAt ||
-                    null
-                )
-              }}
+            <div class="shrink-0 text-[12px]" :class="conversation.unreadCount > 0 ? 'text-accent' : 'text-muted'">
+              {{ formatListTime(conversation.lastSentAt || null) }}
             </div>
           </div>
 
-          <div
-            class="text-xs text-gray-500 flex items-center gap-1"
-          >
+          <div class="mt-0.5 flex items-center gap-2">
+            <div class="flex-1 min-w-0 text-[13.5px] text-muted truncate">
+              <span v-if="conversation.lastFileUrl" class="inline-flex items-center gap-1">
+                <Paperclip class="w-3.5 h-3.5 shrink-0" />
+                <span>{{ $t('common.media') }}</span>
+              </span>
+              <bdi v-else>{{ conversation.lastPreview || '' }}</bdi>
+            </div>
             <span
-              class="truncate max-w-[12rem]"
+              v-if="conversation.unreadCount > 0"
+              class="shrink-0 inline-flex items-center justify-center rounded-full bg-accent text-white text-[12px] font-semibold min-w-[22px] h-[22px] px-1.5"
             >
-              <template
-                v-if="
-                  conversation.lastFileUrl
-                "
-              >
-                {{ $t('common.media') }}
-              </template>
-
-              <template v-else>
-                <bdi>{{
-                  conversation.lastPreview ||
-                  ''
-                }}</bdi>
-              </template>
-            </span>
-
-            <span
-              v-if="
-                conversation.unreadCount > 0
-              "
-              class="ms-2 inline-flex items-center justify-center rounded-full bg-[#11BFAE] text-white text-[11px] min-w-[18px] px-1"
-            >
-              {{
-                conversation.unreadCount
-              }}
+              {{ conversation.unreadCount > 99 ? '99+' : conversation.unreadCount }}
             </span>
           </div>
         </div>
       </button>
+
+      <div v-if="!filtered.length" class="h-full flex flex-col items-center justify-center gap-2 p-6 text-center text-muted">
+        <MessagesSquare class="w-10 h-10 opacity-60" />
+        <div class="text-sm">{{ query ? $t('chat.noSearchResults') : $t('chat.noChats') }}</div>
+      </div>
     </div>
-  </div>
+  </aside>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { Menu } from 'lucide-vue-next'
-import { formatRelative } from '../../../utils/time'
+import { Menu, MessagesSquare, Paperclip, Search } from 'lucide-vue-next'
+import { formatListTime } from '../../../utils/time'
 import type { UiConversation } from '../../../types/chat'
 
 const props = defineProps<{
@@ -199,13 +101,24 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (
-    event: 'select',
-    conversation: UiConversation
-  ): void
-
+  (event: 'select', conversation: UiConversation): void
   (event: 'open-menu'): void
 }>()
 
+const query = ref('')
 
+function nameOf(conversation: UiConversation) {
+  return props.displayById[conversation.peerId] || conversation.displayName || '@' + conversation.username
+}
+
+/** Filters by name or username (the previews are decrypted locally, so they are searchable too). */
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return props.conversations
+  return props.conversations.filter(c =>
+    nameOf(c).toLowerCase().includes(q) ||
+    c.username.toLowerCase().includes(q) ||
+    (c.lastPreview || '').toLowerCase().includes(q)
+  )
+})
 </script>

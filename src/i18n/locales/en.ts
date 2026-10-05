@@ -69,6 +69,7 @@ export default {
     searchCountry: 'Search country or code…'
   },
   menu: {
+    nightMode: 'Night mode',
     open: 'Open menu',
     myProfile: 'My profile',
     contacts: 'Contacts',
@@ -76,6 +77,12 @@ export default {
     settings: 'Settings'
   },
   chat: {
+    selectedCount: '{count} selected',
+    searchChats: 'Search',
+    noChats: 'No chats yet.',
+    noSearchResults: 'Nothing found.',
+    selectChat: 'Select a chat to start messaging',
+    send: 'Send',
     chats: 'Chats',
     viewProfile: 'View contact profile',
     typing: 'typing',
@@ -147,6 +154,16 @@ export default {
     comingSoon: 'Coming soon'
   },
   settings: {
+    appearance: 'Appearance',
+    theme: 'Theme',
+    themes: { system: 'System', light: 'Light', dark: 'Dark' },
+    textSize: 'Message text size',
+    sizes: { small: 'Small', medium: 'Medium', large: 'Large' },
+    previewIncoming: 'Hi! This is how messages look 👋',
+    previewOutgoing: 'Great, that works 😍',
+    sendWithEnter: 'Send with Enter',
+    sendWithEnterOn: 'Enter sends, Shift+Enter adds a line',
+    sendWithEnterOff: 'Ctrl+Enter sends, Enter adds a line',
     title: 'Settings',
     displayName: 'Display name',
     displayNamePlaceholder: 'Your name',
@@ -224,6 +241,26 @@ export default {
     currentPassphrase: 'Current passphrase',
     newPassphrase: 'New passphrase',
     passphraseChanged: 'Recovery passphrase changed.'
+  },
+  emoji: {
+    title: 'Emoji',
+    search: 'Search emoji',
+    results: 'Search results',
+    noResults: 'No emoji found',
+    skinTone: 'Skin tone',
+    more: 'More emoji',
+    groups: {
+      recent: 'Recently used',
+      smileys: 'Smileys & emotion',
+      people: 'People',
+      animals: 'Animals & nature',
+      food: 'Food & drink',
+      travel: 'Travel & places',
+      activities: 'Activities',
+      objects: 'Objects',
+      symbols: 'Symbols',
+      flags: 'Flags'
+    }
   },
   time: {
     justNow: 'just now'

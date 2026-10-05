@@ -1,15 +1,79 @@
 @import "tailwindcss";
 
-/* The UI is designed for a light theme only; keep browsers from applying dark-mode defaults. */
-:root {
-  color-scheme: light;
+/* Dark mode follows a `dark` class on <html>, set from the appearance preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Semantic colors. Components use these (bg-surface, text-ink, ...) instead of raw hex values,
+ * so the whole UI switches theme by redefining the variables below.
+ */
+@theme {
+  --color-canvas: #eef1f3;         /* page and chat background */
+  --color-surface: #ffffff;        /* panels, cards, incoming bubbles */
+  --color-surface-2: #f4f6f7;      /* hover rows, inputs on surface, subtle fills */
+  --color-line: #e2e7ea;           /* borders and separators */
+  --color-ink: #1b3c59;            /* primary text */
+  --color-muted: #6b7f8e;          /* secondary text, icons */
+  --color-accent: #11bfae;         /* brand: buttons, links, unread badges */
+  --color-accent-strong: #0ea597;
+  --color-accent-soft: #e0f6f3;    /* selected rows, soft accents */
+  --color-bubble-out: #d7f5ef;     /* outgoing bubble */
+  --color-bubble-out-ink: #12324a;
+  --color-bubble-in: #ffffff;      /* incoming bubble */
+  --color-bubble-in-ink: #1b3c59;
+  --color-meta: #6f8796;           /* time and ticks inside bubbles */
+  --color-danger: #e5484d;
+  --color-overlay: rgb(15 23 32 / 0.45);
+
+  --font-sans: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --font-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif;
 }
 
-body {
-  background-color: #ffffff;
-  color: #111827;
-  /* Vazirmatn covers Persian and Latin; bundled with the app (no external font request). */
-  font-family: 'Vazirmatn Variable', ui-sans-serif, system-ui, sans-serif;
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Message text size, from the appearance preference. */
+    --chat-font-size: 15px;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    --color-canvas: #0e1621;
+    --color-surface: #17212b;
+    --color-surface-2: #202b36;
+    --color-line: #263442;
+    --color-ink: #e9eef2;
+    --color-muted: #8b9cad;
+    --color-accent: #2fc8b8;
+    --color-accent-strong: #3fd6c6;
+    --color-accent-soft: #163b3f;
+    --color-bubble-out: #1f5a58;
+    --color-bubble-out-ink: #eaf7f5;
+    --color-bubble-in: #1f2a35;
+    --color-bubble-in-ink: #e9eef2;
+    --color-meta: #8ea5b3;
+    --color-danger: #ff6369;
+    --color-overlay: rgb(0 0 0 / 0.6);
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    /* Vazirmatn covers Persian and Latin; bundled with the app (no external font request). */
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Tailwind 4 borders default to currentColor; use the theme's separator color instead. */
+  *, ::before, ::after, ::backdrop {
+    border-color: var(--color-line);
+  }
+
+  /* Thin, theme-aware scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-muted) 45%, transparent) transparent;
+  }
 }
 
 /* Ink element created by the v-ripple directive (src/directives/ripple.ts). */
@@ -27,40 +91,51 @@ body {
   to { transform: scale(4); opacity: 0; }
 }
 
-/* unified inputs & buttons using your palette */
+/* Shared inputs and buttons. */
 .input {
-  @apply border rounded-lg px-3 py-2 outline-none bg-white
-         ring-1 ring-[#456173]/15
-         focus:ring-2 focus:ring-[#11BFAE]/60 focus:border-[#11BFAE];
+  @apply rounded-xl px-3 py-2 outline-none bg-surface text-ink
+         ring-1 ring-line placeholder:text-muted/70
+         focus:ring-2 focus:ring-accent/60 transition;
 }
 .btn-primary {
   @apply inline-flex items-center justify-center
-         bg-[#11BFAE] text-white rounded-lg px-4 py-2
-         ring-1 ring-[#11BFAE]/20
-         hover:bg-[#10B2A3] hover:ring-[#11BFAE]/30
+         bg-accent text-white rounded-xl px-4 py-2 font-medium
+         hover:bg-accent-strong
+         transition disabled:opacity-60;
+}
+.btn-secondary {
+  @apply inline-flex items-center justify-center
+         bg-accent-soft text-accent-strong rounded-xl px-4 py-2 font-medium
+         hover:brightness-95
          transition disabled:opacity-60;
 }
 .btn-outline {
   @apply inline-flex items-center justify-center
-         bg-white text-[#1B3C59] rounded-lg px-3 py-2
-         ring-1 ring-[#456173]/25
-         hover:bg-[#F2F2F0] hover:ring-[#456173]/40
+         bg-surface text-ink rounded-xl px-3 py-2
+         ring-1 ring-line
+         hover:bg-surface-2
          transition disabled:opacity-60;
 }
 .btn-ghost {
   @apply inline-flex items-center justify-center
-         text-[#456173] rounded-lg px-2 py-1
-         ring-1 ring-transparent
-         hover:bg-[#F2F2F0] hover:text-[#1B3C59]
-         transition;
+         text-muted rounded-xl px-2 py-1
+         hover:bg-surface-2 hover:text-ink
+         transition disabled:opacity-60;
 }
 .btn-danger {
   @apply inline-flex items-center justify-center
-         text-red-600 rounded-lg px-2 py-1
-         ring-1 ring-red-500/10
-         hover:bg-red-50 hover:ring-red-500/30
+         text-danger rounded-xl px-2 py-1
+         ring-1 ring-danger/15
+         hover:bg-danger/10 hover:ring-danger/30
          transition;
 }
+.icon-btn {
+  @apply inline-grid place-items-center w-10 h-10 rounded-full text-muted
+         hover:bg-surface-2 hover:text-ink transition disabled:opacity-50;
+}
+
+/* Emoji glyphs only (picker cells, reactions). */
+.emoji-font { font-family: var(--font-emoji); }
 
 /* Text that follows its own direction (mixed Persian / English). */
 .auto-dir { unicode-bidi: plaintext; }

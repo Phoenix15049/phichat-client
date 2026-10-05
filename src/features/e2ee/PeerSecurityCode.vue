@@ -1,8 +1,8 @@
 <template>
-  <section class="mt-5 rounded-xl bg-[#F2F2F0] p-4 space-y-3">
+  <section class="mt-5 rounded-xl bg-canvas p-4 space-y-3">
     <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2 text-sm font-medium text-[#1B3C59]">
-        <ShieldCheck class="w-4 h-4 text-[#11BFAE]" />
+      <div class="flex items-center gap-2 text-sm font-medium text-ink">
+        <ShieldCheck class="w-4 h-4 text-accent" />
         <span>{{ $t('e2ee.securityCode') }}</span>
       </div>
       <span v-if="verified" class="inline-flex items-center gap-1 text-xs text-emerald-700">
@@ -10,18 +10,18 @@
       </span>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-2 text-[#456173]">
+    <div v-if="loading" class="flex justify-center py-2 text-muted">
       <Loader2 class="w-5 h-5 animate-spin" />
     </div>
 
-    <p v-else-if="!code" class="text-sm text-[#456173]">{{ $t('e2ee.noPeerKey') }}</p>
+    <p v-else-if="!code" class="text-sm text-muted">{{ $t('e2ee.noPeerKey') }}</p>
 
     <template v-else>
-      <div dir="ltr" class="grid grid-cols-4 gap-x-3 gap-y-1 font-mono text-[15px] tracking-wider text-[#1B3C59] text-center select-all">
+      <div dir="ltr" class="grid grid-cols-4 gap-x-3 gap-y-1 font-mono text-[15px] tracking-wider text-ink text-center select-all">
         <span v-for="(group, i) in code.groups" :key="i">{{ group }}</span>
       </div>
 
-      <p class="text-xs leading-5 text-[#456173]">{{ $t('e2ee.securityCodeHint', { name: isolate(props.peerName) }) }}</p>
+      <p class="text-xs leading-5 text-muted">{{ $t('e2ee.securityCodeHint', { name: isolate(props.peerName) }) }}</p>
 
       <button
         type="button"
