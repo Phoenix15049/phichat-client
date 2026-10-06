@@ -1,5 +1,6 @@
 export default {
   common: {
+    done: 'انجام شد',
     close: 'بستن',
     cancel: 'لغو',
     back: 'بازگشت',
@@ -182,6 +183,18 @@ export default {
     comingSoon: 'به‌زودی'
   },
   settings: {
+    quickReactions: 'نوار سریع',
+    quickReactionsHint: 'واکنش‌هایی که با نگه داشتن یا کلیک راست روی پیام، بالای آن نشان داده می‌شوند. از لیست پایین روی هر واکنش بزنید تا به نوار اضافه یا از آن حذف شود (حداکثر {max} تا).',
+    quickReactionsMax: 'نوار سریع حداکثر {max} واکنش دارد. اول یکی را از آن بردارید.',
+    quickReactionsMin: 'حداقل یک واکنش باید در نوار سریع بماند.',
+    reactionList: 'همه‌ی واکنش‌ها',
+    reactionListHint: 'این‌ها با دکمه‌ی ⌄ کنار نوار سریع باز می‌شوند. واکنش‌های شماره‌دار در نوار سریع هستند.',
+    removeReactionsHint: 'روی هر واکنش بزنید تا از لیست حذف شود.',
+    editReactions: 'ویرایش لیست',
+    addReaction: 'افزودن واکنش',
+    removeReaction: 'حذف {emoji}',
+    reactionExists: 'این واکنش از قبل در لیست هست.',
+    resetReactions: 'بازگشت به پیش‌فرض',
     lastSeenTitle: 'آخرین بازدید و وضعیت آنلاین',
     lastSeen: {
       everyone: 'همه',
@@ -229,6 +242,8 @@ export default {
       appearanceHint: 'پوسته، اندازه متن، شکل حباب‌ها',
       general: 'عمومی',
       generalHint: 'زبان و ارسال پیام',
+      reactions: 'واکنش‌ها',
+      reactionsHint: 'نوار سریع و لیست واکنش‌ها',
       notifications: 'اعلان‌ها',
       notificationsHint: 'اعلان پیام‌ها، صدا و پیش‌نمایش',
       privacy: 'حریم خصوصی و امنیت',

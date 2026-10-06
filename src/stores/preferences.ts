@@ -1,5 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
+import {
+  DEFAULT_QUICK_REACTIONS,
+  DEFAULT_REACTIONS,
+  sanitizeQuickReactions,
+  sanitizeReactions
+} from '../features/emoji/reactions'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSize = 'small' | 'medium' | 'large'
@@ -20,6 +26,10 @@ type Preferences = {
   notificationSound: boolean
   /** Show the sender and message text in notifications; otherwise only "New message". */
   notificationPreview: boolean
+  /** Reactions offered on messages (at most 32). */
+  reactions: string[]
+  /** The few shown in the quick bar; a subset of `reactions`. */
+  quickReactions: string[]
 }
 
 /** Read by the inline script in index.html too, so the theme applies before the app loads. */
@@ -37,7 +47,9 @@ const DEFAULTS: Preferences = {
   linkPreviews: true,
   notifications: true,
   notificationSound: true,
-  notificationPreview: true
+  notificationPreview: true,
+  reactions: [...DEFAULT_REACTIONS],
+  quickReactions: [...DEFAULT_QUICK_REACTIONS]
 }
 
 const BOOLEAN_KEYS = ['sendWithEnter', 'bubbleBorder', 'linkPreviews', 'notifications', 'notificationSound', 'notificationPreview'] as const
@@ -58,9 +70,11 @@ function load(): Preferences {
     for (const key of BOOLEAN_KEYS) {
       if (typeof stored[key] === 'boolean') loaded[key] = stored[key]
     }
+    loaded.reactions = sanitizeReactions(stored.reactions)
+    loaded.quickReactions = sanitizeQuickReactions(stored.quickReactions, loaded.reactions)
     return loaded
   } catch {
-    return { ...DEFAULTS }
+    return { ...DEFAULTS, reactions: [...DEFAULTS.reactions], quickReactions: [...DEFAULTS.quickReactions] }
   }
 }
 

@@ -30,7 +30,11 @@
         @click.stop="emit('select', conversation)"
       >
         <div class="relative shrink-0">
+          <div v-if="isSaved(conversation)" class="w-12 h-12 rounded-full grid place-items-center bg-accent text-white">
+            <Bookmark class="w-5 h-5" />
+          </div>
           <div
+            v-else
             class="w-12 h-12 rounded-full overflow-hidden grid place-items-center"
             :style="!props.avatarById[conversation.peerId] ? { backgroundColor: colorFromString(nameOf(conversation)) } : {}"
           >
@@ -43,7 +47,7 @@
             <span v-else class="text-white font-semibold">{{ initialsOf(nameOf(conversation)) }}</span>
           </div>
           <span
-            v-if="props.onlineIds.has(conversation.peerId)"
+            v-if="props.onlineIds.has(conversation.peerId) && !isSaved(conversation)"
             class="absolute bottom-0.5 end-0.5 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
           ></span>
         </div>
@@ -94,7 +98,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { BellOff, Menu, MessagesSquare, Paperclip, Search, Users } from 'lucide-vue-next'
+import { BellOff, Bookmark, Menu, MessagesSquare, Paperclip, Search, Users } from 'lucide-vue-next'
+import { t } from '../../../i18n'
 import { formatListTime } from '../../../utils/time'
 import type { UiConversation } from '../../../types/chat'
 
@@ -103,6 +108,8 @@ const props = defineProps<{
   selectedUserId: string | null
   isNarrow: boolean
   onlineIds: Set<string>
+  /** The signed-in user: the chat with oneself is Saved Messages. */
+  myId?: string
   /** Muted chats: a bell-off icon and a grey unread badge. */
   mutedIds?: Set<string>
   avatarById: Record<string, string | null>
@@ -116,7 +123,10 @@ const emit = defineEmits<{
 
 const query = ref('')
 
+const isSaved = (conversation: UiConversation) => !!props.myId && conversation.peerId === props.myId
+
 function nameOf(conversation: UiConversation) {
+  if (isSaved(conversation)) return t('menu.savedMessages')
   return props.displayById[conversation.peerId] || conversation.displayName || '@' + conversation.username
 }
 
