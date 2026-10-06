@@ -37,10 +37,15 @@ export type UiMessage = {
   forwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
   groupId?: string | null
+  /** Group service message ("X added Y"), JSON written by the server; such messages have no content. */
+  systemEvent?: string | null
 }
 
 export type UiConversation = {
+  /** The other user, or the group id when `isGroup`. */
   peerId: string
+  isGroup?: boolean
+  memberCount?: number
   username: string
   displayName?: string | null
   avatarUrl?: string | null
@@ -57,6 +62,8 @@ export type ChatUser = {
   avatarUrl?: string
   bio?: string
   lastSeenUtc?: string | null
+  /** The user hides their last seen from us (shown as "recently"). */
+  lastSeenHidden?: boolean
   phoneNumber?: string
 }
 
@@ -138,6 +145,10 @@ export type ServerMessage = {
   forwardedFromSenderId?: string | null
   ForwardedFromSenderId?: string | null
 
+  groupId?: string | null
+  GroupId?: string | null
+  systemEvent?: string | null
+  SystemEvent?: string | null
 }
 
 export type ConversationPage = {

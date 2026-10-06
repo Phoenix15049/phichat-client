@@ -51,7 +51,13 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <div class="flex-1 min-w-0 font-semibold text-[15px] text-ink truncate">
+              <Users v-if="conversation.isGroup" class="inline w-4 h-4 me-1 text-muted align-[-3px]" :aria-label="$t('groups.group')" />
               <bdi>{{ nameOf(conversation) }}</bdi>
+              <BellOff
+                v-if="props.mutedIds?.has(conversation.peerId)"
+                class="inline w-3.5 h-3.5 ms-1 text-muted align-[-2px]"
+                :aria-label="$t('chat.muted')"
+              />
             </div>
             <div class="shrink-0 text-[12px]" :class="conversation.unreadCount > 0 ? 'text-accent' : 'text-muted'">
               {{ formatListTime(conversation.lastSentAt || null) }}
@@ -68,7 +74,8 @@
             </div>
             <span
               v-if="conversation.unreadCount > 0"
-              class="shrink-0 inline-flex items-center justify-center rounded-full bg-accent text-white text-[12px] font-semibold min-w-[22px] h-[22px] px-1.5"
+              class="shrink-0 inline-flex items-center justify-center rounded-full text-white text-[12px] font-semibold min-w-[22px] h-[22px] px-1.5"
+              :class="props.mutedIds?.has(conversation.peerId) ? 'bg-muted' : 'bg-accent'"
             >
               {{ conversation.unreadCount > 99 ? '99+' : conversation.unreadCount }}
             </span>
@@ -87,7 +94,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { Menu, MessagesSquare, Paperclip, Search } from 'lucide-vue-next'
+import { BellOff, Menu, MessagesSquare, Paperclip, Search, Users } from 'lucide-vue-next'
 import { formatListTime } from '../../../utils/time'
 import type { UiConversation } from '../../../types/chat'
 
@@ -96,6 +103,8 @@ const props = defineProps<{
   selectedUserId: string | null
   isNarrow: boolean
   onlineIds: Set<string>
+  /** Muted chats: a bell-off icon and a grey unread badge. */
+  mutedIds?: Set<string>
   avatarById: Record<string, string | null>
   displayById: Record<string, string | null>
 }>()

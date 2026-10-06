@@ -83,6 +83,7 @@
         </form>
       </transition>
 
+      <p v-if="notice && !error" class="text-muted text-sm mt-4 text-center">{{ notice }}</p>
       <p v-if="error" class="text-danger text-sm mt-4 text-center inline-flex items-center justify-center gap-1.5">
         <AlertCircle class="w-4 h-4" /> <span>{{ error }}</span>
       </p>
@@ -101,7 +102,7 @@ import {
 } from 'lucide-vue-next'
 
 import { ref, onBeforeUnmount,onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
   getErrorCode,
   getErrorMessage,
@@ -131,6 +132,8 @@ const cooldown = ref(0);
 let timer: number | null = null;
 
 const router = useRouter();
+const route = useRoute();
+const notice = ref<string | null>(null);
 
 function startCooldown(sec = 60) {
   cooldown.value = sec;
@@ -150,10 +153,13 @@ onBeforeUnmount(() => {
 
 
 onMounted(() => {
-  const t = getToken()
-  if (t && !isJwtExpired(t)) {
+  const token = getToken()
+  if (token && !isJwtExpired(token)) {
     router.replace('/chat')
+    return
   }
+  // Signed out because the session was ended from another device.
+  if (route.query.ended) notice.value = t('chat.sessionEnded')
 })
 
 

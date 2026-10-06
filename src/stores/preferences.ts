@@ -15,6 +15,11 @@ type Preferences = {
   bubbleBorder: boolean
   /** Fetch a preview (via the server) for links in messages you write. */
   linkPreviews: boolean
+  /** Notify about new messages on this device (needs the browser's permission). */
+  notifications: boolean
+  notificationSound: boolean
+  /** Show the sender and message text in notifications; otherwise only "New message". */
+  notificationPreview: boolean
 }
 
 /** Read by the inline script in index.html too, so the theme applies before the app loads. */
@@ -23,23 +28,37 @@ export const PREFERENCES_KEY = 'phi.prefs'
 export const BUBBLE_RADIUS_MIN = 4
 export const BUBBLE_RADIUS_MAX = 24
 
-const DEFAULTS: Preferences = { theme: 'system', textSize: 'medium', sendWithEnter: true, bubbleRadius: 16, bubbleBorder: false, linkPreviews: true }
+const DEFAULTS: Preferences = {
+  theme: 'system',
+  textSize: 'medium',
+  sendWithEnter: true,
+  bubbleRadius: 16,
+  bubbleBorder: false,
+  linkPreviews: true,
+  notifications: true,
+  notificationSound: true,
+  notificationPreview: true
+}
+
+const BOOLEAN_KEYS = ['sendWithEnter', 'bubbleBorder', 'linkPreviews', 'notifications', 'notificationSound', 'notificationPreview'] as const
 const TEXT_SIZES: Record<TextSize, string> = { small: '14px', medium: '15px', large: '17px' }
 
 function load(): Preferences {
   try {
     const stored = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}')
     const radius = Number(stored.bubbleRadius)
-    return {
+    const loaded: Preferences = {
+      ...DEFAULTS,
       theme: ['system', 'light', 'dark'].includes(stored.theme) ? stored.theme : DEFAULTS.theme,
       textSize: stored.textSize in TEXT_SIZES ? stored.textSize : DEFAULTS.textSize,
-      sendWithEnter: typeof stored.sendWithEnter === 'boolean' ? stored.sendWithEnter : DEFAULTS.sendWithEnter,
       bubbleRadius: Number.isFinite(radius)
         ? Math.min(BUBBLE_RADIUS_MAX, Math.max(BUBBLE_RADIUS_MIN, Math.round(radius)))
-        : DEFAULTS.bubbleRadius,
-      bubbleBorder: typeof stored.bubbleBorder === 'boolean' ? stored.bubbleBorder : DEFAULTS.bubbleBorder,
-      linkPreviews: typeof stored.linkPreviews === 'boolean' ? stored.linkPreviews : DEFAULTS.linkPreviews
+        : DEFAULTS.bubbleRadius
     }
+    for (const key of BOOLEAN_KEYS) {
+      if (typeof stored[key] === 'boolean') loaded[key] = stored[key]
+    }
+    return loaded
   } catch {
     return { ...DEFAULTS }
   }

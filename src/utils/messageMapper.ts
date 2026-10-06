@@ -77,13 +77,15 @@ export async function mapServerMessage(
 
   const raw = encryptedBodyOf(message)
   const isDeleted = !!(message.isDeleted ?? message.IsDeleted)
+  const systemEvent = message.systemEvent ?? message.SystemEvent ?? null
+  const groupId = message.groupId ?? message.GroupId ?? null
 
   let plainText = ''
   let file: UiMessage['file'] = null
   let preview: UiMessage['preview'] = null
   let cipher: UiMessage['cipher'] = 'ok'
 
-  if (raw.trim() && !isDeleted) {
+  if (raw.trim() && !isDeleted && !systemEvent) {
     const opened = await options.open(raw, senderId)
 
     if (opened.state === 'ok') {
@@ -101,7 +103,7 @@ export async function mapServerMessage(
     message.IsRead
 
   const status: UiMessage['status'] =
-    senderId === options.myId
+    senderId === options.myId && !systemEvent
       ? isRead
         ? 'read'
         : 'delivered'
@@ -169,6 +171,9 @@ export async function mapServerMessage(
     forwardedFromSenderId:
       message.forwardedFromSenderId ||
       message.ForwardedFromSenderId ||
-      null
+      null,
+
+    groupId: groupId ? String(groupId) : null,
+    systemEvent
   }
 }

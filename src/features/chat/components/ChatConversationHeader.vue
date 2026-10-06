@@ -115,6 +115,19 @@
         >
           <Search class="w-5 h-5" />
         </button>
+
+        <button
+          v-if="props.selectedUser"
+          type="button"
+          class="icon-btn shrink-0"
+          :title="props.isMuted ? $t('chat.unmute') : $t('chat.mute')"
+          :aria-label="props.isMuted ? $t('chat.unmute') : $t('chat.mute')"
+          :aria-pressed="props.isMuted"
+          @click.stop="emit('toggle-mute')"
+        >
+          <BellOff v-if="props.isMuted" class="w-5 h-5" />
+          <Bell v-else class="w-5 h-5" />
+        </button>
       </div>
     </Transition>
   </div>
@@ -122,7 +135,7 @@
 
 <script setup lang="ts">
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { ArrowLeft, Copy, Forward, Search, Trash2, X } from 'lucide-vue-next'
+import { ArrowLeft, Bell, BellOff, Copy, Forward, Search, Trash2, X } from 'lucide-vue-next'
 import type { ChatUser } from '../../../types/chat'
 
 type HeaderUser = Pick<ChatUser, 'id' | 'username'>
@@ -138,6 +151,7 @@ const props = defineProps<{
   isPeerTyping: boolean
   isPeerOnline: boolean
   peerStatus: string
+  isMuted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -148,6 +162,7 @@ const emit = defineEmits<{
   (event: 'copy-selected'): void
   (event: 'clear-selection'): void
   (event: 'search'): void
+  (event: 'toggle-mute'): void
 }>()
 </script>
 

@@ -102,6 +102,10 @@ export function usePinnedMessages({ selectedUser, myId, openMessage, jumpTo, onE
   function onPinsChanged(payload: PinsChangedPayload) {
     const peerId = selectedUser.value?.id
     if (!peerId) return
+    if (payload.groupId) {
+      if (String(payload.groupId) === peerId) void load()
+      return
+    }
     const pair = [String(payload.senderId), String(payload.receiverId)]
     if (pair.includes(peerId) && pair.includes(myId.value)) void load()
   }

@@ -34,6 +34,9 @@
             <button class="menu-item" type="button" @click="emit('action', 'profile')" v-ripple>
               <CircleUser class="w-5 h-5" /> <span>{{ $t('menu.myProfile') }}</span>
             </button>
+            <button class="menu-item" type="button" @click="emit('action', 'newGroup')" v-ripple>
+              <UsersRound class="w-5 h-5" /> <span>{{ $t('groups.newGroup') }}</span>
+            </button>
             <button class="menu-item" type="button" @click="emit('action', 'contacts')" v-ripple>
               <Users class="w-5 h-5" /> <span>{{ $t('menu.contacts') }}</span>
             </button>
@@ -60,13 +63,13 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { Bookmark, CircleUser, Moon, Settings, Users } from 'lucide-vue-next'
+import { Bookmark, CircleUser, Moon, Settings, Users, UsersRound } from 'lucide-vue-next'
 import { colorFromString, initialsOf } from '../utils/avatar'
 import { usePreferencesStore } from '../stores/preferences'
 import type { ChatUser } from '../types/chat'
 
 const props = defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
-const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: 'profile' | 'contacts' | 'saved' | 'settings'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: 'profile' | 'contacts' | 'saved' | 'settings' | 'newGroup'): void }>()
 
 const preferences = usePreferencesStore()
 const isDark = computed(() => preferences.isDark)

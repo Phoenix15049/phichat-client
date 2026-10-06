@@ -5,6 +5,7 @@ import {
 import type { HubConnection } from '@microsoft/signalr'
 import { CHAT_HUB_URL } from '../config/server'
 import { getValidAccessToken } from './api'
+import { isGroupChat } from './chatKinds'
 
 type Handler<TArgs extends unknown[]> = (
   ...args: TArgs
@@ -12,6 +13,8 @@ type Handler<TArgs extends unknown[]> = (
 
 type TypingPayload = {
   SenderId: string
+  /** Set when the typing happens in a group. */
+  GroupId?: string
   At?: string
 }
 
@@ -39,12 +42,29 @@ export type PinsChangedPayload = {
   pinned: boolean
   by: string
   senderId: string
-  receiverId: string
+  /** Null for a group message. */
+  receiverId: string | null
+  groupId?: string | null
 }
 
 export type BlockListChangedPayload = {
   userId: string
   blocked: boolean
+}
+
+export type GroupEventPayload = {
+  groupId: string
+}
+
+export type GroupReadPayload = {
+  groupId: string
+  readerId: string
+  readUpToUtc: string
+}
+
+export type MutesChangedPayload = {
+  chatId: string
+  muted: boolean
 }
 
 export type IdentityKeyChangedPayload = {
@@ -86,6 +106,12 @@ const reactionUpdatedHandlers = new Set<Handler<[ReactionPayload]>>()
 const identityKeyChangedHandlers = new Set<Handler<[IdentityKeyChangedPayload]>>()
 const pinsChangedHandlers = new Set<Handler<[PinsChangedPayload]>>()
 const blockListChangedHandlers = new Set<Handler<[BlockListChangedPayload]>>()
+const presenceHiddenHandlers = new Set<Handler<[string]>>()
+const mutesChangedHandlers = new Set<Handler<[MutesChangedPayload]>>()
+const sessionTerminatedHandlers = new Set<Handler<[]>>()
+const groupUpdatedHandlers = new Set<Handler<[GroupEventPayload]>>()
+const groupRemovedHandlers = new Set<Handler<[GroupEventPayload]>>()
+const groupReadHandlers = new Set<Handler<[GroupReadPayload]>>()
 
 function subscribe<TArgs extends unknown[]>(
   handlers: Set<Handler<TArgs>>,
@@ -120,8 +146,11 @@ function normalizeTyping(payload: any): TypingPayload {
     payload?.userId ??
     payload?.UserId
 
+  const groupId = payload?.GroupId ?? payload?.groupId
+
   return {
     SenderId: String(senderId ?? ''),
+    GroupId: groupId ? String(groupId) : undefined,
     At: payload?.At ?? payload?.at
   }
 }
@@ -300,6 +329,37 @@ function bindConnection(current: HubConnection) {
     dispatch(blockListChangedHandlers, payload)
   )
 
+  // A user stopped sharing presence with us (privacy settings): forget their online state and last seen.
+  current.on('PresenceHidden', userId =>
+    dispatch(presenceHiddenHandlers, String(userId))
+  )
+
+  current.on('MutesChanged', payload =>
+    dispatch(mutesChangedHandlers, payload)
+  )
+
+  // This sign-in was ended from another device.
+  current.on('SessionTerminated', () =>
+    dispatch(sessionTerminatedHandlers)
+  )
+
+  // A group's name, photo or members changed; or we are no longer a member.
+  current.on('GroupUpdated', payload =>
+    dispatch(groupUpdatedHandlers, { groupId: String(payload?.groupId ?? '') })
+  )
+
+  current.on('GroupRemoved', payload =>
+    dispatch(groupRemovedHandlers, { groupId: String(payload?.groupId ?? '') })
+  )
+
+  current.on('GroupRead', payload =>
+    dispatch(groupReadHandlers, {
+      groupId: String(payload?.groupId ?? ''),
+      readerId: String(payload?.readerId ?? ''),
+      readUpToUtc: String(payload?.readUpToUtc ?? '')
+    })
+  )
+
   current.onreconnecting(() => {
     if (connection === current) {
       // هنگام قطع اتصال، وضعیت آنلاین
@@ -410,6 +470,36 @@ export function createChatHubSubscriptionScope() {
       blockListChangedHandlers
     ),
 
+    onPresenceHidden: createScopeMethod(
+      unsubscribers,
+      presenceHiddenHandlers
+    ),
+
+    onMutesChanged: createScopeMethod(
+      unsubscribers,
+      mutesChangedHandlers
+    ),
+
+    onSessionTerminated: createScopeMethod(
+      unsubscribers,
+      sessionTerminatedHandlers
+    ),
+
+    onGroupUpdated: createScopeMethod(
+      unsubscribers,
+      groupUpdatedHandlers
+    ),
+
+    onGroupRemoved: createScopeMethod(
+      unsubscribers,
+      groupRemovedHandlers
+    ),
+
+    onGroupRead: createScopeMethod(
+      unsubscribers,
+      groupReadHandlers
+    ),
+
     dispose() {
       for (const unsubscribe of unsubscribers.splice(0)) {
         unsubscribe()
@@ -510,10 +600,15 @@ export async function sendMessage(
   const current =
     await getConnectedHub()
 
+  // `receiverId` is the chat id: a group's messages go out with its groupId instead.
+  const target = isGroupChat(receiverId)
+    ? { groupId: receiverId }
+    : { receiverId }
+
   await current.invoke(
     'SendMessage',
     {
-      receiverId,
+      ...target,
       encryptedText,
 
       fileUrl:
@@ -544,6 +639,21 @@ export async function markAsRead(
   )
 }
 
+/** Moves my read position in a group up to `messageId`. */
+export async function markGroupRead(
+  groupId: string,
+  messageId: string
+) {
+  const current =
+    await getConnectedHub()
+
+  await current.invoke(
+    'MarkGroupRead',
+    groupId,
+    messageId
+  )
+}
+
 export async function startTyping(
   receiverId: string
 ) {
@@ -551,7 +661,7 @@ export async function startTyping(
     await getConnectedHub()
 
   await current.invoke(
-    'StartTyping',
+    isGroupChat(receiverId) ? 'StartGroupTyping' : 'StartTyping',
     receiverId
   )
 }
@@ -563,7 +673,7 @@ export async function stopTyping(
     await getConnectedHub()
 
   await current.invoke(
-    'StopTyping',
+    isGroupChat(receiverId) ? 'StopGroupTyping' : 'StopTyping',
     receiverId
   )
 }
