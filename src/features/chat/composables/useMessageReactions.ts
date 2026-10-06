@@ -7,24 +7,15 @@ import { usePreferencesStore } from '../../../stores/preferences'
 
 import {
   addReaction,
-  removeReaction
+  removeReaction,
+  type ReactionSnapshot
 } from '../../../services/api'
-
-import {
-  dedupeReactions
-} from '../../../utils/messageMapper'
 
 import type {
   UiMessage
 } from '../../../types/chat'
 
-export type ReactionUpdatePayload = {
-  messageId: string
-  emoji: string
-  count: number
-  userId: string
-  action: 'added' | 'removed'
-}
+export type ReactionUpdatePayload = ReactionSnapshot & { messageId: string }
 
 type UseMessageReactionsOptions = {
   messages: Ref<UiMessage[]>
@@ -131,122 +122,95 @@ export function useMessageReactions({
     hideHoverBarSoon()
   }
 
+  /** Newest server snapshot applied per message; older ones arriving late are ignored. */
+  const snapshotVersions = new Map<string, number>()
+
+  /** Reaction changes of one message go to the server one after another (the last click wins). */
+  const pending = new Map<string, Promise<unknown>>()
+
+  /**
+   * Latest local change per message. While newer clicks are still queued, the answers to older
+   * ones (and other people's updates) would undo what the user sees; the last answer includes
+   * all of them anyway, so only it is applied.
+   */
+  const latestChange = new Map<string, number>()
+  let changeSeq = 0
+
+  function applySnapshot(message: UiMessage, snapshot: ReactionSnapshot) {
+    if (!message.id) return
+    if (snapshot.version < (snapshotVersions.get(message.id) ?? 0)) return
+
+    snapshotVersions.set(message.id, snapshot.version)
+    message.reactions = snapshot.reactions.map(reaction => ({
+      emoji: reaction.emoji,
+      count: reaction.count,
+      mine: reaction.userIds.includes(myId.value)
+    }))
+  }
+
+  /**
+   * One reaction per person (like Telegram): the chosen emoji replaces mine, choosing it again
+   * removes it. Shown at once, then replaced by the server's list for the message.
+   */
   async function toggleReaction(
     message: UiMessage,
     emoji: string
   ) {
-    if (!message.id) return
+    const messageId = message.id
+    if (!messageId) return
 
-    const list =
-      message.reactions ||
-      (message.reactions = [])
+    const before = message.reactions ?? []
 
-    message.reactions =
-      dedupeReactions(list)
+    // An emoji already on the message (perhaps in another variation form) is reused as-is,
+    // so the server counts both under the same key.
+    const existing = before.find(reaction => normalizeEmoji(reaction.emoji) === normalizeEmoji(emoji))
+    const target = existing?.emoji ?? emoji
+    const removing = !!existing?.mine
 
-    const emojiKey =
-      normalizeEmoji(emoji)
+    const next = before
+      .map(reaction => ({ ...reaction }))
+      .map(reaction => (reaction.mine ? { ...reaction, mine: false, count: reaction.count - 1 } : reaction))
 
-    const previousMine =
-      message.reactions.find(
-        reaction =>
-          reaction.mine &&
-          normalizeEmoji(
-            reaction.emoji
-          ) !== emojiKey
-      )
-
-    if (previousMine) {
-      previousMine.mine = false
-
-      previousMine.count =
-        Math.max(
-          0,
-          previousMine.count - 1
-        )
-
-      if (
-        previousMine.count === 0
-      ) {
-        message.reactions =
-          message.reactions.filter(
-            reaction =>
-              reaction !== previousMine
-          )
-      }
-
-      removeReaction(
-        message.id,
-        previousMine.emoji
-      ).catch(() => {})
-    }
-
-    const current =
-      message.reactions.find(
-        reaction =>
-          normalizeEmoji(
-            reaction.emoji
-          ) === emojiKey
-      )
-
-    if (current?.mine) {
-      current.mine = false
-
-      current.count =
-        Math.max(
-          0,
-          current.count - 1
-        )
-
-      if (current.count === 0) {
-        message.reactions =
-          message.reactions.filter(
-            reaction =>
-              reaction !== current
-          )
-      }
-
-      try {
-        await removeReaction(
-          message.id,
-          emoji
-        )
-      } catch {}
-    } else {
-      if (current) {
-        current.mine = true
-        current.count += 1
+    if (!removing) {
+      const same = next.find(reaction => reaction.emoji === target)
+      if (same) {
+        same.count += 1
+        same.mine = true
       } else {
-        message.reactions.push({
-          emoji,
-          count: 1,
-          mine: true
-        })
+        next.push({ emoji: target, count: 1, mine: true })
       }
-
-      message.reactions =
-        dedupeReactions(
-          message.reactions
-        )
-
-      try {
-        await addReaction(
-          message.id,
-          emoji
-        )
-      } catch {}
     }
+
+    message.reactions = next.filter(reaction => reaction.count > 0)
+
+    const seq = ++changeSeq
+    latestChange.set(messageId, seq)
+
+    const previousRequest = pending.get(messageId) ?? Promise.resolve()
+    const request = previousRequest
+      .catch(() => {})
+      .then(async () => {
+        const snapshot = removing
+          ? await removeReaction(messageId, target)
+          : await addReaction(messageId, target)
+        if (latestChange.get(messageId) === seq) applySnapshot(message, snapshot)
+      })
+      .catch(() => {
+        // Nothing newer from the server: put back what was there.
+        if (!snapshotVersions.has(messageId)) message.reactions = before
+      })
+
+    pending.set(messageId, request)
+    await request
+    if (pending.get(messageId) === request) pending.delete(messageId)
+    if (latestChange.get(messageId) === seq) latestChange.delete(messageId)
   }
 
   async function applyReaction(
     message: UiMessage,
     emoji: string
   ) {
-    await toggleReaction(
-      message,
-      emoji
-    )
-
+    // The menu closes at once; the reaction is already shown and goes to the server meanwhile.
     suppressHoverUntil =
       Date.now() + 700
 
@@ -256,8 +220,14 @@ export function useMessageReactions({
     hoverReactFor.value = null
 
     closeMenu()
+
+    await toggleReaction(
+      message,
+      emoji
+    )
   }
 
+  /** Someone (perhaps me on another device) changed a reaction: take the server's full list. */
   function handleReactionUpdated(
     payload: ReactionUpdatePayload
   ) {
@@ -267,81 +237,12 @@ export function useMessageReactions({
           item.id === payload.messageId
       )
 
-    if (!message) return
+    if (!message || !Array.isArray(payload.reactions)) return
 
-    const list =
-      message.reactions ||
-      (message.reactions = [])
+    // My own clicks on this message are still on their way; their answer will be complete.
+    if (latestChange.has(payload.messageId)) return
 
-    const emojiKey =
-      normalizeEmoji(
-        payload.emoji
-      )
-
-    const indexes = list
-      .map((reaction, index) =>
-        normalizeEmoji(
-          reaction.emoji
-        ) === emojiKey
-          ? index
-          : -1
-      )
-      .filter(index => index >= 0)
-
-    if (indexes.length === 0) {
-      list.push({
-        emoji: payload.emoji,
-        count: payload.count,
-
-        mine:
-          payload.userId ===
-            myId.value &&
-          payload.action === 'added'
-      })
-    } else {
-      const first =
-        list[indexes[0]]
-
-      first.emoji = payload.emoji
-      first.count = payload.count
-
-      if (
-        payload.userId === myId.value
-      ) {
-        first.mine =
-          payload.action === 'added'
-      }
-
-      for (
-        let index =
-          indexes.length - 1;
-        index >= 1;
-        index--
-      ) {
-        list.splice(
-          indexes[index],
-          1
-        )
-      }
-    }
-
-    if (
-      payload.userId === myId.value &&
-      payload.action === 'added'
-    ) {
-      for (const reaction of list) {
-        if (
-          normalizeEmoji(
-            reaction.emoji
-          ) !== emojiKey
-        ) {
-          reaction.mine = false
-        }
-      }
-    }
-
-    message.reactions =
-      dedupeReactions(list)
+    applySnapshot(message, payload)
   }
 
   function resetReactionUi() {

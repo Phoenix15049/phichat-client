@@ -799,7 +799,8 @@ async function appendOutgoingMessage(
     const el = scrollBox.value
 
     if (el) {
-      el.scrollTop = el.scrollHeight
+      const smooth = isNearBottom(el, 800) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
     }
   }
 
