@@ -8,6 +8,7 @@ export type PeerMeta = {
   displayName: string | null
   avatarUrl: string | null
   lastSeenUtc: string | null
+  lastSeenHidden: boolean
 }
 
 type UsePeerDirectoryOptions = {
@@ -22,6 +23,9 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
   const onlineIds = reactive(new Set<string>())
 
   const lastSeenMap = reactive<Record<string, string | null>>({})
+
+  /** Users whose privacy settings hide their last seen from us ("last seen recently"). */
+  const hiddenLastSeen = reactive(new Set<string>())
 
   const avatarById  = reactive<Record<string, string | null>>({})
 
@@ -40,7 +44,8 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
       username: conversation?.username ?? '',
       displayName: displayById[userId] ?? conversation?.displayName ?? null,
       avatarUrl: avatarById[userId] ?? conversation?.avatarUrl ?? null,
-      lastSeenUtc: lastSeenMap[userId] ?? null
+      lastSeenUtc: lastSeenMap[userId] ?? null,
+      lastSeenHidden: hiddenLastSeen.has(userId)
     }
   }
 
@@ -49,7 +54,8 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
       username: normalizeUsername(user.username ?? user.Username ?? ''),
       displayName: (user.displayName ?? user.DisplayName ?? '').trim() || null,
       avatarUrl: user.avatarUrl ?? user.AvatarUrl ?? null,
-      lastSeenUtc: user.lastSeenUtc ?? user.LastSeenUtc ?? null
+      lastSeenUtc: user.lastSeenUtc ?? user.LastSeenUtc ?? null,
+      lastSeenHidden: !!user.lastSeenHidden
     }
   }
 
@@ -58,6 +64,8 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
     avatarById[userId] = meta.avatarUrl ?? avatarById[userId] ?? null
 
     if (meta.lastSeenUtc) lastSeenMap[userId] = meta.lastSeenUtc
+    if (meta.lastSeenHidden) hidePresence(userId)
+    else hiddenLastSeen.delete(userId)
 
     const conversation = conversations.value.find(item => item.peerId === userId)
     if (!conversation) return
@@ -110,12 +118,24 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
 
   function markOnline(userId: string) {
     onlineIds.add(String(userId))
+    hiddenLastSeen.delete(String(userId))
   }
 
   function markOffline(userId: string, when?: string | null) {
     const id = String(userId)
     onlineIds.delete(id)
-    if (when) lastSeenMap[id] = when
+    if (when) {
+      lastSeenMap[id] = when
+      hiddenLastSeen.delete(id)
+    }
+  }
+
+  /** The user stopped sharing presence with us. */
+  function hidePresence(userId: string) {
+    const id = String(userId)
+    onlineIds.delete(id)
+    delete lastSeenMap[id]
+    hiddenLastSeen.add(id)
   }
 
   function setOnlineSnapshot(ids: string[]) {
@@ -125,6 +145,7 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
 
   function setLastSeen(userId: string, whenIso: string) {
     lastSeenMap[String(userId)] = whenIso
+    hiddenLastSeen.delete(String(userId))
   }
 
   /** Forgets everything, e.g. when the signed-in user changes. */
@@ -138,11 +159,13 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
     for (const key in lastSeenMap) delete lastSeenMap[key]
 
     onlineIds.clear()
+    hiddenLastSeen.clear()
   }
 
   return {
     onlineIds,
     lastSeenMap,
+    hiddenLastSeen,
     avatarById,
     displayById,
     cachePeerUser,
@@ -151,6 +174,7 @@ export function usePeerDirectory({ conversations }: UsePeerDirectoryOptions) {
     markOffline,
     setOnlineSnapshot,
     setLastSeen,
+    hidePresence,
     resetPeers
   }
 }

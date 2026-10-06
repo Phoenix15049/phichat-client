@@ -6,9 +6,10 @@ import type { OpenedMessage } from '../../../stores/e2ee'
 import type { ChatUser, ServerMessage, UiConversation, UiMessage } from '../../../types/chat'
 import type { FileMeta } from '../../../services/e2ee/messageCodec'
 import { EMPTY_MSG_MARKER } from '../../../utils/messageText'
-import { normalizeUsername } from '../../../utils/username'
+import { isolate, normalizeUsername } from '../../../utils/username'
 import { toDateSafe } from '../../../utils/time'
 import type { usePeerDirectory } from './usePeerDirectory'
+import { markGroupChat } from '../../../services/chatKinds'
 
 export type IncomingMessage = ServerMessage & {
   senderUsername?: string
@@ -42,6 +43,11 @@ type UseConversationsOptions = {
   peers: Pick<ReturnType<typeof usePeerDirectory>, 'displayById' | 'avatarById' | 'ensurePeerCached'>
   /** Decrypts a message of the conversation with `peerId` sent by `senderId`. */
   openMessage: (raw: string, senderId: string, peerId: string) => Promise<OpenedMessage>
+  /** Labels for group chats: who wrote the last message, and service messages. */
+  groupLabels?: {
+    sender: (groupId: string, senderId: string) => string
+    systemText: (groupId: string, actorId: string, event: string) => string
+  }
 }
 
 function toAbsoluteUrlOrNull(url: string | null): string | null {
@@ -53,7 +59,8 @@ export function useConversations({
   conversations,
   selectedUser,
   peers,
-  openMessage
+  openMessage,
+  groupLabels
 }: UseConversationsOptions) {
   const { displayById, avatarById, ensurePeerCached } = peers
 
@@ -61,16 +68,21 @@ export function useConversations({
   function setConversations(data: ConversationSummary[]) {
     conversations.value = data.map(c => ({
       peerId: c.peerId,
+      isGroup: !!c.isGroup,
+      memberCount: c.memberCount ?? 0,
       username: c.peerUsername || '',
       displayName: c.peerDisplayName || null,
       avatarUrl: c.peerAvatarUrl || null,
       unreadCount: c.unreadCount ?? 0,
       lastSentAt: c.lastSentAt || null,
       lastFileUrl: c.lastFileUrl || null,
-      lastPreview: null
+      lastPreview: c.isGroup && c.lastSystemEvent && groupLabels
+        ? groupLabels.systemText(c.peerId, c.lastSenderId || '', c.lastSystemEvent)
+        : null
     }))
 
     for (const c of conversations.value) {
+      if (c.isGroup) markGroupChat(c.peerId)
       if (c.displayName) displayById[c.peerId] = c.displayName
       if (c.avatarUrl) avatarById[c.peerId] = c.avatarUrl
     }
@@ -82,7 +94,7 @@ export function useConversations({
     })
 
     for (const c of data) {
-      if (c.lastEncryptedContent) {
+      if (c.lastEncryptedContent && !c.lastSystemEvent) {
         void refreshConversationPreview(c.peerId, c.lastEncryptedContent, c.lastSenderId || c.peerId)
       }
     }
@@ -140,7 +152,9 @@ export function useConversations({
     conversation.lastSentAt = sentAt
     conversation.lastFileUrl = message.fileUrl
 
-    conversation.lastPreview = previewText(message)
+    conversation.lastPreview = conversation.isGroup && groupLabels
+      ? `${isolate(groupLabels.sender(peerId, ''))}: ${previewText(message) ?? ''}`
+      : previewText(message)
 
     moveConversationToTop(index)
   }
@@ -199,6 +213,12 @@ export function useConversations({
     void ensurePeerCached(peerId)
   }
 
+  /** In groups, "Ali: " before the preview (service messages are shown as they are). */
+  function withSender(conversation: UiConversation, senderId: string, preview: string | null): string | null {
+    if (!conversation.isGroup || !groupLabels || preview == null || !senderId) return preview
+    return `${isolate(groupLabels.sender(conversation.peerId, senderId))}: ${preview}`
+  }
+
   function updateIncomingPreview(peerId: string, message: UiMessage) {
     const index = conversations.value.findIndex(item => item.peerId === peerId)
     if (index < 0) return
@@ -207,7 +227,9 @@ export function useConversations({
 
     conversation.lastSentAt = message.sentAt ?? conversation.lastSentAt
     conversation.lastFileUrl = message.fileUrl
-    conversation.lastPreview = previewText(message)
+    conversation.lastPreview = message.systemEvent && groupLabels
+      ? groupLabels.systemText(peerId, message.senderId, message.systemEvent)
+      : withSender(conversation, message.senderId, previewText(message))
 
     moveConversationToTop(index)
   }
@@ -238,7 +260,7 @@ export function useConversations({
       const conversation = conversations.value.find(item => item.peerId === peerId)
       // Only fill in if nothing newer replaced the preview meanwhile.
       if (conversation && (conversation.lastPreview == null || conversation.lastPreview === newMessagePlaceholder())) {
-        conversation.lastPreview = plain
+        conversation.lastPreview = withSender(conversation, senderId, plain)
       }
     } catch {}
   }

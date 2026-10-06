@@ -143,9 +143,18 @@
             <GeneralSettings />
           </div>
 
+          <div v-else-if="active === 'notifications'" class="card">
+            <NotificationSettings />
+          </div>
+
           <div v-else-if="active === 'privacy'" class="space-y-4">
+            <div class="card"><PrivacySettings /></div>
             <div class="card"><E2eeSettings /></div>
             <div class="card"><BlockedUsersSettings /></div>
+          </div>
+
+          <div v-else-if="active === 'devices'" class="card">
+            <SessionsSettings />
           </div>
         </div>
       </div>
@@ -174,7 +183,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowLeft, Check, ChevronRight, ImageUp, Loader2, LogOut, Palette, ShieldCheck, SlidersHorizontal, Trash2, UserRound, X
+  ArrowLeft, Bell, Check, ChevronRight, ImageUp, Loader2, LogOut, MonitorSmartphone, Palette, ShieldCheck, SlidersHorizontal,
+  Trash2, UserRound, X
 } from 'lucide-vue-next'
 import { colorFromString, initialsOf } from '../utils/avatar'
 import { getErrorMessage, getMeProfile, logout, updateMyProfile, uploadAvatar } from '../services/api'
@@ -185,9 +195,12 @@ import E2eeSettings from '../features/e2ee/E2eeSettings.vue'
 import AppearanceSettings from '../features/settings/AppearanceSettings.vue'
 import GeneralSettings from '../features/settings/GeneralSettings.vue'
 import BlockedUsersSettings from '../features/settings/BlockedUsersSettings.vue'
+import NotificationSettings from '../features/settings/NotificationSettings.vue'
+import PrivacySettings from '../features/settings/PrivacySettings.vue'
+import SessionsSettings from '../features/settings/SessionsSettings.vue'
 import { t } from '../i18n'
 
-type SectionKey = 'account' | 'appearance' | 'general' | 'privacy'
+type SectionKey = 'account' | 'appearance' | 'general' | 'notifications' | 'privacy' | 'devices'
 
 withDefaults(defineProps<{ inModal?: boolean }>(), { inModal: false })
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -196,7 +209,9 @@ const sections: Array<{ key: SectionKey; icon: typeof Palette; color: string }> 
   { key: 'account', icon: UserRound, color: '#3b82f6' },
   { key: 'appearance', icon: Palette, color: '#a855f7' },
   { key: 'general', icon: SlidersHorizontal, color: '#f59e0b' },
-  { key: 'privacy', icon: ShieldCheck, color: '#11bfae' }
+  { key: 'notifications', icon: Bell, color: '#ef4444' },
+  { key: 'privacy', icon: ShieldCheck, color: '#11bfae' },
+  { key: 'devices', icon: MonitorSmartphone, color: '#6366f1' }
 ]
 
 const BIO_MAX = 300

@@ -78,7 +78,7 @@ export async function openMessage(key: CryptoKey, header: MessageHeader): Promis
   return parseEnvelope(fromUtf8(plain))
 }
 
-function parseEnvelope(json: string): MessageEnvelope {
+export function parseEnvelope(json: string): MessageEnvelope {
   let value: any
   try {
     value = JSON.parse(json)

@@ -5,6 +5,7 @@
  *   16 bytes of SHA-256(SPKI), which the server computes the same way.
  * - Conversation key: ECDH(my private, peer public) -> HKDF-SHA256 -> AES-256-GCM. Both sides
  *   derive the same key; it is bound to the two key ids, so a new identity means a new key.
+ *   Group messages use the same derivation with another HKDF label, to wrap per-message keys.
  * - Backup: the PKCS#8 private key encrypted with AES-GCM under PBKDF2-SHA256(passphrase).
  * - Files: a random AES-256-GCM key per file; the key travels inside the encrypted message.
  */
@@ -83,12 +84,19 @@ export async function importPeerPublicKey(publicKeySpki: string, expectedKeyId: 
 
 // ---------- conversation keys ----------
 
-/** The AES-GCM key shared by the owners of `myKeyId` and `peerKeyId`. */
+export const DIRECT_MESSAGE_INFO = 'phichat/v2/direct-message'
+export const GROUP_KEY_WRAP_INFO = 'phichat/v2/group-key-wrap'
+
+/**
+ * The AES-GCM key shared by the owners of `myKeyId` and `peerKeyId`. `info` separates its uses:
+ * private-chat messages, or wrapping group message keys.
+ */
 export async function deriveConversationKey(
   myPrivateKey: CryptoKey,
   peerPublicKey: CryptoKey,
   myKeyId: string,
-  peerKeyId: string
+  peerKeyId: string,
+  info: string = DIRECT_MESSAGE_INFO
 ): Promise<CryptoKey> {
   const secret = await crypto.subtle.deriveBits({ name: 'ECDH', public: peerPublicKey }, myPrivateKey, 256)
   const hkdfKey = await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveKey'])
@@ -97,7 +105,7 @@ export async function deriveConversationKey(
   const salt = utf8([myKeyId, peerKeyId].sort().join('|'))
 
   return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt, info: utf8('phichat/v2/direct-message') },
+    { name: 'HKDF', hash: 'SHA-256', salt, info: utf8(info) },
     hkdfKey,
     { name: 'AES-GCM', length: 256 },
     false,

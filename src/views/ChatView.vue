@@ -8,6 +8,7 @@
       "
       :is-narrow="isNarrow"
       :online-ids="onlineIds"
+      :muted-ids="mutes.ids"
       :avatar-by-id="avatarById"
       :display-by-id="displayById"
       @open-menu="menuOpen = true"
@@ -43,13 +44,15 @@
         isPeerTyping
       "
       :is-peer-online="
-        selectedUser
+        selectedUser && !selectedUser.isGroup
           ? onlineIds.has(
               selectedUser.id
             )
           : false
       "
       :peer-status="peerStatus"
+      :is-muted="mutes.isMuted(selectedUser?.id)"
+      @toggle-mute="toggleMute"
       @open-profile="
         openPeerProfile
       "
@@ -92,11 +95,11 @@
 
       <ChatSecurityBanner
         v-if="selectedUser"
-        :peer-name="selectedLabel"
-        :key-changed="!!e2ee.keyChanged[selectedUser.id]"
-        :missing-key="!!e2ee.peerMissingKey[selectedUser.id]"
-        @view-code="openPeerProfile"
-        @acknowledge="e2ee.trustPeerKey(selectedUser.id, false)"
+        :peer-name="selectedUser.isGroup ? changedMemberNames : selectedLabel"
+        :key-changed="selectedUser.isGroup ? changedMembers.length > 0 : !!e2ee.keyChanged[selectedUser.id]"
+        :missing-key="!selectedUser.isGroup && !!e2ee.peerMissingKey[selectedUser.id]"
+        @view-code="selectedUser.isGroup ? openUserProfile(changedMembers[0]?.username) : openPeerProfile()"
+        @acknowledge="acknowledgeKeyChange"
       />
 
       <ChatMessageList
@@ -116,6 +119,7 @@
         :bind-message-element="bindMsgEl"
         :set-scroll-element="setMessageScrollElement"
         :set-menu-element="setMessageMenuElement"
+        :group="groupRendering"
       />
 
       <div v-if="!selectedUser" class="absolute inset-0 grid place-items-center pointer-events-none">
@@ -319,6 +323,26 @@
     @confirm="confirmBlock"
   />
 
+  <NewGroupModal
+    :open="showNewGroup"
+    :people="groupCandidates"
+    @close="showNewGroup = false"
+    @created="onGroupCreated"
+  />
+
+  <GroupInfoModal
+    :open="showGroupInfo"
+    :group-id="selectedUser?.isGroup ? selectedUser.id : null"
+    :my-id="myId"
+    :online-ids="onlineIds"
+    :people="groupCandidates"
+    :muted="mutes.isMuted(selectedUser?.id)"
+    @close="showGroupInfo = false"
+    @toggle-mute="toggleMute"
+    @open-user="username => { showGroupInfo = false; void openUserProfile(username) }"
+    @left="onLeftGroup"
+  />
+
   <!-- Until this device has the account's encryption key nothing else is usable. -->
   <E2eeGate v-if="e2ee.status !== 'ready' && e2ee.status !== 'idle'" />
 
@@ -356,6 +380,7 @@ import {
   getMessageBrief,
   getMyContacts,
   getUserByUsername,
+  logout,
   removeContact
 } from '../services/api'
 import {
@@ -363,6 +388,7 @@ import {
   createChatHubSubscriptionScope,
   disconnectFromChatHub,
   markAsRead,
+  markGroupRead,
   startTyping,
   stopTyping,
   fetchOnlineUsers
@@ -377,6 +403,19 @@ import ChatSearchBar from '../features/chat/components/ChatSearchBar.vue'
 import ChatPinnedBar from '../features/chat/components/ChatPinnedBar.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useBlocksStore } from '../stores/blocks'
+import { useMutesStore } from '../stores/mutes'
+import { usePreferencesStore } from '../stores/preferences'
+import { clearChatNotifications, playNotificationSound, showMessageNotification } from '../services/notifications'
+import { syncPushSubscription } from '../services/push'
+import { useGroupsStore } from '../stores/groups'
+import { markGroupChat } from '../services/chatKinds'
+import { describeSystemEvent } from '../utils/groupEvents'
+import { colorFromString } from '../utils/avatar'
+import NewGroupModal from '../features/groups/NewGroupModal.vue'
+import GroupInfoModal from '../features/groups/GroupInfoModal.vue'
+import type { PickablePerson } from '../features/groups/MemberPicker.vue'
+import type { GroupDetails } from '../services/api'
+import { previewText } from '../features/chat/composables/useConversations'
 import { useLinkPreview } from '../features/chat/composables/useLinkPreview'
 import { useMessageSearch } from '../features/chat/composables/useMessageSearch'
 import { usePinnedMessages } from '../features/chat/composables/usePinnedMessages'
@@ -392,9 +431,9 @@ import type {
 } from '../types/chat'
 import { encryptedBodyOf, mapServerMessage } from '../utils/messageMapper'
 import { EMPTY_MSG_MARKER } from '../utils/messageText'
-import { formatRelative } from '../utils/time'
+import { formatRelative, toDateSafe } from '../utils/time'
 import { useI18n } from 'vue-i18n'
-import { normalizeUsername } from '../utils/username'
+import { isolate, normalizeUsername } from '../utils/username'
 
 import { useSecureFiles, fileKindOf } from '../features/chat/composables/useSecureFiles'
 import type { FileMeta } from '../services/e2ee/messageCodec'
@@ -429,13 +468,14 @@ function resolveReplyPreview(replyId?: string | null): string {
 }
 
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 
 // The signed-in user lives in the session store, shared with the side menu, profile and settings.
 const session = useSessionStore()
 const { userId: myId, me: meProfile } = storeToRefs(session)
-const selectedUser = ref<Pick<ChatUser, 'id' | 'username'> | null>(null)
+/** The open chat: a user (`id`, `username`), or a group (`isGroup`, `id` = group id, no username). */
+const selectedUser = ref<ChatTarget | null>(null)
 const messages = ref<UiMessage[]>([])
 const text = ref('')
 const outbox = useOutbox({ messages, onError: showSendError })
@@ -463,6 +503,8 @@ function showSendError(error: unknown) {
 }
 
 const isPeerTyping = ref(false)
+/** Who is typing in the open group. */
+const typingName = ref('')
 let typingTimer: number | null = null
 const TYPING_IDLE_MS = 2000
 
@@ -487,6 +529,7 @@ const conversations = ref<UiConversation[]>([])
 const {
   onlineIds,
   lastSeenMap,
+  hiddenLastSeen,
   avatarById,
   displayById,
   cachePeerUser,
@@ -495,6 +538,7 @@ const {
   markOffline,
   setOnlineSnapshot,
   setLastSeen,
+  hidePresence,
   resetPeers
 } = usePeerDirectory({ conversations })
 
@@ -508,7 +552,11 @@ const {
   conversations,
   selectedUser,
   peers: { displayById, avatarById, ensurePeerCached },
-  openMessage
+  openMessage,
+  groupLabels: {
+    sender: (groupId, senderId) => (!senderId || senderId === myId.value ? t('groups.you') : memberLabel(groupId, senderId)),
+    systemText: (groupId, actorId, event) => describeSystemEvent(event, actorId, id => memberLabel(groupId, id, true))
+  }
 })
 
 
@@ -518,10 +566,14 @@ const toast = reactive({ show: false, text: '' })
 const menuOpen = ref(false)
 const showProfile = ref(false)
 const showSettings = ref(false)
+const showNewGroup = ref(false)
+const showGroupInfo = ref(false)
+const groups = useGroupsStore()
 
 type ChatTarget = {
   id: string
   username: string
+  isGroup?: boolean
 }
 
 type OpenChatOptions = {
@@ -556,6 +608,7 @@ const selectedLabel = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
   const conv = conversations.value.find(c => c.peerId === su.id)
+  if (su.isGroup) return groups.details[su.id]?.title || conv?.displayName || ''
   return (conv?.displayName && conv.displayName.trim())
     || ('@' + su.username.replace(/^@/, ''))
 })
@@ -599,8 +652,18 @@ const {
 const peerStatus = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
+  if (su.isGroup) {
+    if (isPeerTyping.value && typingName.value) return t('groups.typing', { name: typingName.value })
+    const members = groups.details[su.id]?.members ?? []
+    const online = members.filter(m => m.userId !== myId.value && onlineIds.has(m.userId)).length
+    if (!members.length) return ''
+    return online
+      ? t('groups.membersOnline', { n: members.length, online })
+      : t('groups.membersCount', { n: members.length })
+  }
   if (isPeerTyping.value) return t('chat.isTyping')
   if (onlineIds.has(su.id)) return t('chat.online')
+  if (hiddenLastSeen.has(su.id)) return t('chat.lastSeenRecently')
   const ls = lastSeenMap[su.id]
   return ls ? t('chat.lastSeen', { when: formatRelative(ls) }) : t('chat.lastSeenUnknown')
 })
@@ -639,6 +702,7 @@ function onBubbleDblClick(ev: MouseEvent, m: UiMessage) {
 function resetState() {
   chatSessionId++
   resetPeers()
+  groups.reset()
 
   conversations.value = []
   messages.value = []
@@ -766,8 +830,20 @@ function isNearBottom(el: HTMLElement, threshold = 400) {
 async function openPeerProfile() {
   if (!selectedUser.value) return
 
+  if (selectedUser.value.isGroup) {
+    showGroupInfo.value = true
+    return
+  }
+
+  await openUserProfile(selectedUser.value.username)
+}
+
+/** The profile of any user (a peer, or a group member). */
+async function openUserProfile(username?: string | null) {
+  if (!username) return
+
   const user = await getUserByUsername(
-    selectedUser.value.username.replace(/^@/, '')
+    username.replace(/^@/, '')
   )
 
   cachePeerUser(user)
@@ -856,7 +932,8 @@ function currentChatRef(): ChatTarget | null {
 
   return {
     id: user.id,
-    username: normalizeUsername(user.username)
+    username: normalizeUsername(user.username),
+    isGroup: user.isGroup
   }
 }
 
@@ -866,10 +943,12 @@ function routeUsername(value: unknown) {
     : ''
 }
 
-async function replaceChatRoute(username?: string | null) {
-  const target = username
-    ? `/u/${encodeURIComponent(normalizeUsername(username))}`
-    : '/chat'
+async function replaceChatRoute(chat?: ChatTarget | null) {
+  const target = chat?.isGroup
+    ? `/g/${chat.id}`
+    : chat?.username
+      ? `/u/${encodeURIComponent(normalizeUsername(chat.username))}`
+      : '/chat'
 
   if (route.path !== target) {
     await router.replace(target)
@@ -879,10 +958,11 @@ async function replaceChatRoute(username?: string | null) {
 async function openChat(user: ChatTarget, options: OpenChatOptions = {}) {
   const target: ChatTarget = {
     id: String(user.id),
-    username: normalizeUsername(user.username)
+    username: normalizeUsername(user.username),
+    isGroup: !!user.isGroup
   }
 
-  if (!target.id || !target.username) return
+  if (!target.id || (!target.username && !target.isGroup)) return
 
   const current = currentChatRef()
 
@@ -905,7 +985,7 @@ async function openChat(user: ChatTarget, options: OpenChatOptions = {}) {
   }
 
   if (options.syncRoute !== false) {
-    await replaceChatRoute(target.username)
+    await replaceChatRoute(target)
   }
 
   if (options.scrollToEnd) {
@@ -980,6 +1060,25 @@ async function syncChatFromRoute(value: unknown) {
     await replaceChatRoute(null)
   }
 }
+/** Opens the group in the route (/g/:groupId). */
+async function syncGroupFromRoute(value: unknown) {
+  const requestId = ++routeSyncRequestId
+  const groupId = typeof value === 'string' ? value : ''
+  if (!groupId || selectedUser.value?.id === groupId) return
+
+  const group = await groups.load(groupId)
+  if (requestId !== routeSyncRequestId) return
+
+  if (!group) {
+    showToast(t('groups.notFound'))
+    await replaceChatRoute(null)
+    return
+  }
+
+  ensureGroupConversation(group)
+  await openChat({ id: group.id, username: '', isGroup: true }, { resetStack: true, syncRoute: false })
+}
+
 async function goBackChat() {
   const previous = chatNavStack.value.pop()
   if (!previous) return
@@ -1020,9 +1119,11 @@ async function onOpenChatFromContacts(user: ChatTarget) {
   })
 }
 
-function onMenuAction(a: 'profile'|'contacts'|'saved'|'settings') {
+function onMenuAction(a: 'profile'|'contacts'|'saved'|'settings'|'newGroup') {
   menuOpen.value = false
-  if (a === 'profile') {
+  if (a === 'newGroup') {
+    void openNewGroup()
+  } else if (a === 'profile') {
     showProfile.value = true
   } else if (a === 'settings') {
     showSettings.value = true
@@ -1229,6 +1330,8 @@ const {
 
 // Blocking, link previews, search and pins.
 const blocks = useBlocksStore()
+const mutes = useMutesStore()
+const preferences = usePreferencesStore()
 const peerBlocked = computed(() => blocks.isBlocked(selectedUser.value?.id))
 
 const linkPreview = useLinkPreview(
@@ -1382,8 +1485,14 @@ watch(
 )
 
 watch(selectedUser, async (current, previous) => {
-  // Learn early whether the peer can receive encrypted messages and whether their key changed.
-  if (current) void e2ee.getActivePeerKey(current.id).catch(() => {})
+  // Learn early whether the peer can receive encrypted messages and whether their key changed
+  // (for a group: whether any member's key changed).
+  if (current?.isGroup) {
+    void groups.load(current.id)
+    void e2ee.getGroupKeys(current.id).catch(() => {})
+  } else if (current) {
+    void e2ee.getActivePeerKey(current.id).catch(() => {})
+  }
 
   if (current?.id !== previous?.id) {
     linkPreview.reset()
@@ -1403,7 +1512,7 @@ watch(selectedUser, async (current, previous) => {
   await nextTick()
   autoGrow(undefined, { animate: false })
 
-  if (!current) return
+  if (!current || current.isGroup) return
 
   await ensurePeerCached(current.id)
 
@@ -1431,6 +1540,14 @@ watch(
   username => {
     if (!routeSyncReady) return
     void syncChatFromRoute(username)
+  }
+)
+
+watch(
+  () => route.params.groupId,
+  groupId => {
+    if (!routeSyncReady || !groupId) return
+    void syncGroupFromRoute(groupId)
   }
 )
 
@@ -1490,6 +1607,7 @@ function onWindowResize() {
 }
 
 function registerPageListeners() {
+  document.addEventListener('visibilitychange', flushPendingReads)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('keydown', onKeydownSelection)
   window.addEventListener('scroll', onWindowScroll, true)
@@ -1497,6 +1615,7 @@ function registerPageListeners() {
 }
 
 function unregisterPageListeners() {
+  document.removeEventListener('visibilitychange', flushPendingReads)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('keydown', onKeydownSelection)
   window.removeEventListener('scroll', onWindowScroll, true)
@@ -1708,7 +1827,8 @@ async function selectConversation(conv: UiConversation) {
   await openChat(
     {
       id: conv.peerId,
-      username: conv.username
+      username: conv.username,
+      isGroup: conv.isGroup
     },
     {
       resetStack: true,
@@ -1758,6 +1878,7 @@ async function initializeChatPage() {
     if (!pageAlive) return
 
     void blocks.load()
+    void mutes.load()
     wireSignalR()
 
     try {
@@ -1768,6 +1889,7 @@ async function initializeChatPage() {
       if (!pageAlive) return
 
       setOnlineSnapshot(ids)
+      syncPush()
     } catch (error) {
       if (pageAlive) {
         console.warn(
@@ -1786,6 +1908,10 @@ async function initializeChatPage() {
     await session.loadMe()
     if (!pageAlive) return
 
+    // Member names are needed for the group previews ("Ali: ...").
+    await Promise.all((data || []).filter(c => c.isGroup).map(c => groups.load(c.peerId)))
+    if (!pageAlive) return
+
     setConversations(data || [])
     } catch (error) {
       if (pageAlive) {
@@ -1797,7 +1923,8 @@ async function initializeChatPage() {
     }
   if (!pageAlive) return
   routeSyncReady = true
-  await syncChatFromRoute(route.params.username)
+  if (route.params.groupId) await syncGroupFromRoute(route.params.groupId)
+  else await syncChatFromRoute(route.params.username)
 
 }
 
@@ -1850,32 +1977,50 @@ function wireSignalR() {
   signalR.onUserOffline(markOffline)
   signalR.onOnlineSnapshot(setOnlineSnapshot)
   signalR.onUserLastSeen(setLastSeen)
+  signalR.onPresenceHidden(hidePresence)
   signalR.onMessageReceived(async rawMessage => {
     const message = rawMessage as IncomingMessage
     const senderId = String(message.senderId ?? message.SenderId ?? '')
+    const groupId = String(message.groupId ?? message.GroupId ?? '') || null
+    const systemEvent = message.systemEvent ?? message.SystemEvent ?? null
 
-    if (!senderId || senderId === myId.value) return
+    // My own messages come back only as group service messages ("you added ...").
+    if (!senderId || (senderId === myId.value && !systemEvent)) return
 
-    const active = selectedUser.value?.id === senderId
+    // Messages are filed under their chat: the group, or the sender of a private message.
+    const chatId = groupId ?? senderId
+    if (groupId) {
+      markGroupChat(groupId)
+      const group = await groups.load(groupId)
+      if (group) ensureGroupConversation(group)
+    }
+
+    const active = selectedUser.value?.id === chatId
     const sessionId = chatSessionId
 
-    upsertIncomingConversation(senderId, message, !active)
-    void ensurePeerCached(senderId)
+    upsertIncomingConversation(chatId, message, !active && !systemEvent)
+    if (!groupId) void ensurePeerCached(senderId)
+    if (!systemEvent) void notifyIncoming(chatId, senderId, message, active)
 
     if (!active) {
       const cipher = encryptedBodyOf(message)
-      if (cipher) void refreshConversationPreview(senderId, cipher, senderId)
+      const conversation = conversations.value.find(item => item.peerId === chatId)
+      if (systemEvent && conversation) {
+        conversation.lastPreview = describeSystemEvent(systemEvent, senderId, id => memberLabel(chatId, id, true))
+      } else if (cipher) {
+        void refreshConversationPreview(chatId, cipher, senderId)
+      }
       return
     }
 
     try {
       const ui = await mapServerMessage(message, {
         myId: myId.value,
-        open: (raw, from) => openMessage(raw, from, senderId),
+        open: (raw, from) => openMessage(raw, from, chatId),
         fallbackSentAt: new Date().toISOString()
       })
 
-      if (!isActiveChat(sessionId, senderId)) return
+      if (!isActiveChat(sessionId, chatId)) return
 
       if (ui.forwardedFromSenderId) {
         void cacheForwardName(ui.forwardedFromSenderId)
@@ -1885,7 +2030,7 @@ function wireSignalR() {
       const shouldStick = !!element && isNearBottom(element)
 
       messages.value.push(ui)
-      updateIncomingPreview(senderId, ui)
+      updateIncomingPreview(chatId, ui)
 
       if (ui.fileUrl && !ui.file) {
         const key = fileKey(ui)
@@ -1894,13 +2039,14 @@ function wireSignalR() {
 
       await nextTick()
 
-      if (!isActiveChat(sessionId, senderId)) return
+      if (!isActiveChat(sessionId, chatId)) return
       if (element && shouldStick) element.scrollTop = element.scrollHeight
 
       const messageId = message.messageId ?? message.MessageId ?? message.id
-      if (messageId) void markAsRead(messageId).catch(() => {})
+      if (messageId && groupId) markGroupReadWhenVisible(groupId, String(messageId))
+      else if (messageId) markReadWhenVisible(String(messageId))
     } catch (error) {
-      if (isActiveChat(sessionId, senderId)) {
+      if (isActiveChat(sessionId, chatId)) {
         console.warn('incoming message failed', error)
       }
     }
@@ -1959,9 +2105,11 @@ function wireSignalR() {
 
   signalR.onTyping(payload => {
     const senderId = String(payload.SenderId || '')
+    const chatId = payload.GroupId || senderId
 
-    if (!senderId || senderId !== selectedUser.value?.id) return
+    if (!senderId || chatId !== selectedUser.value?.id) return
 
+    typingName.value = payload.GroupId ? memberLabel(payload.GroupId, senderId) : ''
     isPeerTyping.value = true
 
     if (typingTimer !== null) {
@@ -1976,8 +2124,9 @@ function wireSignalR() {
 
   signalR.onTypingStopped(payload => {
     const senderId = String(payload.SenderId || '')
+    const chatId = payload.GroupId || senderId
 
-    if (!senderId || senderId !== selectedUser.value?.id) return
+    if (!senderId || chatId !== selectedUser.value?.id) return
 
     clearPeerTyping()
   })
@@ -2020,6 +2169,27 @@ function wireSignalR() {
 })
 
   signalR.onPinsChanged(payload => pins.onPinsChanged(payload))
+  signalR.onMutesChanged(payload => mutes.apply(String(payload.chatId), payload.muted))
+  signalR.onGroupUpdated(payload => { void onGroupUpdated(payload.groupId) })
+  signalR.onGroupRemoved(payload => { void onGroupGone(payload.groupId) })
+  signalR.onGroupRead(payload => {
+    if (payload.readerId === myId.value) {
+      // Read on another of my devices.
+      const conversation = conversations.value.find(item => item.peerId === payload.groupId)
+      if (conversation) conversation.unreadCount = 0
+      void clearChatNotifications(chatTag(payload.groupId))
+      return
+    }
+    if (selectedUser.value?.id !== payload.groupId) return
+    // Server times may come without a zone; toDateSafe reads them as UTC.
+    const upTo = toDateSafe(payload.readUpToUtc)?.getTime() ?? 0
+    for (const message of messages.value) {
+      if (message.senderId === myId.value && message.status === 'delivered' && (toDateSafe(message.sentAt)?.getTime() ?? Infinity) <= upTo) {
+        message.status = 'read'
+      }
+    }
+  })
+  signalR.onSessionTerminated(() => { void onSessionTerminated() })
   signalR.onBlockListChanged(() => { void blocks.load() })
 
   signalR.onIdentityKeyChanged(payload => {
@@ -2030,6 +2200,246 @@ function wireSignalR() {
     handleReactionUpdated
   )
   }
+
+// ---------------- Notifications, muted chats, read receipts ----------------
+
+/** Same tag as push notifications from the server, so one chat never shows two notifications. */
+function chatTag(chatId: string) {
+  return 'chat-' + chatId.replace(/-/g, '')
+}
+
+async function toggleMute() {
+  const id = selectedUser.value?.id
+  if (!id) return
+  try {
+    await mutes.toggle(id)
+  } catch (error) {
+    showSendError(error)
+  }
+}
+
+/** Keeps this browser's push subscription in line with the notification settings. */
+function syncPush() {
+  void syncPushSubscription({
+    enabled: preferences.prefs.notifications,
+    showSender: preferences.prefs.notificationPreview,
+    lang: locale.value === 'en' ? 'en' : 'fa'
+  }).catch(error => console.warn('push subscription failed', error))
+}
+
+watch([() => preferences.prefs.notifications, () => preferences.prefs.notificationPreview, locale], () => {
+  if (pageAlive) syncPush()
+})
+
+/**
+ * Sound for a message outside the open chat; a system notification as well while the page is
+ * hidden. Muted chats stay silent.
+ */
+async function notifyIncoming(chatId: string, senderId: string, message: IncomingMessage, active: boolean) {
+  const prefs = preferences.prefs
+  if (!prefs.notifications || mutes.isMuted(chatId)) return
+  const isGroup = chatId !== senderId
+
+  const visible = document.visibilityState === 'visible'
+  if (visible && active) return
+  if (prefs.notificationSound) playNotificationSound()
+  if (visible) return
+
+  const meta = isGroup ? null : await ensurePeerCached(senderId)
+  const username = meta?.username || ''
+  let title = 'PhiChat'
+  let body = t('chat.newMessage')
+
+  if (prefs.notificationPreview) {
+    title = isGroup
+      ? groups.details[chatId]?.title || title
+      : displayById[senderId] || meta?.displayName || (username ? '@' + username : title)
+    const cipher = encryptedBodyOf(message)
+    if (cipher) {
+      try {
+        const opened = await openMessage(cipher, senderId, chatId)
+        if (opened.state === 'ok') {
+          const text = opened.envelope.text && opened.envelope.text !== EMPTY_MSG_MARKER ? opened.envelope.text : ''
+          body = previewText({ plainText: text, fileUrl: message.fileUrl ?? null, file: opened.envelope.file ?? null }) || body
+        }
+      } catch {}
+    }
+    if (isGroup) body = `${isolate(memberLabel(chatId, senderId))}: ${body}`
+  }
+
+  await showMessageNotification({
+    title,
+    body,
+    tag: chatTag(chatId),
+    url: isGroup ? `/g/${chatId}` : username ? `/u/${username}` : '/chat'
+  })
+}
+
+/** Read receipts go out only while the chat is actually visible; otherwise they wait for the user to come back. */
+const pendingReads = new Set<string>()
+
+function markReadWhenVisible(messageId: string) {
+  if (document.visibilityState === 'visible') void markAsRead(messageId).catch(() => {})
+  else pendingReads.add(messageId)
+}
+
+/** Newest message to mark as read per group, waiting for the page to become visible. */
+const pendingGroupReads = new Map<string, string>()
+
+function markGroupReadWhenVisible(groupId: string, messageId: string) {
+  if (document.visibilityState === 'visible') void markGroupRead(groupId, messageId).catch(() => {})
+  else pendingGroupReads.set(groupId, messageId)
+}
+
+function flushPendingReads() {
+  if (document.visibilityState !== 'visible') return
+  const ids = [...pendingReads]
+  pendingReads.clear()
+  ids.forEach(id => void markAsRead(id).catch(() => {}))
+  for (const [groupId, messageId] of pendingGroupReads) void markGroupRead(groupId, messageId).catch(() => {})
+  pendingGroupReads.clear()
+  if (selectedUser.value) void clearChatNotifications(chatTag(selectedUser.value.id))
+}
+
+/** This session was ended from another device: sign out here and forget the encryption key. */
+async function onSessionTerminated() {
+  pageAlive = false
+  try { await disconnectFromChatHub() } catch {}
+  await logout()
+  session.reset()
+  e2ee.resetState()
+  mutes.reset()
+  groups.reset()
+  await router.replace({ path: '/login', query: { ended: '1' } })
+}
+
+// ---------------- Groups ----------------
+
+/** A member's name in a group ("you" for me when `youForMe`); also works for people who left. */
+function memberLabel(groupId: string, userId: string, youForMe = false): string {
+  if (youForMe && userId === myId.value) return t('groups.you')
+  // Current members, then people seen in the group before (e.g. removed), then the peer directory.
+  const member = groups.member(groupId, userId) ?? groups.known(userId)
+  if (member) return member.displayName || '@' + member.username
+  if (!displayById[userId]) void ensurePeerCached(userId)
+  return displayById[userId] || conversations.value.find(c => c.peerId === userId)?.displayName || t('common.unknown')
+}
+
+/** Sender names on incoming messages and service message texts in the open group. */
+const groupRendering = computed(() => {
+  const chat = selectedUser.value
+  if (!chat?.isGroup) return null
+  const groupId = chat.id
+  return {
+    senderName: (userId: string) => memberLabel(groupId, userId),
+    senderColor: (userId: string) => colorFromString(userId),
+    systemText: (message: UiMessage) => describeSystemEvent(message.systemEvent, message.senderId, id => memberLabel(groupId, id, true))
+  }
+})
+
+/** Members of the open group whose encryption key changed since we last saw it. */
+const changedMembers = computed(() => {
+  const chat = selectedUser.value
+  if (!chat?.isGroup) return []
+  return (groups.details[chat.id]?.members ?? []).filter(m => m.userId !== myId.value && e2ee.keyChanged[m.userId])
+})
+
+const changedMemberNames = computed(() => changedMembers.value.map(m => m.displayName || '@' + m.username).join(', '))
+
+async function acknowledgeKeyChange() {
+  const chat = selectedUser.value
+  if (!chat) return
+  if (!chat.isGroup) {
+    await e2ee.trustPeerKey(chat.id, false)
+    return
+  }
+  await Promise.all(changedMembers.value.map(m => e2ee.trustPeerKey(m.userId, false)))
+}
+
+/** Adds the group to the chat list if it is not there yet (e.g. we were just added). */
+function ensureGroupConversation(group: GroupDetails) {
+  markGroupChat(group.id)
+  displayById[group.id] = group.title
+  avatarById[group.id] = group.avatarUrl ?? null
+
+  const existing = conversations.value.find(item => item.peerId === group.id)
+  if (existing) {
+    existing.displayName = group.title
+    existing.avatarUrl = group.avatarUrl ?? null
+    existing.memberCount = group.members.length
+    return
+  }
+
+  conversations.value.unshift({
+    peerId: group.id,
+    isGroup: true,
+    memberCount: group.members.length,
+    username: '',
+    displayName: group.title,
+    avatarUrl: group.avatarUrl ?? null,
+    unreadCount: 0,
+    lastSentAt: new Date().toISOString(),
+    lastFileUrl: null,
+    lastPreview: null
+  })
+}
+
+async function onGroupUpdated(groupId: string) {
+  // Members may have changed: the next message must be encrypted for the new list.
+  e2ee.invalidateGroupKeys(groupId)
+  const group = await groups.load(groupId, true)
+  if (group) ensureGroupConversation(group)
+  else await onGroupGone(groupId)
+}
+
+/** We left, were removed, or the group was deleted. */
+async function onGroupGone(groupId: string) {
+  groups.forget(groupId)
+  e2ee.invalidateGroupKeys(groupId)
+  conversations.value = conversations.value.filter(item => item.peerId !== groupId)
+  if (selectedUser.value?.id === groupId) {
+    showGroupInfo.value = false
+    await closeChat()
+  }
+}
+
+async function onLeftGroup(groupId: string) {
+  showGroupInfo.value = false
+  await onGroupGone(groupId)
+}
+
+/** People to put in a group: contacts and private-chat partners. */
+const groupCandidates = computed<PickablePerson[]>(() => {
+  const people = new Map<string, PickablePerson>()
+  for (const contact of myContacts.value) {
+    const id = String(contact.contactId ?? contact.userId ?? contact.id ?? '')
+    if (id && id !== myId.value) people.set(id, { id, username: contact.username, displayName: contact.displayName, avatarUrl: contact.avatarUrl })
+  }
+  for (const conversation of conversations.value) {
+    if (conversation.isGroup || conversation.peerId === myId.value || people.has(conversation.peerId) || !conversation.username) continue
+    people.set(conversation.peerId, {
+      id: conversation.peerId,
+      username: conversation.username,
+      displayName: displayById[conversation.peerId] ?? conversation.displayName,
+      avatarUrl: avatarById[conversation.peerId] ?? conversation.avatarUrl
+    })
+  }
+  return [...people.values()]
+})
+
+async function openNewGroup() {
+  try {
+    myContacts.value = await getMyContacts()
+  } catch {}
+  showNewGroup.value = true
+}
+
+async function onGroupCreated(group: GroupDetails) {
+  showNewGroup.value = false
+  groups.set(group)
+  ensureGroupConversation(group)
+  await openChat({ id: group.id, username: '', isGroup: true }, { resetStack: true })
+}
 
 async function handleUserSelect(user: ChatTarget) {
   const sessionId = ++chatSessionId
@@ -2074,7 +2484,18 @@ async function handleUserSelect(user: ChatTarget) {
       .map(serverMessageId)
       .filter((id): id is string => Boolean(id))
 
-    void Promise.allSettled(unreadIds.map(id => markAsRead(id)))
+    unreadIds.forEach(markReadWhenVisible)
+
+    // In a group, reading the newest unread message moves my read position past all of them.
+    if (user.isGroup) {
+      const newest = [...page.source].reverse().find(message =>
+        !serverMessageIsDeleted(message) &&
+        serverSenderId(message) !== myId.value &&
+        serverMessageIsUnread(message))
+      const newestId = newest ? serverMessageId(newest) : ''
+      if (newestId) markGroupReadWhenVisible(user.id, newestId)
+    }
+    void clearChatNotifications(chatTag(user.id))
   } catch (error) {
     if (isActiveChat(sessionId, user.id)) {
       console.warn('load conversation failed', error)

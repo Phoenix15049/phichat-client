@@ -30,6 +30,9 @@
           <div v-if="user?.lastSeenUtc" class="text-xs text-muted mt-1">
             {{ $t('profile.lastSeen', { when: formatAbsolute(user.lastSeenUtc) }) }}
           </div>
+          <div v-else-if="user?.lastSeenHidden" class="text-xs text-muted mt-1">
+            {{ $t('chat.lastSeenRecently') }}
+          </div>
         </div>
 
         <button

@@ -4,6 +4,7 @@ import {
   createIdentityKey,
   getActiveIdentityKey,
   getErrorCode,
+  getGroupMemberKeys,
   getIdentityKeyById,
   getMyIdentityKey,
   replaceIdentityKey,
@@ -12,11 +13,14 @@ import {
 } from '../services/api'
 import { deleteIdentity, deleteOtherIdentities, loadIdentity, saveIdentity } from '../services/e2ee/keyStore'
 import { openMessage, parseMessage, sealMessage, type MessageEnvelope } from '../services/e2ee/messageCodec'
+import { isGroupMessage, openGroupMessage, parseGroupMessage, sealGroupMessage } from '../services/e2ee/groupCodec'
+import { isGroupChat } from '../services/chatKinds'
 import {
   createBackup,
   deriveConversationKey,
   E2eeError,
   generateIdentity,
+  GROUP_KEY_WRAP_INFO,
   importPeerPublicKey,
   openBackup,
   safetyNumber,
@@ -44,8 +48,10 @@ export type OpenedMessage =
 
 type PeerKey = { keyId: string; publicKeySpki: string; publicKey: CryptoKey }
 
+type GroupMemberKey = { userId: string; key: PeerKey }
+
 /** Errors that mean "encrypt again with fresh keys and resend". */
-const STALE_KEY_CODES = new Set(['recipient_key_changed'])
+const STALE_KEY_CODES = new Set(['recipient_key_changed', 'group_keys_changed'])
 
 export const MIN_PASSPHRASE_LENGTH = 8
 
@@ -65,6 +71,9 @@ export const useE2eeStore = defineStore('e2ee', () => {
   const activePeerKeys = new Map<string, Promise<PeerKey | null>>()
   const peerKeysById = new Map<string, Promise<PeerKey>>()
   const conversationKeys = new Map<string, Promise<CryptoKey>>()
+  /** Pairwise keys that wrap group message keys (another HKDF label than private chats). */
+  const wrapKeys = new Map<string, Promise<CryptoKey>>()
+  const groupMemberKeys = new Map<string, Promise<GroupMemberKey[]>>()
 
   let readyWaiters: Array<() => void> = []
 
@@ -84,6 +93,8 @@ export const useE2eeStore = defineStore('e2ee', () => {
     activePeerKeys.clear()
     peerKeysById.clear()
     conversationKeys.clear()
+    wrapKeys.clear()
+    groupMemberKeys.clear()
     for (const id of Object.keys(keyChanged)) delete keyChanged[id]
     for (const id of Object.keys(peerMissingKey)) delete peerMissingKey[id]
   }
@@ -288,8 +299,50 @@ export const useE2eeStore = defineStore('e2ee', () => {
     return key
   }
 
+  function wrapKey(peer: PeerKey): Promise<CryptoKey> {
+    const me = identity.value
+    if (!me) return Promise.reject(new E2eeError('not_ready'))
+
+    const cacheKey = `${me.keyId}:${peer.keyId}`
+    let key = wrapKeys.get(cacheKey)
+    if (!key) {
+      key = deriveConversationKey(me.privateKey, peer.publicKey, me.keyId, peer.keyId, GROUP_KEY_WRAP_INFO)
+      wrapKeys.set(cacheKey, key)
+      key.catch(() => wrapKeys.delete(cacheKey))
+    }
+    return key
+  }
+
+  /** The current keys of a group's members (cached until the group or a key changes). */
+  function getGroupKeys(groupId: string, refresh = false): Promise<GroupMemberKey[]> {
+    const cached = groupMemberKeys.get(groupId)
+    if (cached && !refresh) return cached
+
+    const request = (async () => {
+      const dtos = await getGroupMemberKeys(groupId)
+      return Promise.all(dtos.map(async dto => {
+        const key = { keyId: dto.keyId, publicKeySpki: dto.publicKey, publicKey: await importPeerPublicKey(dto.publicKey, dto.keyId) }
+        // Members are trusted on first use like private-chat peers; a changed key is flagged.
+        rememberPeerKey(dto.userId, key)
+        return { userId: dto.userId, key }
+      }))
+    })()
+
+    groupMemberKeys.set(groupId, request)
+    request.catch(() => groupMemberKeys.delete(groupId))
+    return request
+  }
+
+  /** Forgets a group's member keys, e.g. after members joined or left. */
+  function invalidateGroupKeys(groupId?: string) {
+    if (groupId) groupMemberKeys.delete(groupId)
+    else groupMemberKeys.clear()
+  }
+
   /** Called when the server announces a new key for `changedUserId`. */
   async function onIdentityKeyChanged(changedUserId: string, keyId: string) {
+    invalidateGroupKeys()
+
     if (changedUserId === userId.value) {
       // Replaced on another device: this device's key is now useless.
       if (identity.value && identity.value.keyId !== keyId) await init(userId.value)
@@ -302,8 +355,25 @@ export const useE2eeStore = defineStore('e2ee', () => {
 
   // ---------- messages ----------
 
-  /** Encrypts `envelope` for `peerId`'s current key. */
+  /** Encrypts `envelope` for every current member of the group. */
+  async function sealGroup(groupId: string, envelope: MessageEnvelope, refresh = false): Promise<string> {
+    const me = identity.value
+    if (!me || status.value !== 'ready') throw new E2eeError('not_ready')
+
+    const members = await getGroupKeys(groupId, refresh)
+    // Like a private chat, nothing is sent to a changed key until the user accepts it.
+    if (members.some(member => member.userId !== userId.value && keyChanged[member.userId])) {
+      throw new E2eeError('member_key_changed')
+    }
+
+    const recipients = await Promise.all(members.map(async member => ({ keyId: member.key.keyId, wrapKey: await wrapKey(member.key) })))
+    return sealGroupMessage(groupId, me.keyId, recipients, envelope)
+  }
+
+  /** Encrypts `envelope` for `peerId`'s current key (or for the members when it is a group). */
   async function seal(peerId: string, envelope: MessageEnvelope, refresh = false): Promise<string> {
+    if (isGroupChat(peerId)) return sealGroup(peerId, envelope, refresh)
+
     const me = identity.value
     if (!me || status.value !== 'ready') throw new E2eeError('not_ready')
 
@@ -337,6 +407,8 @@ export const useE2eeStore = defineStore('e2ee', () => {
    * header must be mine, so a message cannot be re-attributed to the other side.
    */
   async function open(raw: string | null | undefined, senderId: string, peerId: string): Promise<OpenedMessage> {
+    if (isGroupMessage(raw)) return openGroup(raw!, senderId, peerId)
+
     const header = parseMessage(raw)
     if (!header) return { state: 'legacy' }
 
@@ -355,6 +427,25 @@ export const useE2eeStore = defineStore('e2ee', () => {
       return { state: 'ok', envelope }
     } catch (error) {
       console.warn('decrypt failed', error)
+      return { state: 'failed' }
+    }
+  }
+
+  /** Decrypts a message of group `groupId` sent by `senderId`. */
+  async function openGroup(raw: string, senderId: string, groupId: string): Promise<OpenedMessage> {
+    const header = parseGroupMessage(raw)
+    const me = identity.value
+    if (!header || !me) return { state: 'failed' }
+
+    // Not wrapped for this key: sent before this account's key was replaced.
+    if (!header.wrapped.has(me.keyId)) return { state: 'old-key' }
+
+    try {
+      const sender = await getPeerKeyById(senderId, header.senderKeyId)
+      const envelope = await openGroupMessage(groupId, header, me.keyId, await wrapKey(sender))
+      return { state: 'ok', envelope }
+    } catch (error) {
+      console.warn('group decrypt failed', error)
       return { state: 'failed' }
     }
   }
@@ -398,6 +489,8 @@ export const useE2eeStore = defineStore('e2ee', () => {
 
     getActivePeerKey,
     onIdentityKeyChanged,
+    invalidateGroupKeys,
+    getGroupKeys,
 
     seal,
     sealAndSend,

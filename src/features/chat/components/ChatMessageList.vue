@@ -14,9 +14,9 @@
           :key="messageKey(msg,index)"
           class="relative"
           :class="[mine(msg)?'text-end':'text-start',isGroupStart(index)?'mt-2.5':'mt-0.5',selectionMode?'cursor-pointer ps-7':'',hoverReactFor===(msg.id||msg.clientId)?'':'msg-row-lazy']"
-          @click.stop="actions.onRowClick($event,msg)"
-          @contextmenu.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
-          @mousedown.left="actions.onRowMouseDown($event,msg)"
+          @click.stop="!msg.systemEvent&&actions.onRowClick($event,msg)"
+          @contextmenu.prevent="!selectionMode&&chatActive&&!msg.systemEvent?actions.openMenu($event,msg):undefined"
+          @mousedown.left="!msg.systemEvent&&actions.onRowMouseDown($event,msg)"
           @mouseenter="actions.onRowMouseEnter(msg)"
         >
           <div v-if="showDayHeader(index)" class="flex justify-center my-3">
@@ -25,6 +25,12 @@
             </span>
           </div>
 
+          <!-- Group service message: "Ali added Sara" -->
+          <div v-if="msg.systemEvent" class="flex justify-center my-1.5 px-6">
+            <span class="system-chip"><bdi>{{ group?.systemText(msg) }}</bdi></span>
+          </div>
+
+          <template v-else>
           <div
             v-if="selectionMode"
             class="absolute bottom-2 start-0 z-10"
@@ -45,6 +51,13 @@
             @mouseenter="actions.onBubbleHoverStart(msg)"
             @mouseleave="actions.onBubbleHoverEnd"
           >
+            <div
+              v-if="group&&!mine(msg)&&isGroupStart(index)"
+              class="mb-0.5 text-[13px] font-semibold truncate"
+              :class="isMediaOnly(msg)?'px-1 pb-1':''"
+              :style="{ color: group.senderColor(msg.senderId) }"
+            ><bdi>{{ group.senderName(msg.senderId) }}</bdi></div>
+
             <div v-if="msg.forwardedFromSenderId" class="mb-0.5 text-[12.5px] font-medium text-accent" :class="isMediaOnly(msg)?'px-1 pb-1':''">
               {{ $t('chat.forwardedFrom') }}
               <button
@@ -268,6 +281,7 @@
               </div>
             </Transition>
           </div>
+          </template>
         </div>
       </TransitionGroup>
     </div>
@@ -461,6 +475,12 @@ const props=defineProps<{
   bindMessageElement:(key:string)=>(element:Element|ComponentPublicInstance|null)=>void
   setScrollElement:(element:HTMLElement|null)=>void
   setMenuElement:(element:HTMLElement|null)=>void
+  /** Set in group chats: sender names on incoming messages and service message texts. */
+  group?:{
+    senderName:(userId:string)=>string
+    senderColor:(userId:string)=>string
+    systemText:(message:UiMessage)=>string
+  }|null
 }>()
 
 let scrollElement:HTMLElement|null=null
@@ -540,7 +560,7 @@ function mine(message:UiMessage){
 
 /** Consecutive messages of one sender on one day form a group (tighter spacing, one tail). */
 function sameGroup(a?:UiMessage,b?:UiMessage){
-  return !!a&&!!b&&a.senderId===b.senderId&&dayKey(a.sentAt)===dayKey(b.sentAt)
+  return !!a&&!!b&&!a.systemEvent&&!b.systemEvent&&a.senderId===b.senderId&&dayKey(a.sentAt)===dayKey(b.sentAt)
 }
 
 function isGroupStart(index:number){
@@ -658,6 +678,10 @@ function showDayHeader(index:number){
 
 <style scoped>
 @reference "../../../assets/tailwind.css";
+
+.system-chip {
+  @apply inline-block max-w-full rounded-full bg-surface/85 backdrop-blur px-3 py-1 text-[12.5px] text-muted shadow-sm text-center;
+}
 
 .msg-text{
   font-size:var(--chat-font-size);

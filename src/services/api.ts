@@ -4,6 +4,7 @@ import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
 import { getToken, clearAuthLocal, clearToken, isJwtExpired, setToken } from './auth'
 import { i18n, t } from '../i18n'
 import { deleteOtherIdentities } from './e2ee/keyStore'
+import { isGroupChat } from './chatKinds'
 import type { KeyBackup } from './e2ee/primitives'
 import type {
   Contact,
@@ -236,6 +237,11 @@ export async function logout() {
   try {
     await API.post('/auth/logout')
   } catch {}
+  // The server drops the session's push subscription; drop the browser side too.
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration()
+    await (await registration?.pushManager.getSubscription())?.unsubscribe()
+  } catch {}
   clearAuthLocal()
   await deleteOtherIdentities(null)
 }
@@ -345,7 +351,11 @@ export async function getConversations() {
   const { data } = await API.get('/messages/conversations')
 
   return (data as Array<{
+    /** The other user, or the group id when `isGroup`. */
     peerId: string
+    isGroup?: boolean
+    memberCount?: number
+    lastSystemEvent?: string | null
     peerUsername: string
     peerDisplayName?: string
     peerAvatarUrl?: string
@@ -366,7 +376,9 @@ export async function getConversationPaged(
   const params: { pageSize: number; beforeId?: string } = { pageSize }
   if (beforeId) params.beforeId = beforeId
 
-  const { data } = await API.get(`/messages/with-paged/${userId}`, { params })
+  // `userId` is the chat id: the other user, or a group.
+  const path = isGroupChat(userId) ? `/messages/group/${userId}/paged` : `/messages/with-paged/${userId}`
+  const { data } = await API.get(path, { params })
   const items = (data?.items ?? data?.Items ?? []) as ServerMessage[]
   const first = items[0]
 
@@ -433,7 +445,8 @@ export type PinnedMessageItem = {
 
 /** Pinned messages of the conversation with `peerId`, newest pin first. */
 export async function getPinnedMessages(peerId: string): Promise<PinnedMessageItem[]> {
-  return (await API.get<PinnedMessageItem[]>(`/messages/pinned/${peerId}`)).data
+  const path = isGroupChat(peerId) ? `/messages/group/${peerId}/pinned` : `/messages/pinned/${peerId}`
+  return (await API.get<PinnedMessageItem[]>(path)).data
 }
 
 export async function pinMessage(messageId: string) {
@@ -488,7 +501,165 @@ export async function uploadAvatar(formData: FormData): Promise<string> {
 }
 
 export async function sendMessageWithFileFD(fd: FormData) {
+  // Attachments are addressed by chat id; a group goes in the groupId field.
+  const chatId = fd.get('receiverId')
+  if (typeof chatId === 'string' && isGroupChat(chatId)) {
+    fd.delete('receiverId')
+    fd.append('groupId', chatId)
+  }
   return API.post('/messages/with-file', fd, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
+}
+
+// ---------------- Privacy, sessions, muted chats, push ----------------
+
+export type LastSeenVisibility = 'everyone' | 'contacts' | 'nobody'
+
+export type PrivacySettings = {
+  lastSeen: LastSeenVisibility
+  readReceipts: boolean
+}
+
+export async function getPrivacySettings(): Promise<PrivacySettings> {
+  return (await API.get<PrivacySettings>('/settings/privacy')).data
+}
+
+export async function updatePrivacySettings(settings: PrivacySettings) {
+  await API.put('/settings/privacy', settings)
+}
+
+export type ActiveSession = {
+  id: string
+  deviceName?: string | null
+  ipAddress?: string | null
+  startedAtUtc: string
+  lastActiveAtUtc: string
+  isCurrent: boolean
+}
+
+export async function getSessions(): Promise<ActiveSession[]> {
+  return (await API.get<ActiveSession[]>('/sessions')).data
+}
+
+export async function endSession(id: string) {
+  await API.delete(`/sessions/${id}`)
+}
+
+export async function endOtherSessions() {
+  await API.delete('/sessions/others')
+}
+
+/** Ids of muted chats (the other user's id for private chats). */
+export async function getMutedChats(): Promise<string[]> {
+  return (await API.get<string[]>('/settings/mutes')).data.map(String)
+}
+
+export async function muteChat(chatId: string) {
+  await API.put(`/settings/mutes/${chatId}`)
+}
+
+export async function unmuteChat(chatId: string) {
+  await API.delete(`/settings/mutes/${chatId}`)
+}
+
+export async function getPushPublicKey(): Promise<string> {
+  return (await API.get<{ publicKey: string }>('/push/key')).data.publicKey
+}
+
+export type PushSubscriptionPayload = {
+  endpoint: string
+  p256dh: string
+  auth: string
+  lang: 'fa' | 'en'
+  showSender: boolean
+}
+
+export async function savePushSubscription(payload: PushSubscriptionPayload) {
+  await API.post('/push/subscriptions', payload)
+}
+
+export async function deletePushSubscription(endpoint: string) {
+  await API.delete('/push/subscriptions', { data: { endpoint } })
+}
+
+// ---------------- Groups ----------------
+
+export type GroupRole = 'owner' | 'admin' | 'member'
+
+export type GroupMemberItem = {
+  userId: string
+  username: string
+  displayName?: string | null
+  avatarUrl?: string | null
+  role: GroupRole
+  joinedAtUtc: string
+}
+
+export type GroupDetails = {
+  id: string
+  title: string
+  description?: string | null
+  avatarUrl?: string | null
+  createdAtUtc: string
+  myRole: GroupRole
+  members: GroupMemberItem[]
+}
+
+function withAbsoluteGroup(group: GroupDetails): GroupDetails {
+  return {
+    ...group,
+    avatarUrl: group.avatarUrl ? toAbsoluteServerUrl(group.avatarUrl) : null,
+    members: group.members.map(m => (m.avatarUrl ? { ...m, avatarUrl: toAbsoluteServerUrl(m.avatarUrl) } : m))
+  }
+}
+
+export async function createGroup(title: string, memberIds: string[]): Promise<GroupDetails> {
+  return withAbsoluteGroup((await API.post<GroupDetails>('/groups', { title, memberIds })).data)
+}
+
+export async function getGroup(groupId: string): Promise<GroupDetails> {
+  return withAbsoluteGroup((await API.get<GroupDetails>(`/groups/${groupId}`)).data)
+}
+
+export async function updateGroup(groupId: string, payload: { title: string; description?: string | null }) {
+  await API.put(`/groups/${groupId}`, payload)
+}
+
+export async function uploadGroupAvatar(groupId: string, file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await API.post<{ url: string }>(`/groups/${groupId}/avatar`, form)
+  return toAbsoluteServerUrl(data.url)
+}
+
+export async function removeGroupAvatar(groupId: string) {
+  await API.delete(`/groups/${groupId}/avatar`)
+}
+
+export async function addGroupMembers(groupId: string, userIds: string[]) {
+  await API.post(`/groups/${groupId}/members`, { userIds })
+}
+
+export async function removeGroupMember(groupId: string, userId: string) {
+  await API.delete(`/groups/${groupId}/members/${userId}`)
+}
+
+export async function setGroupRole(groupId: string, userId: string, role: 'admin' | 'member') {
+  await API.put(`/groups/${groupId}/members/${userId}/role`, { role })
+}
+
+export async function leaveGroup(groupId: string) {
+  await API.post(`/groups/${groupId}/leave`)
+}
+
+export async function deleteGroup(groupId: string) {
+  await API.delete(`/groups/${groupId}`)
+}
+
+export type GroupMemberKey = { userId: string; keyId: string; publicKey: string }
+
+/** The members' current identity keys, to encrypt a group message. */
+export async function getGroupMemberKeys(groupId: string): Promise<GroupMemberKey[]> {
+  return (await API.get<GroupMemberKey[]>(`/groups/${groupId}/keys`)).data
 }
