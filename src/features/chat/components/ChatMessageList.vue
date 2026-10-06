@@ -725,10 +725,14 @@ function showDayHeader(index:number){
   @apply grid place-items-center rounded-xl bg-black/5 text-muted w-[240px] h-[180px] max-w-[75vw];
 }
 
-.bubble-enter-from{opacity:0;transform:translateY(6px) scale(.98)}
-.bubble-enter-active{transition:opacity .15s ease,transform .15s ease}
+/* New messages rise in from below their side; transform/opacity only, so nothing else waits. */
+.bubble-enter-from{opacity:0;transform:translateY(14px)}
+.bubble-enter-active{transition:opacity .2s ease,transform .24s cubic-bezier(.2,.9,.3,1.15)}
 .bubble-leave-active{transition:opacity .12s ease,transform .12s ease}
 .bubble-leave-to{opacity:0;transform:translateY(-4px) scale(.98)}
+@media (prefers-reduced-motion: reduce){
+  .bubble-enter-active,.bubble-leave-active{transition:none}
+}
 
 .fade-enter-from,.fade-scale-enter-from{opacity:0;transform:translateY(4px) scale(.98)}
 .fade-enter-active,.fade-scale-enter-active{transition:opacity .12s ease,transform .12s ease}

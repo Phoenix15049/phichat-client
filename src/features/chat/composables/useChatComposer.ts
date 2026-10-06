@@ -331,23 +331,19 @@ export function useChatComposer({
       .catch(() => {})
   }
 
-  async function finishComposerSend(
+  /**
+   * Empties the composer the moment a message is sent - before it is encrypted and uploaded - so
+   * whatever the user types next is never wiped and the same text cannot be sent twice.
+   */
+  async function clearComposerForNext(
     peerId: string
   ) {
     clearDraft(peerId)
+    replyingTo.value = null
+    text.value = ''
 
     stopTyping(peerId)
       .catch(() => {})
-
-    if (
-      selectedUser.value?.id !==
-      peerId
-    ) {
-      return
-    }
-
-    replyingTo.value = null
-    text.value = ''
 
     await nextTick()
 
@@ -355,6 +351,9 @@ export function useChatComposer({
       animate: true
     })
   }
+
+  /** Text messages leave one after another, in the order they were written. */
+  let sendQueue: Promise<unknown> = Promise.resolve()
 
   async function send() {
     const user =
@@ -413,6 +412,8 @@ export function useChatComposer({
     const preview =
       takeLinkPreview()
 
+    void clearComposerForNext(user.id)
+
     const outgoing =
       await appendOutgoingMessage(
         user.id,
@@ -432,7 +433,8 @@ export function useChatComposer({
     )
 
     // Encrypted when the attempt runs; a failed send stays in the chat with a retry button.
-    await outbox.send(outgoing.clientId, () =>
+    // Not awaited (the composer is already free), but queued so quick messages keep their order.
+    sendQueue = sendQueue.then(() => outbox.send(outgoing.clientId, () =>
       sealAndSend(
         user.id,
         { text: draft, ...(preview ? { preview } : {}) },
@@ -444,11 +446,7 @@ export function useChatComposer({
           replyId
         )
       )
-    )
-
-    await finishComposerSend(
-      user.id
-    )
+    )).catch(() => {})
   }
 
   return {

@@ -405,11 +405,19 @@ export async function deleteMessage(id: string, scope: 'me'|'all'='me') {
 }
 
 
-export async function addReaction(messageId: string, emoji: string) {
-  await API.post(`/messages/${messageId}/reactions`, { emoji });
+/** All reactions of a message after a change; `version` grows with time (newest wins). */
+export type ReactionSnapshot = {
+  messageId?: string
+  reactions: Array<{ emoji: string; count: number; userIds: string[] }>
+  version: number
 }
-export async function removeReaction(messageId: string, emoji: string) {
-  await API.delete(`/messages/${messageId}/reactions`, { params: { emoji } });
+
+/** Sets my reaction (one per person: it replaces my previous one). */
+export async function addReaction(messageId: string, emoji: string): Promise<ReactionSnapshot> {
+  return (await API.post<ReactionSnapshot>(`/messages/${messageId}/reactions`, { emoji })).data
+}
+export async function removeReaction(messageId: string, emoji: string): Promise<ReactionSnapshot> {
+  return (await API.delete<ReactionSnapshot>(`/messages/${messageId}/reactions`, { params: { emoji } })).data
 }
 
 

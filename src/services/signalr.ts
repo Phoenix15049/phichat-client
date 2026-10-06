@@ -29,12 +29,11 @@ type DeletedPayload = {
   scope: 'me' | 'all'
 }
 
+/** The full reaction list of a message after a change (see ReactionSnapshot in api.ts). */
 type ReactionPayload = {
   messageId: string
-  emoji: string
-  count: number
-  userId: string
-  action: 'added' | 'removed'
+  reactions: Array<{ emoji: string; count: number; userIds: string[] }>
+  version: number
 }
 
 export type PinsChangedPayload = {

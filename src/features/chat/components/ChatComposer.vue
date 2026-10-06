@@ -42,7 +42,7 @@
         </div>
       </Transition>
 
-      <form class="flex items-end gap-1 py-2" @submit.prevent="emit('send')">
+      <form class="flex items-end gap-1 py-2" @submit.prevent="submit">
         <!-- Emoji -->
         <div class="relative shrink-0">
           <button
@@ -146,9 +146,12 @@
           class="shrink-0 w-11 h-11 rounded-full grid place-items-center bg-accent text-white shadow-sm transition hover:bg-accent-strong active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
           :disabled="!props.canSend"
           :aria-label="$t('chat.send')"
+          @mousedown.prevent
         >
           <Check v-if="props.editing" class="w-5 h-5" />
-          <SendHorizontal v-else class="w-5 h-5 rtl:-scale-x-100" />
+          <span v-else :key="sendPulse" class="grid place-items-center" :class="sendPulse ? 'send-fly' : ''">
+            <SendHorizontal class="w-5 h-5 rtl:-scale-x-100" />
+          </span>
         </button>
 
         <!-- Hidden inputs -->
@@ -250,8 +253,18 @@ function onEnter(event: KeyboardEvent) {
   const send = preferences.prefs.sendWithEnter ? !event.shiftKey && !modifier : modifier
   if (send) {
     event.preventDefault()
-    emit('send')
+    submit()
   }
+}
+
+/** Bumped on every send: restarts the send icon's little flight. */
+const sendPulse = ref(0)
+
+function submit() {
+  if (props.canSend && !props.editing) sendPulse.value++
+  emit('send')
+  // Keep typing in place (a click on the send button must not take the focus away).
+  textarea?.focus({ preventScroll: true })
 }
 
 /** Inserts at the caret and keeps typing where the emoji went. */
@@ -314,6 +327,25 @@ function bindMediaInput(element: Element | ComponentPublicInstance | null) {
 }
 
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }
+/* The send icon flies off and comes back; transform-only, so typing never waits for it. */
+.send-fly { animation: send-fly .32s cubic-bezier(.3, .7, .3, 1); }
+@keyframes send-fly {
+  0% { transform: translateX(0) scale(1); opacity: 1; }
+  45% { transform: translateX(10px) scale(.8); opacity: 0; }
+  46% { transform: translateX(-8px) scale(.8); opacity: 0; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+:global([dir="rtl"]) .send-fly { animation-name: send-fly-rtl; }
+@keyframes send-fly-rtl {
+  0% { transform: translateX(0) scale(1); opacity: 1; }
+  45% { transform: translateX(-10px) scale(.8); opacity: 0; }
+  46% { transform: translateX(8px) scale(.8); opacity: 0; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .send-fly { animation: none; }
+}
+
 .pop-enter-active, .pop-leave-active { transition: opacity .12s ease, transform .12s ease; }
 
 .banner-enter-from, .banner-leave-to { opacity: 0; transform: translateY(4px); }
