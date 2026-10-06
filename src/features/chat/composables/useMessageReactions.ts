@@ -1,7 +1,9 @@
 import {
+  computed,
   ref,
   type Ref
 } from 'vue'
+import { usePreferencesStore } from '../../../stores/preferences'
 
 import {
   addReaction,
@@ -37,16 +39,9 @@ export function useMessageReactions({
   getMsgKey,
   closeMenu
 }: UseMessageReactionsOptions) {
-  const quickEmojis = [
-    '👍',
-    '❤️',
-    '😂',
-    '😮',
-    '😢',
-    '🔥',
-    '🙏',
-    '🎹'
-  ]
+  // Chosen in Settings > Reactions.
+  const { prefs } = usePreferencesStore()
+  const quickEmojis = computed(() => prefs.quickReactions)
 
   const reactionPickerFor =
     ref<string | null>(null)

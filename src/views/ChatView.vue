@@ -9,6 +9,7 @@
       :is-narrow="isNarrow"
       :online-ids="onlineIds"
       :muted-ids="mutes.ids"
+      :my-id="myId"
       :avatar-by-id="avatarById"
       :display-by-id="displayById"
       @open-menu="menuOpen = true"
@@ -52,6 +53,7 @@
       "
       :peer-status="peerStatus"
       :is-muted="mutes.isMuted(selectedUser?.id)"
+      :saved="isSavedChat"
       @toggle-mute="toggleMute"
       @open-profile="
         openPeerProfile
@@ -120,6 +122,7 @@
         :set-scroll-element="setMessageScrollElement"
         :set-menu-element="setMessageMenuElement"
         :group="groupRendering"
+        :hide-read-state="isSavedChat"
       />
 
       <div v-if="!selectedUser" class="absolute inset-0 grid place-items-center pointer-events-none">
@@ -227,6 +230,7 @@
       :mode="forwardPicker.mode"
       :count="forwardPicker.srcList.length"
       :conversations="conversations"
+      :my-id="myId"
       @close="forwardPicker.visible=false"
       @select="doForward"
     />
@@ -604,9 +608,13 @@ const showPeerProfile = ref(false)
 const peerProfile = ref<UserApiItem | null>(null)
 const myContacts = ref<Contact[]>([])
 
+/** The chat with oneself works as Saved Messages: a private notebook, not a conversation. */
+const isSavedChat = computed(() => !!selectedUser.value && !!myId.value && selectedUser.value.id === myId.value)
+
 const selectedLabel = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
+  if (isSavedChat.value) return t('menu.savedMessages')
   const conv = conversations.value.find(c => c.peerId === su.id)
   if (su.isGroup) return groups.details[su.id]?.title || conv?.displayName || ''
   return (conv?.displayName && conv.displayName.trim())
@@ -652,6 +660,7 @@ const {
 const peerStatus = computed(() => {
   const su = selectedUser.value
   if (!su) return ''
+  if (isSavedChat.value) return ''
   if (su.isGroup) {
     if (isPeerTyping.value && typingName.value) return t('groups.typing', { name: typingName.value })
     const members = groups.details[su.id]?.members ?? []
@@ -834,6 +843,9 @@ async function openPeerProfile() {
     showGroupInfo.value = true
     return
   }
+
+  // Saved Messages has no profile to show.
+  if (isSavedChat.value) return
 
   await openUserProfile(selectedUser.value.username)
 }
@@ -2107,7 +2119,8 @@ function wireSignalR() {
     const senderId = String(payload.SenderId || '')
     const chatId = payload.GroupId || senderId
 
-    if (!senderId || chatId !== selectedUser.value?.id) return
+    // My own typing (another of my devices in Saved Messages) is not shown.
+    if (!senderId || senderId === myId.value || chatId !== selectedUser.value?.id) return
 
     typingName.value = payload.GroupId ? memberLabel(payload.GroupId, senderId) : ''
     isPeerTyping.value = true

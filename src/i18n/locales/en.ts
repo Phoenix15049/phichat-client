@@ -1,5 +1,6 @@
 export default {
   common: {
+    done: 'Done',
     close: 'Close',
     cancel: 'Cancel',
     back: 'Back',
@@ -182,6 +183,18 @@ export default {
     comingSoon: 'Coming soon'
   },
   settings: {
+    quickReactions: 'Quick bar',
+    quickReactionsHint: 'Shown above a message when you long-press or right-click it. Tap reactions below to add them to or remove them from the bar (up to {max}).',
+    quickReactionsMax: 'The quick bar holds at most {max} reactions. Remove one first.',
+    quickReactionsMin: 'At least one reaction must stay in the quick bar.',
+    reactionList: 'All reactions',
+    reactionListHint: 'They open with the ⌄ button next to the quick bar. Numbered ones are in the quick bar.',
+    removeReactionsHint: 'Tap a reaction to remove it from the list.',
+    editReactions: 'Edit list',
+    addReaction: 'Add reaction',
+    removeReaction: 'Remove {emoji}',
+    reactionExists: 'This reaction is already in the list.',
+    resetReactions: 'Reset to defaults',
     lastSeenTitle: 'Last seen & online',
     lastSeen: {
       everyone: 'Everybody',
@@ -229,6 +242,8 @@ export default {
       appearanceHint: 'Theme, text size, bubble shape',
       general: 'General',
       generalHint: 'Language and sending',
+      reactions: 'Reactions',
+      reactionsHint: 'Quick bar and reaction list',
       notifications: 'Notifications',
       notificationsHint: 'Message alerts, sound and preview',
       privacy: 'Privacy & security',

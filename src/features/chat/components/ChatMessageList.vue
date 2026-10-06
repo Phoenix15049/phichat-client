@@ -221,10 +221,10 @@
               <span>{{ formatTime(msg.sentAt) }}</span>
 
               <span v-if="mine(msg)" class="inline-flex">
-                <CheckCheck v-if="msg.status==='read'" class="w-4 h-4" :class="isMediaOnly(msg)?'':'text-accent'"/>
-                <Check v-else-if="msg.status==='delivered'" class="w-4 h-4"/>
+                <CheckCheck v-if="!hideReadState&&msg.status==='read'" class="w-4 h-4" :class="isMediaOnly(msg)?'':'text-accent'"/>
+                <Check v-else-if="!hideReadState&&msg.status==='delivered'" class="w-4 h-4"/>
                 <AlertCircle v-else-if="msg.status==='failed'" class="w-4 h-4 text-danger" :aria-label="$t('chat.notSent')"/>
-                <Clock3 v-else class="w-3.5 h-3.5"/>
+                <Clock3 v-else-if="msg.status!=='read'&&msg.status!=='delivered'" class="w-3.5 h-3.5"/>
               </span>
             </div>
 
@@ -287,11 +287,11 @@
     </div>
   </div>
 
-  <!-- Full emoji picker for reactions -->
+  <!-- The user's reaction list -->
   <Teleport to="body">
     <div v-if="picker" class="fixed inset-0 z-[60]" @click="picker=null" @contextmenu.prevent="picker=null">
       <div class="absolute" :style="{ top: picker.y + 'px', left: picker.x + 'px' }" @click.stop>
-        <EmojiPicker autofocus @select="onPickReaction"/>
+        <ReactionPicker @select="onPickReaction"/>
       </div>
     </div>
   </Teleport>
@@ -318,7 +318,7 @@
           @click.stop
         >
           <div
-            class="absolute -top-12"
+            class="absolute -top-11"
             :class="contextMenu.pillAlign==='right'
               ?'right-0'
               :contextMenu.pillAlign==='left'?'left-0':'left-1/2 -translate-x-1/2'"
@@ -399,7 +399,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
-import EmojiPicker from '../../emoji/EmojiPicker.vue'
+import ReactionPicker from '../../emoji/ReactionPicker.vue'
 import VoiceMessage from './VoiceMessage.vue'
 
 type MaybePromise=void|Promise<void>
@@ -475,6 +475,8 @@ const props=defineProps<{
   bindMessageElement:(key:string)=>(element:Element|ComponentPublicInstance|null)=>void
   setScrollElement:(element:HTMLElement|null)=>void
   setMenuElement:(element:HTMLElement|null)=>void
+  /** Saved Messages: nobody else reads them, so no delivered/read ticks. */
+  hideReadState?:boolean
   /** Set in group chats: sender names on incoming messages and service message texts. */
   group?:{
     senderName:(userId:string)=>string
@@ -514,10 +516,11 @@ function bindMenu(element:Element|ComponentPublicInstance|null){
   props.setMenuElement(element instanceof HTMLElement?element:null)
 }
 
-// ---------- full emoji picker for reactions ----------
+// ---------- reaction list ----------
 
-const PICKER_WIDTH=344
-const PICKER_HEIGHT=400
+// 8 columns of 32px cells; at most 4 rows (32 reactions).
+const PICKER_WIDTH=8*34+16
+const PICKER_HEIGHT=4*34+16
 const picker=ref<{ msg:UiMessage; x:number; y:number }|null>(null)
 
 function openPicker(event:MouseEvent,message:UiMessage){
@@ -740,13 +743,13 @@ function showDayHeader(index:number){
 .ctx-pop-leave-to{opacity:0;transform:translateY(2px) scale(.98)}
 
 .reaction-pill{
-  @apply bg-surface/95 backdrop-blur rounded-full px-1.5 py-1 shadow-lg ring-1 ring-line flex items-center gap-0.5;
+  @apply bg-surface/95 backdrop-blur rounded-full px-1 py-0.5 shadow-lg ring-1 ring-line flex items-center gap-0.5;
 }
 .reaction-btn{
-  @apply w-9 h-9 grid place-items-center rounded-full text-[22px] leading-none hover:bg-surface-2 hover:scale-110 active:scale-95 transition;
+  @apply w-8 h-8 grid place-items-center rounded-full text-[19px] leading-none hover:bg-surface-2 hover:scale-110 active:scale-95 transition;
 }
 .reaction-more{
-  @apply w-8 h-8 grid place-items-center rounded-full text-muted hover:text-ink hover:bg-surface-2 transition;
+  @apply w-7 h-7 grid place-items-center rounded-full text-muted hover:text-ink hover:bg-surface-2 transition;
 }
 .menu-item{
   @apply w-full flex items-center gap-3 text-start px-4 py-2 text-[14px] text-ink hover:bg-surface-2 transition outline-none focus-visible:bg-surface-2;

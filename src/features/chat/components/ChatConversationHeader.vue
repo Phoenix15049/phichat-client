@@ -71,7 +71,10 @@
           @click.stop="emit('open-profile')"
         >
           <div class="relative shrink-0">
-            <div class="w-10 h-10 rounded-full overflow-hidden grid place-items-center">
+            <div v-if="props.saved" class="w-10 h-10 rounded-full grid place-items-center bg-accent text-white">
+              <Bookmark class="w-5 h-5" />
+            </div>
+            <div v-else class="w-10 h-10 rounded-full overflow-hidden grid place-items-center">
               <img v-if="props.avatarUrl" :src="props.avatarUrl" class="w-full h-full object-cover" alt="" />
               <div
                 v-else
@@ -117,7 +120,7 @@
         </button>
 
         <button
-          v-if="props.selectedUser"
+          v-if="props.selectedUser && !props.saved"
           type="button"
           class="icon-btn shrink-0"
           :title="props.isMuted ? $t('chat.unmute') : $t('chat.mute')"
@@ -135,7 +138,7 @@
 
 <script setup lang="ts">
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { ArrowLeft, Bell, BellOff, Copy, Forward, Search, Trash2, X } from 'lucide-vue-next'
+import { ArrowLeft, Bell, BellOff, Bookmark, Copy, Forward, Search, Trash2, X } from 'lucide-vue-next'
 import type { ChatUser } from '../../../types/chat'
 
 type HeaderUser = Pick<ChatUser, 'id' | 'username'>
@@ -152,6 +155,8 @@ const props = defineProps<{
   isPeerOnline: boolean
   peerStatus: string
   isMuted?: boolean
+  /** The chat with oneself (Saved Messages). */
+  saved?: boolean
 }>()
 
 const emit = defineEmits<{

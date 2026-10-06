@@ -12,7 +12,10 @@
           class="w-full text-start px-3 py-2.5 rounded-xl text-ink hover:bg-surface-2"
           @click="emit('select',conversation.peerId)"
         >
-          <bdi>{{ conversation.displayName || `@${conversation.username}` }}</bdi>
+          <span v-if="props.myId && conversation.peerId === props.myId" class="inline-flex items-center gap-1.5">
+            <Bookmark class="w-4 h-4 text-accent" />{{ $t('menu.savedMessages') }}
+          </span>
+          <bdi v-else>{{ conversation.displayName || `@${conversation.username}` }}</bdi>
         </button>
       </div>
 
@@ -24,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { Bookmark } from 'lucide-vue-next'
 import type { UiConversation } from '../../../types/chat'
 
 const props = defineProps<{
@@ -31,6 +35,7 @@ const props = defineProps<{
   mode: 'single' | 'multi'
   count: number
   conversations: UiConversation[]
+  myId?: string
 }>()
 
 const emit = defineEmits<{
