@@ -148,6 +148,26 @@
         :hide-read-state="isSavedChat"
       />
 
+      <!-- Back to the newest messages; takes no room, it floats over the end of the list -->
+      <div class="relative h-0 z-20">
+        <Transition name="jump">
+          <button
+            v-if="selectedUser && showJump"
+            type="button"
+            class="glass-panel absolute bottom-3 end-4 sm:end-5 w-11 h-11 grid place-items-center rounded-full text-muted hover:text-ink active:scale-95 transition"
+            :aria-label="$t('chat.scrollToBottom')"
+            :title="$t('chat.scrollToBottom')"
+            @click="jumpToBottom"
+          >
+            <ChevronDown class="w-6 h-6" />
+            <span
+              v-if="newBelow"
+              class="absolute -top-2 left-1/2 -translate-x-1/2 min-w-[22px] h-[22px] px-1.5 grid place-items-center rounded-full bg-accent text-white text-[12px] font-semibold tabular-nums shadow"
+            >{{ newBelow > 99 ? '99+' : newBelow }}</span>
+          </button>
+        </Transition>
+      </div>
+
       <div v-if="!selectedUser" class="absolute inset-0 grid place-items-center pointer-events-none">
         <span class="rounded-full bg-surface/85 backdrop-blur px-4 py-1.5 text-sm text-muted shadow-sm">
           {{ $t('chat.selectChat') }}
@@ -388,7 +408,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { X } from 'lucide-vue-next'
+import { ChevronDown, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 
 import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
@@ -839,6 +859,7 @@ async function appendOutgoingMessage(
     const el = scrollBox.value
 
     if (el) {
+      followBottom = true
       const smooth = isNearBottom(el, 800) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
       el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
     }
@@ -957,10 +978,55 @@ let followBottom = true
 let lastScrollTop = 0
 let contentObserver: ResizeObserver | null = null
 
+/** From this far up the way back to the newest messages is offered. */
+const JUMP_DISTANCE = 320
+const farFromBottom = ref(false)
+/** Messages that arrived below while the user was reading further up. */
+const newBelow = ref(0)
+const showJump = computed(() => farFromBottom.value || newBelow.value > 0)
+
 function trackScrollPosition(el: HTMLElement) {
   if (el.scrollTop < lastScrollTop - 2) followBottom = false
-  if (isNearBottom(el, 80)) followBottom = true
   lastScrollTop = el.scrollTop
+  farFromBottom.value = !isNearBottom(el, JUMP_DISTANCE)
+
+  if (isNearBottom(el, 80)) {
+    followBottom = true
+    if (newBelow.value) readNewBelow()
+  }
+}
+
+/** The user reached what arrived meanwhile: only now does it count as read. */
+function readNewBelow() {
+  newBelow.value = 0
+
+  const chat = selectedUser.value
+  if (!chat) return
+
+  const conversation = conversations.value.find(item => item.peerId === chat.id)
+  if (conversation) conversation.unreadCount = 0
+
+  const newest = [...messages.value].reverse().find(item => item.id && item.senderId !== myId.value && !item.systemEvent)
+  if (!newest?.id) return
+
+  if (chat.isGroup) markGroupReadWhenVisible(chat.id, newest.id)
+  else markReadWhenVisible(chat.id, newest.id)
+}
+
+function jumpToBottom() {
+  const el = scrollBox.value
+  if (!el) return
+
+  followBottom = true
+  const smooth = isNearBottom(el, 2500) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+}
+
+function resetJump() {
+  newBelow.value = 0
+  farFromBottom.value = false
+  followBottom = true
+  lastScrollTop = 0
 }
 
 function observeContentSize(el: HTMLElement | null) {
@@ -1150,6 +1216,7 @@ async function openChat(user: ChatTarget, options: OpenChatOptions = {}) {
 
 async function closeChat(syncRoute = true) {
   chatSessionId++
+  resetJump()
   if (!viewerFloating.value) viewer.value = null
   chatNavStack.value = []
   selectedUser.value = null
@@ -2240,7 +2307,10 @@ function wireSignalR() {
   signalR.onOnlineSnapshot(setOnlineSnapshot)
   signalR.onUserLastSeen(setLastSeen)
   signalR.onPresenceHidden(hidePresence)
-  signalR.onReconnected(() => scheduleSync({ messages: true }, 0))
+  signalR.onReconnected(() => {
+    sendPendingReads()
+    scheduleSync({ messages: true }, 0)
+  })
   signalR.onMessageSent(onMessageSentElsewhere)
   signalR.onChatRead(payload => {
     if (payload.readerId === myId.value) {
@@ -2272,7 +2342,8 @@ function wireSignalR() {
     const active = selectedUser.value?.id === chatId
     const sessionId = chatSessionId
 
-    upsertIncomingConversation(chatId, message, !active && !systemEvent)
+    // Read further up in the open chat, a new message is not seen yet: it counts as unread.
+    upsertIncomingConversation(chatId, message, (!active || !followBottom) && !systemEvent)
     if (!groupId) void ensurePeerCached(senderId)
     if (!systemEvent) void notifyIncoming(chatId, senderId, message, active)
 
@@ -2311,6 +2382,11 @@ function wireSignalR() {
       await nextTick()
 
       if (!isActiveChat(sessionId, chatId)) return
+
+      if (!followBottom) {
+        if (!systemEvent) newBelow.value++
+        return
+      }
 
       const messageId = message.messageId ?? message.MessageId ?? message.id
       if (messageId && groupId) markGroupReadWhenVisible(groupId, String(messageId))
@@ -2530,7 +2606,7 @@ async function syncWithServer(withMessages: boolean) {
   setConversations(data || [])
 
   // A chat that is open and being looked at has nothing unread.
-  if (chat && document.visibilityState === 'visible') {
+  if (chat && followBottom && document.visibilityState === 'visible') {
     const conversation = conversations.value.find(item => item.peerId === chat.id)
     if (conversation) conversation.unreadCount = 0
   }
@@ -2581,6 +2657,7 @@ async function mergeNewestPage(chat: ChatTarget, sessionId: number) {
         pending.fileUrl = fresh.fileUrl
       } else {
         kept.push(fresh)
+        if (!followBottom && fresh.senderId !== myId.value && !fresh.systemEvent) newBelow.value++
       }
     }
 
@@ -2588,7 +2665,7 @@ async function mergeNewestPage(chat: ChatTarget, sessionId: number) {
     messages.value = kept.sort((a, b) => time(a) - time(b))
   }
 
-  markChatSeen(chat, page.source)
+  if (followBottom) markChatSeen(chat, page.source)
 }
 
 /** Reports the newest incoming unread message of an open chat as read (everything older goes with it). */
@@ -2700,28 +2777,41 @@ async function notifyIncoming(chatId: string, senderId: string, message: Incomin
 }
 
 /** Read receipts go out only while the chat is actually visible; otherwise they wait for the user to come back. */
-/** Newest message to mark as read per private chat, waiting for the page to become visible. */
+/**
+ * Newest message to mark as read per chat. An entry stays until the server has confirmed it, so a
+ * read that fails (the connection dropped, the server restarted) is sent again, not lost.
+ */
 const pendingReads = new Map<string, string>()
-
-function markReadWhenVisible(chatId: string, messageId: string) {
-  if (document.visibilityState === 'visible') void markChatRead(chatId, messageId).catch(() => {})
-  else pendingReads.set(chatId, messageId)
-}
-
-/** Newest message to mark as read per group, waiting for the page to become visible. */
 const pendingGroupReads = new Map<string, string>()
 
+function sendPendingReads() {
+  if (document.visibilityState !== 'visible') return
+
+  const confirm = (pending: Map<string, string>, chatId: string, messageId: string) => {
+    if (pending.get(chatId) === messageId) pending.delete(chatId)
+  }
+
+  for (const [chatId, messageId] of pendingReads) {
+    markChatRead(chatId, messageId).then(() => confirm(pendingReads, chatId, messageId), () => {})
+  }
+  for (const [groupId, messageId] of pendingGroupReads) {
+    markGroupRead(groupId, messageId).then(() => confirm(pendingGroupReads, groupId, messageId), () => {})
+  }
+}
+
+function markReadWhenVisible(chatId: string, messageId: string) {
+  pendingReads.set(chatId, messageId)
+  sendPendingReads()
+}
+
 function markGroupReadWhenVisible(groupId: string, messageId: string) {
-  if (document.visibilityState === 'visible') void markGroupRead(groupId, messageId).catch(() => {})
-  else pendingGroupReads.set(groupId, messageId)
+  pendingGroupReads.set(groupId, messageId)
+  sendPendingReads()
 }
 
 function flushPendingReads() {
   if (document.visibilityState !== 'visible') return
-  for (const [chatId, messageId] of pendingReads) void markChatRead(chatId, messageId).catch(() => {})
-  pendingReads.clear()
-  for (const [groupId, messageId] of pendingGroupReads) void markGroupRead(groupId, messageId).catch(() => {})
-  pendingGroupReads.clear()
+  sendPendingReads()
   if (selectedUser.value) void clearChatNotifications(chatTag(selectedUser.value.id))
 }
 
@@ -2867,6 +2957,7 @@ async function onGroupCreated(group: GroupDetails) {
 
 async function handleUserSelect(user: ChatTarget) {
   const sessionId = ++chatSessionId
+  resetJump()
 
   selectedUser.value = user
   messages.value = []
@@ -2920,3 +3011,9 @@ function toAbsoluteFileUrl(url: string | null): string | null {
   return url ? toAbsoluteServerUrl(url) : null
 }
 </script>
+
+<style scoped>
+.jump-enter-from, .jump-leave-to { opacity: 0; transform: translateY(10px) scale(.8); }
+.jump-enter-active { transition: opacity .14s ease, transform .24s cubic-bezier(.2, 1.3, .4, 1); }
+.jump-leave-active { transition: opacity .12s ease, transform .12s ease; }
+</style>

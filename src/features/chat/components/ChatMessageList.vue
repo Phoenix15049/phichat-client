@@ -140,7 +140,7 @@
               <span>{{ unreadableNotice(msg) }}</span>
             </div>
 
-            <div v-if="album" :class="isMediaOnly(msg,album)||isFileAlbum(album)?'':'mt-1 -mx-1.5'">
+            <div v-if="album" :class="isMediaOnly(msg,album)||isFileAlbum(album)?'':'mt-1 -mx-2'">
               <ChatAlbum
                 :items="album"
                 :selection-mode="selectionMode"
@@ -152,7 +152,7 @@
               />
             </div>
 
-            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-2'">
               <img
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
@@ -166,7 +166,7 @@
               </div>
             </div>
 
-            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="isMediaOnly(msg)?'':'mt-1 -mx-2'">
               <ChatVideoThumb
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
@@ -827,7 +827,7 @@ function bubbleClasses(message:UiMessage,endIndex:number,album:UiMessage[]|null)
     classes.push('rounded-[var(--bubble-radius)]','overflow-hidden','bg-transparent')
   }else{
     classes.push(
-      'rounded-[var(--bubble-radius)]','px-3','pt-1.5','pb-1','shadow-[0_1px_1.5px_rgb(0_0_0/0.08)]',
+      'rounded-[var(--bubble-radius)]','px-3.5','pt-2','pb-1.5','min-w-[7.5rem]','shadow-[0_1px_1.5px_rgb(0_0_0/0.08)]',
       'border-solid','border-[length:var(--bubble-border)]',
       isMine?'bg-bubble-out text-bubble-out-ink border-accent/35':'bg-bubble-in text-bubble-in-ink border-line'
     )
@@ -911,7 +911,7 @@ function showDayHeader(index:number){
   @apply flex items-center justify-end gap-1 text-[11.5px] leading-none whitespace-nowrap select-none;
 }
 .meta-inline{
-  @apply mt-0.5 -me-1 text-meta;
+  @apply mt-1 text-meta;
 }
 .meta-overlay{
   @apply absolute bottom-1.5 end-1.5 rounded-full bg-black/45 px-2 py-1 text-white;

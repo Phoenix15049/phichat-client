@@ -152,6 +152,7 @@ export default {
     attach: 'Attach',
     attachMediaHint: 'Send as an album or one by one',
     attachFileHint: 'Any file, music included',
+    scrollToBottom: 'Go to the newest messages',
     attachFile: 'File',
     attachMedia: 'Photo & Video',
     writeMessage: 'Write a message…',

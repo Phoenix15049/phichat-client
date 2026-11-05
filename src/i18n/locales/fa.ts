@@ -152,6 +152,7 @@ export default {
     attach: 'پیوست',
     attachMediaHint: 'به‌صورت آلبوم یا تک‌تک',
     attachFileHint: 'هر فایلی، از جمله موزیک',
+    scrollToBottom: 'رفتن به آخرین پیام‌ها',
     attachFile: 'فایل',
     attachMedia: 'عکس و ویدیو',
     writeMessage: 'پیام خود را بنویسید…',
