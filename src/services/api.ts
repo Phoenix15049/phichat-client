@@ -1,7 +1,7 @@
 // src/services/api.ts
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { API_BASE_URL, toAbsoluteServerUrl } from '../config/server'
-import { getToken, clearAuthLocal, clearToken, isJwtExpired, setToken } from './auth'
+import { getToken, clearAuthLocal, clearDrafts, clearToken, isJwtExpired, setToken } from './auth'
 import { i18n, t } from '../i18n'
 import { deleteOtherIdentities } from './e2ee/keyStore'
 import { isGroupChat } from './chatKinds'
@@ -243,6 +243,7 @@ export async function logout() {
     await (await registration?.pushManager.getSubscription())?.unsubscribe()
   } catch {}
   clearAuthLocal()
+  clearDrafts()
   await deleteOtherIdentities(null)
 }
 

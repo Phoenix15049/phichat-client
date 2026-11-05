@@ -38,6 +38,9 @@
     --bubble-radius: 16px;
     --bubble-tail-radius: 5px;
     --bubble-border: 0px;
+    /* The chat's soft glows: barely there on the light canvas, where text sits on them. */
+    --glow-accent: 2.5%;
+    --glow-indigo: 3%;
   }
 
   :root.dark {
@@ -58,6 +61,8 @@
     --color-meta: #8ea5b3;
     --color-danger: #ff6369;
     --color-overlay: rgb(0 0 0 / 0.6);
+    --glow-accent: 11%;
+    --glow-indigo: 9%;
   }
 
   body {
@@ -136,6 +141,43 @@
 .icon-btn {
   @apply inline-grid place-items-center w-10 h-10 rounded-full text-muted
          hover:bg-surface-2 hover:text-ink transition disabled:opacity-50;
+}
+
+/* Floating menus: nearly solid, with just a hint of what is behind them. */
+.glass-panel {
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / .18),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-ink) 9%, transparent);
+}
+
+/* The airier glass of large surfaces (the side panel, the message bar). */
+.glass-soft {
+  background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  box-shadow:
+    0 14px 38px rgb(0 0 0 / .2),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-ink) 9%, transparent);
+}
+
+/* The band that marks a message jumped to (reply, pin, search); it fades by itself. */
+.msg-flash {
+  animation: msg-flash 1.6s ease-out;
+}
+@keyframes msg-flash {
+  0%, 35% { background-color: color-mix(in srgb, var(--color-accent) 20%, transparent); }
+  100% { background-color: transparent; }
+}
+
+/* The chat's backdrop: two soft glows in the brand colors over the canvas. */
+.chat-canvas {
+  background:
+    radial-gradient(55% 45% at 88% 8%, color-mix(in srgb, var(--color-accent) var(--glow-accent), transparent), transparent),
+    radial-gradient(50% 40% at 8% 92%, color-mix(in srgb, #6366f1 var(--glow-indigo), transparent), transparent),
+    var(--color-canvas);
 }
 
 /* Emoji glyphs only (picker cells, reactions). */

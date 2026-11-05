@@ -1,4 +1,4 @@
-import type { FileMeta, LinkPreviewMeta } from '../services/e2ee/messageCodec'
+import type { AlbumMeta, FileMeta, LinkPreviewMeta } from '../services/e2ee/messageCodec'
 
 export type MessageStatus = 'sending' | 'failed' | 'delivered' | 'read'
 
@@ -25,7 +25,11 @@ export type UiMessage = {
   file?: FileMeta | null
   /** Link preview made by the sender (inside the encrypted message). */
   preview?: LinkPreviewMeta | null
+  /** Set on the items of an album, which are shown together as one message. */
+  album?: AlbumMeta | null
   cipher?: CipherState
+  /** The sender used an encryption key the user never accepted for them. */
+  unknownKey?: boolean
   status?: MessageStatus
   sentAt?: string
   deliveredAtUtc?: string | null
@@ -53,6 +57,8 @@ export type UiConversation = {
   lastSentAt?: string | null
   lastFileUrl?: string | null
   lastPreview?: string | null
+  /** The last message as stored, to tell whether `lastPreview` is still right. */
+  lastCipher?: string | null
 }
 
 export type ChatUser = {
@@ -110,6 +116,10 @@ export type ServerMessage = {
 
   senderId?: string
   SenderId?: string
+  receiverId?: string | null
+  ReceiverId?: string | null
+  clientId?: string | null
+  ClientId?: string | null
 
   encryptedText?: string
   EncryptedText?: string

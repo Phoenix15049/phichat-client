@@ -8,11 +8,11 @@ import {
 } from '../features/emoji/reactions'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
-export type TextSize = 'small' | 'medium' | 'large'
 
 type Preferences = {
   theme: ThemePreference
-  textSize: TextSize
+  /** Message text size in px. */
+  textSize: number
   /** Enter sends (Shift+Enter for a new line); otherwise Ctrl/Cmd+Enter sends. */
   sendWithEnter: boolean
   /** Message bubble corner radius in px (like Telegram's "message corners"). */
@@ -40,7 +40,7 @@ export const BUBBLE_RADIUS_MAX = 24
 
 const DEFAULTS: Preferences = {
   theme: 'system',
-  textSize: 'medium',
+  textSize: 15,
   sendWithEnter: true,
   bubbleRadius: 16,
   bubbleBorder: false,
@@ -53,7 +53,17 @@ const DEFAULTS: Preferences = {
 }
 
 const BOOLEAN_KEYS = ['sendWithEnter', 'bubbleBorder', 'linkPreviews', 'notifications', 'notificationSound', 'notificationPreview'] as const
-const TEXT_SIZES: Record<TextSize, string> = { small: '14px', medium: '15px', large: '17px' }
+
+export const TEXT_SIZE_MIN = 12
+export const TEXT_SIZE_MAX = 20
+
+/** The setting used to be one of three names. */
+const OLD_TEXT_SIZES: Record<string, number> = { small: 13, medium: 15, large: 17 }
+
+function readTextSize(stored: unknown): number {
+  const size = typeof stored === 'string' ? OLD_TEXT_SIZES[stored] : Number(stored)
+  return Number.isFinite(size) ? Math.min(TEXT_SIZE_MAX, Math.max(TEXT_SIZE_MIN, Math.round(size))) : DEFAULTS.textSize
+}
 
 function load(): Preferences {
   try {
@@ -62,7 +72,7 @@ function load(): Preferences {
     const loaded: Preferences = {
       ...DEFAULTS,
       theme: ['system', 'light', 'dark'].includes(stored.theme) ? stored.theme : DEFAULTS.theme,
-      textSize: stored.textSize in TEXT_SIZES ? stored.textSize : DEFAULTS.textSize,
+      textSize: readTextSize(stored.textSize),
       bubbleRadius: Number.isFinite(radius)
         ? Math.min(BUBBLE_RADIUS_MAX, Math.max(BUBBLE_RADIUS_MIN, Math.round(radius)))
         : DEFAULTS.bubbleRadius
@@ -92,7 +102,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   function apply() {
     const root = document.documentElement
     root.classList.toggle('dark', isDark.value)
-    root.style.setProperty('--chat-font-size', TEXT_SIZES[prefs.textSize])
+    root.style.setProperty('--chat-font-size', `${prefs.textSize}px`)
     root.style.setProperty('--bubble-radius', `${prefs.bubbleRadius}px`)
     // The "tail" corner stays small, proportional to the chosen radius.
     root.style.setProperty('--bubble-tail-radius', `${Math.max(3, Math.round(prefs.bubbleRadius / 3))}px`)

@@ -30,8 +30,10 @@ export function useMessageDelete({
 }: UseMessageDeleteOptions) {
   const confirmDel = reactive<{
     visible: boolean
-    mode: 'single' | 'multi'
+    mode: 'single' | 'multi' | 'list'
     msg: UiMessage | null
+    /** The messages of 'list' mode (an album). */
+    list: UiMessage[]
     count: number
     canAll: boolean
     forAll: boolean
@@ -39,6 +41,7 @@ export function useMessageDelete({
     visible: false,
     mode: 'single',
     msg: null,
+    list: [],
     count: 0,
     canAll: false,
     forAll: false
@@ -71,6 +74,17 @@ export function useMessageDelete({
     confirmDel.forAll = false
   }
 
+  /** Asks about a whole album. */
+  function openDeleteConfirmList(list: UiMessage[]) {
+    confirmDel.visible = true
+    confirmDel.mode = 'list'
+    confirmDel.msg = null
+    confirmDel.list = list
+    confirmDel.count = list.length
+    confirmDel.canAll = list.every(isMine)
+    confirmDel.forAll = false
+  }
+
   function cancelDelete() {
     confirmDel.visible = false
   }
@@ -100,9 +114,14 @@ export function useMessageDelete({
           messages.value.splice(index, 1)
         }
       } else if (
-        confirmDel.mode === 'multi'
+        confirmDel.mode !== 'single'
       ) {
-        const ids = selectedMessages.value
+        const source =
+          confirmDel.mode === 'list'
+            ? confirmDel.list
+            : selectedMessages.value
+
+        const ids = source
           .map(message => message.id)
           .filter(
             (id): id is string => !!id
@@ -142,6 +161,7 @@ export function useMessageDelete({
     confirmDel,
     openDeleteConfirmSingle,
     openDeleteConfirmMulti,
+    openDeleteConfirmList,
     cancelDelete,
     confirmDelete
   }

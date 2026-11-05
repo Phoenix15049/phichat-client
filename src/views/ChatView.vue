@@ -1,5 +1,16 @@
 <template>
-  <div class="flex h-[100dvh] overflow-hidden bg-canvas">
+  <div class="flex flex-col h-[100dvh] overflow-hidden bg-canvas">
+  <!-- On phones the player stays visible over the chat list too. -->
+  <AudioPlayerBar
+    v-if="isNarrow"
+    :human-file-size="humanFileSize"
+    @go="goToTrack"
+    @download="track => downloadFile(track.message)"
+    @forward="onForwardTrack"
+    @select="onSelectTrack"
+    @delete="track => openDeleteConfirmSingle(track.message)"
+  />
+  <div class="flex flex-1 min-h-0">
     <ChatConversationList
       v-show="showListPane"
       :conversations="conversations"
@@ -10,14 +21,25 @@
       :online-ids="onlineIds"
       :muted-ids="mutes.ids"
       :my-id="myId"
+      :me="meProfile"
       :avatar-by-id="avatarById"
       :display-by-id="displayById"
       @open-menu="menuOpen = true"
       @select="onConvDblClick"
     />
 
-    <div class="relative flex-1 min-w-0 flex flex-col"
+    <div class="chat-canvas relative flex-1 min-w-0 flex flex-col"
      v-show="showChatPane">
+
+    <AudioPlayerBar
+      v-if="!isNarrow"
+      :human-file-size="humanFileSize"
+      @go="goToTrack"
+      @download="track => downloadFile(track.message)"
+      @forward="onForwardTrack"
+      @select="onSelectTrack"
+      @delete="track => openDeleteConfirmSingle(track.message)"
+    />
 
     <ChatConversationHeader
       :selection-mode="selectionMode"
@@ -106,6 +128,7 @@
 
       <ChatMessageList
         :messages="messages"
+        :chat-key="selectedUser?.id ?? ''"
         :my-id="myId"
         :loading-older="loadingOlder"
         :selection-mode="selectionMode"
@@ -213,6 +236,7 @@
 
       <ChatFileSendModal
         v-model:caption="pendingCaption"
+        v-model:group-items="groupFiles"
         :open="showFileModal"
         :files="pendingFiles"
         :sending="sendingFile"
@@ -245,6 +269,7 @@
     />
           
     </div>
+  </div>
   <!-- Toast -->
   <div
     v-if="toast.show"
@@ -269,10 +294,10 @@
 
     <!-- Contacts Modal -->
   <ModalSheet :open="showContacts" @close="showContacts=false">
-    <div class="p-4">
-      <div class="flex items-center justify-between mb-3">
-        <div class="text-lg font-semibold">{{ $t('contacts.title') }}</div>
-        <button class="text-muted hover:text-ink" :aria-label="$t('common.close')" @click="showContacts=false">✕</button>
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div class="text-lg font-bold text-ink">{{ $t('contacts.title') }}</div>
+        <button type="button" class="icon-btn w-8 h-8" :aria-label="$t('common.close')" @click="showContacts=false"><X class="w-5 h-5" /></button>
       </div>
       <ContactsView :inModal="true" @open-chat="onOpenChatFromContacts" />
     </div>
@@ -296,6 +321,7 @@
 
   <MediaImageViewer v-if="showImageViewer"
                   :src="viewerImageSrc" :caption="viewerCaption"
+                  :gallery="viewerGallery" :start-index="viewerIndex"
                   @close="showImageViewer=false" />
   <MediaVideoPlayer v-if="showVideoPlayer"
                   :src="playerVideoSrc" :caption="playerCaption"
@@ -357,6 +383,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 
 import ChatConversationList from '../features/chat/components/ChatConversationList.vue'
@@ -391,13 +418,13 @@ import {
   connectToChatHub,
   createChatHubSubscriptionScope,
   disconnectFromChatHub,
-  markAsRead,
+  markChatRead,
   markGroupRead,
   startTyping,
   stopTyping,
   fetchOnlineUsers
 } from '../services/signalr'
-import { isJwtExpired, getToken } from '../services/auth'
+import { getToken } from '../services/auth'
 import { toAbsoluteServerUrl } from '../config/server'
 import { useSessionStore } from '../stores/session'
 import { useE2eeStore } from '../stores/e2ee'
@@ -440,7 +467,9 @@ import { useI18n } from 'vue-i18n'
 import { isolate, normalizeUsername } from '../utils/username'
 
 import { useSecureFiles, fileKindOf } from '../features/chat/composables/useSecureFiles'
-import type { FileMeta } from '../services/e2ee/messageCodec'
+import type { AlbumMeta, FileMeta } from '../services/e2ee/messageCodec'
+import AudioPlayerBar from '../features/audio/AudioPlayerBar.vue'
+import { useAudioPlayer, type AudioTrack } from '../features/audio/useAudioPlayer'
 import { usePeerDirectory } from '../features/chat/composables/usePeerDirectory'
 import { useConversations, type IncomingMessage } from '../features/chat/composables/useConversations'
 import { useOutbox } from '../features/chat/composables/useOutbox'
@@ -487,6 +516,8 @@ const outbox = useOutbox({ messages, onError: showSendError })
 // End-to-end encryption: this account's identity key, peers' keys, encrypt / decrypt.
 const e2ee = useE2eeStore()
 const secureFiles = useSecureFiles()
+const player = useAudioPlayer()
+player.configure(secureFiles.audioUrlFor)
 
 /** Decrypts a message of the conversation with `peerId`. */
 function openMessage(raw: string, senderId: string, peerId: string) {
@@ -680,6 +711,8 @@ const peerStatus = computed(() => {
 const showImageViewer = ref(false)
 const viewerImageSrc = ref<string>('');
 const viewerCaption = ref<string>('')
+const viewerGallery = ref<Array<{ src: string; caption?: string }> | undefined>(undefined)
+const viewerIndex = ref(0)
 const showVideoPlayer = ref(false)
 const playerVideoSrc = ref<string>('');
 const playerCaption = ref<string>('')
@@ -747,6 +780,7 @@ type OutgoingMessageInput = {
   forwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
   groupId?: string | null
+  album?: AlbumMeta | null
 }
 
 async function appendOutgoingMessage(
@@ -778,8 +812,13 @@ async function appendOutgoingMessage(
       input.forwardedFromSenderId ?? null,
 
     groupId:
-      input.groupId ?? null
+      input.groupId ?? null,
+
+    album:
+      input.album ?? null
   }
+
+  outbox.track(peerId, message)
 
   if (selectedUser.value?.id !== peerId) {
     return message
@@ -824,6 +863,18 @@ function onConvDblClick(conv: UiConversation) {
 function openImage(msg: UiMessage){
   viewerImageSrc.value = secureFiles.mediaSrc(msg) || ''
   viewerCaption.value = msg.plainText || ''
+
+  // The photos of an album are browsed together.
+  const album = msg.album
+    ? messages.value
+        .filter(item => item.album?.id === msg.album?.id && fileKindOf(item) === 'image' && secureFiles.mediaSrc(item))
+        .sort((a, b) => (a.album?.index ?? 0) - (b.album?.index ?? 0))
+    : []
+  viewerGallery.value = album.length > 1
+    ? album.map(item => ({ src: secureFiles.mediaSrc(item)!, caption: item.plainText || '' }))
+    : undefined
+  viewerIndex.value = Math.max(0, album.findIndex(item => item === msg || (!!item.id && item.id === msg.id)))
+
   showImageViewer.value = true
 }
 function openVideo(msg: UiMessage){
@@ -835,6 +886,36 @@ function openVideo(msg: UiMessage){
 
 function isNearBottom(el: HTMLElement, threshold = 400) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+
+/**
+ * The list follows new content while the user stays at the bottom. Whether they do is decided by
+ * how they scroll, not by the distance at the moment: a large album or several messages in a row
+ * would otherwise outrun a scroll that is still animating.
+ */
+let followBottom = true
+let lastScrollTop = 0
+let contentObserver: ResizeObserver | null = null
+
+function trackScrollPosition(el: HTMLElement) {
+  if (el.scrollTop < lastScrollTop - 2) followBottom = false
+  if (isNearBottom(el, 80)) followBottom = true
+  lastScrollTop = el.scrollTop
+}
+
+function observeContentSize(el: HTMLElement | null) {
+  contentObserver?.disconnect()
+  contentObserver = null
+
+  const content = el?.firstElementChild
+  if (!el || !content || typeof ResizeObserver === 'undefined') return
+
+  contentObserver = new ResizeObserver(() => {
+    if (!followBottom || isNearBottom(el, 2)) return
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  })
+  contentObserver.observe(content)
 }
 
 async function openPeerProfile() {
@@ -1207,6 +1288,7 @@ const {
   confirmDel,
   openDeleteConfirmSingle,
   openDeleteConfirmMulti,
+  openDeleteConfirmList,
   cancelDelete,
   confirmDelete
 } = useMessageDelete({
@@ -1244,6 +1326,7 @@ const {
   forwardPicker,
   openForwardPicker,
   openForwardPickerMulti,
+  openForwardPickerFor,
   doForward,
   cacheForwardName,
   resolveForwardLabel,
@@ -1279,6 +1362,7 @@ const {
   fileInput,
   pendingFiles,
   pendingCaption,
+  groupFiles,
   showFileModal,
   sendingFile,
 
@@ -1454,6 +1538,12 @@ const messageListActions={
   humanFileSize,
   downloadFile,
   fileKind:fileKindOf,
+  playAudio,
+  forwardMany:(list:UiMessage[])=>openForwardPickerFor(list),
+  deleteMany:(list:UiMessage[])=>{
+    closeMenu()
+    openDeleteConfirmList(list)
+  },
   mediaSrc:secureFiles.mediaSrc,
   mediaState:secureFiles.mediaState,
   applyReaction,
@@ -1487,6 +1577,98 @@ watch(
     for (const message of messages.value) secureFiles.ensureMedia(message)
   }
 )
+
+// ---------------- Audio ----------------
+
+function formatVoiceDate(iso?: string | null) {
+  const date = toDateSafe(iso)
+  if (!date) return ''
+  return new Intl.DateTimeFormat(locale.value === 'en' ? 'en' : 'fa', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+/** How a voice or music message appears in the player. */
+function trackOf(message: UiMessage, chat: ChatTarget): AudioTrack {
+  const file = message.file!
+  const key = (message.id || message.clientId)!
+
+  if (file.voice) {
+    const sender = message.senderId === myId.value
+      ? meProfile.value?.displayName || '@' + (meProfile.value?.username ?? '')
+      : chat.isGroup ? memberLabel(chat.id, message.senderId) : selectedLabel.value
+    return {
+      key,
+      message,
+      chat,
+      kind: 'voice',
+      title: sender,
+      subtitle: formatVoiceDate(message.sentAt),
+      cover: null,
+      duration: file.voice.duration,
+      size: file.size
+    }
+  }
+
+  const name = file.audio?.title || file.name.replace(/\.[^.]+$/, '')
+  return {
+    key,
+    message,
+    chat,
+    kind: 'music',
+    title: file.audio?.performer || name,
+    subtitle: file.audio?.performer ? name : '',
+    cover: file.audio?.cover ?? null,
+    duration: file.audio?.duration ?? 0,
+    size: file.size
+  }
+}
+
+/**
+ * The open chat's audio of a kind, in playing order: voice messages follow the conversation,
+ * music goes from the newest down the list.
+ */
+function audioTracks(kind: AudioTrack['kind']): AudioTrack[] {
+  const chat = selectedUser.value
+  if (!chat) return []
+
+  const tracks = messages.value
+    .filter(message => message.file && (message.id || message.clientId) && (fileKindOf(message) === 'voice' || fileKindOf(message) === 'audio'))
+    .map(message => trackOf(message, chat))
+    .filter(track => track.kind === kind)
+
+  return kind === 'music' ? tracks.reverse() : tracks
+}
+
+function playAudio(message: UiMessage) {
+  const chat = selectedUser.value
+  if (!chat || !message.file) return
+  const track = trackOf(message, chat)
+  void player.play(track, audioTracks(track.kind))
+}
+
+// Older messages loading or new ones arriving extend what the player can move to.
+watch(
+  () => messages.value.filter(message => message.file?.voice || message.file?.mime.startsWith('audio/')).map(message => message.id || message.clientId).join(),
+  () => {
+    const current = player.state.current
+    if (current && selectedUser.value?.id === current.chat.id) player.syncQueue(current.chat.id, audioTracks(current.kind))
+  }
+)
+
+/** Opens the chat of a track and shows its message. */
+async function goToTrack(track: AudioTrack) {
+  if (selectedUser.value?.id !== track.chat.id) await openChat(track.chat, { resetStack: true })
+  await nextTick()
+  if (track.message.id) await jumpToReplied(track.message.id, 60)
+}
+
+async function onSelectTrack(track: AudioTrack) {
+  await goToTrack(track)
+  startSelectionFrom(track.message)
+}
+
+function onForwardTrack(track: AudioTrack) {
+  openForwardPickerFor([track.message])
+}
 
 // This account's key was replaced on another device and has just been restored here:
 // everything on screen was decrypted with the old key, so load it again.
@@ -1579,6 +1761,7 @@ watch(selectedCount, count => {
 
 function setMessageScrollElement(element:HTMLElement|null){
   scrollBox.value=element
+  observeContentSize(element)
 }
 
 function setMessageMenuElement(element:HTMLElement|null){
@@ -1620,7 +1803,8 @@ function onWindowResize() {
 }
 
 function registerPageListeners() {
-  document.addEventListener('visibilitychange', flushPendingReads)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('online', onBackOnline)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('keydown', onKeydownSelection)
   window.addEventListener('scroll', onWindowScroll, true)
@@ -1628,7 +1812,8 @@ function registerPageListeners() {
 }
 
 function unregisterPageListeners() {
-  document.removeEventListener('visibilitychange', flushPendingReads)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('online', onBackOnline)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('keydown', onKeydownSelection)
   window.removeEventListener('scroll', onWindowScroll, true)
@@ -1643,6 +1828,15 @@ function scrollToMessageEl(el: HTMLElement) {
   const offset = elRect.top - scRect.top
   const target = sc.scrollTop + offset - (sc.clientHeight / 2) + (el.clientHeight / 2)
   sc.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+}
+
+/** Tints the whole line of a message for a moment, to show where a jump landed. */
+function flashMessage(el: HTMLElement) {
+  const line = el.closest<HTMLElement>('.msg-line') ?? el
+  line.classList.remove('msg-flash')
+  void line.offsetWidth
+  line.classList.add('msg-flash')
+  line.addEventListener('animationend', () => line.classList.remove('msg-flash'), { once: true })
 }
 
 async function jumpToReplied(replyId: string, maxPages = 5) {
@@ -1661,18 +1855,7 @@ async function jumpToReplied(replyId: string, maxPages = 5) {
 
   if (el) {
     scrollToMessageEl(el)
-
-    el.classList.add(
-      'ring-2',
-      'ring-accent'
-    )
-
-    setTimeout(() => {
-      el?.classList.remove(
-        'ring-2',
-        'ring-accent'
-      )
-    }, 1200)
+    flashMessage(el)
   } else {
     showToast(t('chat.scrollUpForOlder'))
   }
@@ -1856,6 +2039,7 @@ async function selectConversation(conv: UiConversation) {
 
 async function onScrollLoadMore() {
   const el = scrollBox.value
+  if (el) trackScrollPosition(el)
 
   if (!el || el.scrollTop > 80) {
     return
@@ -1871,8 +2055,9 @@ async function initializeChatPage() {
   routeSyncRequestId++
   resetState()
 
+  // An expired token is fine here: it is renewed when the server can be reached.
   const token = getToken()
-  if (!token || isJwtExpired(token)) {
+  if (!token) {
     router.replace('/login')
     return
   }
@@ -1971,7 +2156,10 @@ onBeforeUnmount(() => {
   chatSessionId++
 
   resetPeers()
+  // The decrypted audio goes with the page.
+  player.close()
   secureFiles.releaseAll()
+  contentObserver?.disconnect()
 
   unregisterPageListeners()
   disposeSelection()
@@ -1991,6 +2179,18 @@ function wireSignalR() {
   signalR.onOnlineSnapshot(setOnlineSnapshot)
   signalR.onUserLastSeen(setLastSeen)
   signalR.onPresenceHidden(hidePresence)
+  signalR.onReconnected(() => scheduleSync({ messages: true }, 0))
+  signalR.onMessageSent(onMessageSentElsewhere)
+  signalR.onChatRead(payload => {
+    if (payload.readerId === myId.value) {
+      // Read on another of my devices.
+      const conversation = conversations.value.find(item => item.peerId === payload.chatId)
+      if (conversation) conversation.unreadCount = 0
+      void clearChatNotifications(chatTag(payload.chatId))
+      return
+    }
+    if (selectedUser.value?.id === payload.chatId) markMineReadUpTo(payload.readUpToUtc)
+  })
   signalR.onMessageReceived(async rawMessage => {
     const message = rawMessage as IncomingMessage
     const senderId = String(message.senderId ?? message.SenderId ?? '')
@@ -2039,9 +2239,6 @@ function wireSignalR() {
         void cacheForwardName(ui.forwardedFromSenderId)
       }
 
-      const element = scrollBox.value
-      const shouldStick = !!element && isNearBottom(element)
-
       messages.value.push(ui)
       updateIncomingPreview(chatId, ui)
 
@@ -2053,11 +2250,10 @@ function wireSignalR() {
       await nextTick()
 
       if (!isActiveChat(sessionId, chatId)) return
-      if (element && shouldStick) element.scrollTop = element.scrollHeight
 
       const messageId = message.messageId ?? message.MessageId ?? message.id
       if (messageId && groupId) markGroupReadWhenVisible(groupId, String(messageId))
-      else if (messageId) markReadWhenVisible(String(messageId))
+      else if (messageId) markReadWhenVisible(chatId, String(messageId))
     } catch (error) {
       if (isActiveChat(sessionId, chatId)) {
         console.warn('incoming message failed', error)
@@ -2070,16 +2266,11 @@ function wireSignalR() {
 
   signalR.onDelivered(async (info: any) => {
     const cid = info.clientId ?? info.ClientId
-    let m = cid ? messages.value.find(x => x.clientId === cid) : undefined
+    const m = cid ? messages.value.find(x => x.clientId === cid) : undefined
 
     const el0 = scrollBox.value as HTMLElement | null
     const stick = !!el0 && isNearBottom(el0)
 
-    if (!m && info.messageId) {
-      m = [...messages.value].reverse().find(x =>
-        x.senderId === myId.value && x.status === 'sending' && !x.id
-      )
-    }
     if (!m) return
 
     if (info.messageId) m.id = info.messageId
@@ -2164,23 +2355,17 @@ function wireSignalR() {
     } catch (e) {
       console.warn('decrypt edited failed', e)
     }
+    scheduleSync({ messages: false })
   })
 
   signalR.onMessageDeleted((p) => {
     pins.forget(p.messageId)
+    player.forget(p.messageId)
+    // The chat list may be showing it, or counting it as unread.
+    scheduleSync({ messages: false })
     const i = messages.value.findIndex(x => x.id === p.messageId)
-    if (i < 0) return
-    // if (p.scope === 'all') {
-    //   const m = messages.value[i]
-    //   m.isDeleted = true
-    //   m.plainText = ''
-    //   m.fileUrl = null
-    //   m.updatedAtUtc = new Date().toISOString()
-    // } else {
-    //   messages.value.splice(i, 1)
-    // }
-    messages.value.splice(i, 1)
-})
+    if (i >= 0) messages.value.splice(i, 1)
+  })
 
   signalR.onPinsChanged(payload => pins.onPinsChanged(payload))
   signalR.onMutesChanged(payload => mutes.apply(String(payload.chatId), payload.muted))
@@ -2194,14 +2379,7 @@ function wireSignalR() {
       void clearChatNotifications(chatTag(payload.groupId))
       return
     }
-    if (selectedUser.value?.id !== payload.groupId) return
-    // Server times may come without a zone; toDateSafe reads them as UTC.
-    const upTo = toDateSafe(payload.readUpToUtc)?.getTime() ?? 0
-    for (const message of messages.value) {
-      if (message.senderId === myId.value && message.status === 'delivered' && (toDateSafe(message.sentAt)?.getTime() ?? Infinity) <= upTo) {
-        message.status = 'read'
-      }
-    }
+    if (selectedUser.value?.id === payload.groupId) markMineReadUpTo(payload.readUpToUtc)
   })
   signalR.onSessionTerminated(() => { void onSessionTerminated() })
   signalR.onBlockListChanged(() => { void blocks.load() })
@@ -2214,6 +2392,177 @@ function wireSignalR() {
     handleReactionUpdated
   )
   }
+
+/** My messages in the open chat up to this time were read by the other side. */
+function markMineReadUpTo(readUpToUtc: string) {
+  // Server times may come without a zone; toDateSafe reads them as UTC.
+  const upTo = toDateSafe(readUpToUtc)?.getTime() ?? 0
+  for (const message of messages.value) {
+    if (message.senderId === myId.value && message.status === 'delivered' && (toDateSafe(message.sentAt)?.getTime() ?? Infinity) <= upTo) {
+      message.status = 'read'
+    }
+  }
+}
+
+/** Something I sent from another device: it joins the chat like a message sent here. */
+async function onMessageSentElsewhere(raw: ServerMessage) {
+  const clientId = raw.clientId ?? raw.ClientId
+  // This device sent it (the upload path announces to every connection).
+  if (clientId && (outbox.owns(clientId) || messages.value.some(item => item.clientId === clientId))) return
+
+  const groupId = String(raw.groupId ?? raw.GroupId ?? '') || null
+  const chatId = groupId ?? String(raw.receiverId ?? raw.ReceiverId ?? '')
+  const id = raw.messageId ?? raw.MessageId ?? raw.id
+  if (!chatId || !id || messages.value.some(item => item.id === id)) return
+
+  const sessionId = chatSessionId
+  const active = selectedUser.value?.id === chatId
+
+  upsertIncomingConversation(chatId, raw, false)
+
+  if (!active) {
+    const cipher = encryptedBodyOf(raw)
+    if (cipher) void refreshConversationPreview(chatId, cipher, myId.value)
+    return
+  }
+
+  const ui = await mapServerMessage(raw, {
+    myId: myId.value,
+    open: (body, from) => openMessage(body, from, chatId),
+    fallbackSentAt: new Date().toISOString()
+  })
+  if (!isActiveChat(sessionId, chatId) || messages.value.some(item => item.id === id)) return
+
+  messages.value.push(ui)
+  updateIncomingPreview(chatId, ui)
+}
+
+// ---------------- Catching up with the server ----------------
+
+let syncTimer: number | null = null
+let syncMessagesToo = false
+
+/** Fetches the chat list (and the open chat) again; bursts of events are folded into one request. */
+function scheduleSync(options: { messages: boolean }, delay = 500) {
+  syncMessagesToo ||= options.messages
+  if (syncTimer !== null) window.clearTimeout(syncTimer)
+  syncTimer = window.setTimeout(() => {
+    syncTimer = null
+    const withMessages = syncMessagesToo
+    syncMessagesToo = false
+    void syncWithServer(withMessages).catch(error => console.warn('sync failed', error))
+  }, delay)
+}
+
+async function syncWithServer(withMessages: boolean) {
+  if (!pageAlive || e2ee.status !== 'ready') return
+
+  const sessionId = chatSessionId
+  const chat = selectedUser.value
+
+  const data = await getConversations()
+  if (!pageAlive) return
+
+  await Promise.all((data || []).filter(c => c.isGroup).map(c => groups.load(c.peerId)))
+  if (!pageAlive) return
+
+  setConversations(data || [])
+
+  // A chat that is open and being looked at has nothing unread.
+  if (chat && document.visibilityState === 'visible') {
+    const conversation = conversations.value.find(item => item.peerId === chat.id)
+    if (conversation) conversation.unreadCount = 0
+  }
+
+  if (withMessages && chat && isActiveChat(sessionId, chat.id)) await mergeNewestPage(chat, sessionId)
+}
+
+/** Brings the open chat up to date with what happened while this device was not listening. */
+async function mergeNewestPage(chat: ChatTarget, sessionId: number) {
+  const page = await prepareMessagePage(chat.id, undefined, sessionId)
+  if (!page) return
+
+  const byId = new Map(messages.value.filter(item => item.id).map(item => [item.id!, item]))
+  const unsent = messages.value.filter(item => !item.id)
+  const overlaps = page.messages.some(item => byId.has(item.id!))
+
+  // More was missed than one page holds: start again from the newest messages.
+  if (!overlaps && page.hasMore) {
+    messages.value = [...page.messages, ...unsent]
+    hasMore.value = page.hasMore
+    oldestId.value = page.oldestId
+  } else {
+    const onServer = new Set(page.messages.map(item => item.id))
+    const oldest = page.hasMore ? toDateSafe(page.messages[0]?.sentAt)?.getTime() ?? 0 : -Infinity
+
+    // A message that is gone from the range this page covers was deleted meanwhile.
+    const kept = messages.value.filter(item =>
+      !item.id || onServer.has(item.id) || (toDateSafe(item.sentAt)?.getTime() ?? 0) < oldest)
+
+    for (const fresh of page.messages) {
+      const known = byId.get(fresh.id!)
+      if (known) {
+        known.plainText = fresh.plainText
+        known.updatedAtUtc = fresh.updatedAtUtc
+        known.reactions = fresh.reactions
+        if (fresh.status) known.status = fresh.status
+        continue
+      }
+
+      // Sent just before the connection dropped: the server has it, the confirmation never came.
+      const pending = fresh.senderId === myId.value
+        ? kept.find(item => !item.id && item.status !== 'failed' && item.plainText === fresh.plainText && item.file?.name === fresh.file?.name)
+        : undefined
+      if (pending) {
+        pending.id = fresh.id
+        pending.status = fresh.status
+        pending.sentAt = fresh.sentAt
+        pending.fileUrl = fresh.fileUrl
+      } else {
+        kept.push(fresh)
+      }
+    }
+
+    const time = (item: UiMessage) => (item.id ? toDateSafe(item.sentAt)?.getTime() ?? 0 : Infinity)
+    messages.value = kept.sort((a, b) => time(a) - time(b))
+  }
+
+  markChatSeen(chat, page.source)
+}
+
+/** Reports the newest incoming unread message of an open chat as read (everything older goes with it). */
+function markChatSeen(chat: ChatTarget, source: ServerMessage[]) {
+  const newest = [...source].reverse().find(message =>
+    !serverMessageIsDeleted(message) &&
+    serverSenderId(message) !== myId.value &&
+    serverMessageIsUnread(message))
+
+  const id = newest ? serverMessageId(newest) : ''
+  if (!id) return
+
+  if (chat.isGroup) markGroupReadWhenVisible(chat.id, id)
+  else markReadWhenVisible(chat.id, id)
+}
+
+let hiddenSince = 0
+
+function onVisibilityChange() {
+  flushPendingReads()
+
+  if (document.visibilityState === 'hidden') {
+    hiddenSince = Date.now()
+    return
+  }
+
+  // A phone may have silently dropped the connection while the app was in the background.
+  if (hiddenSince && Date.now() - hiddenSince > 60_000) scheduleSync({ messages: true }, 0)
+  hiddenSince = 0
+}
+
+function onBackOnline() {
+  if (e2ee.status === 'error') void e2ee.init(myId.value)
+  else scheduleSync({ messages: true }, 0)
+}
 
 // ---------------- Notifications, muted chats, read receipts ----------------
 
@@ -2290,11 +2639,12 @@ async function notifyIncoming(chatId: string, senderId: string, message: Incomin
 }
 
 /** Read receipts go out only while the chat is actually visible; otherwise they wait for the user to come back. */
-const pendingReads = new Set<string>()
+/** Newest message to mark as read per private chat, waiting for the page to become visible. */
+const pendingReads = new Map<string, string>()
 
-function markReadWhenVisible(messageId: string) {
-  if (document.visibilityState === 'visible') void markAsRead(messageId).catch(() => {})
-  else pendingReads.add(messageId)
+function markReadWhenVisible(chatId: string, messageId: string) {
+  if (document.visibilityState === 'visible') void markChatRead(chatId, messageId).catch(() => {})
+  else pendingReads.set(chatId, messageId)
 }
 
 /** Newest message to mark as read per group, waiting for the page to become visible. */
@@ -2307,9 +2657,8 @@ function markGroupReadWhenVisible(groupId: string, messageId: string) {
 
 function flushPendingReads() {
   if (document.visibilityState !== 'visible') return
-  const ids = [...pendingReads]
+  for (const [chatId, messageId] of pendingReads) void markChatRead(chatId, messageId).catch(() => {})
   pendingReads.clear()
-  ids.forEach(id => void markAsRead(id).catch(() => {}))
   for (const [groupId, messageId] of pendingGroupReads) void markGroupRead(groupId, messageId).catch(() => {})
   pendingGroupReads.clear()
   if (selectedUser.value) void clearChatNotifications(chatTag(selectedUser.value.id))
@@ -2480,7 +2829,8 @@ async function handleUserSelect(user: ChatTarget) {
 
     hasMore.value = page.hasMore
     oldestId.value = page.oldestId
-    messages.value = page.messages
+    // Messages that could not be sent are still waiting for a retry.
+    messages.value = [...page.messages, ...outbox.failedFor(user.id)]
 
     await nextTick()
 
@@ -2488,27 +2838,9 @@ async function handleUserSelect(user: ChatTarget) {
 
     const element = scrollBox.value
     if (element) element.scrollTop = element.scrollHeight
+    followBottom = true
 
-    const unreadIds = page.source
-      .filter(message =>
-        !serverMessageIsDeleted(message) &&
-        serverSenderId(message) === user.id &&
-        serverMessageIsUnread(message)
-      )
-      .map(serverMessageId)
-      .filter((id): id is string => Boolean(id))
-
-    unreadIds.forEach(markReadWhenVisible)
-
-    // In a group, reading the newest unread message moves my read position past all of them.
-    if (user.isGroup) {
-      const newest = [...page.source].reverse().find(message =>
-        !serverMessageIsDeleted(message) &&
-        serverSenderId(message) !== myId.value &&
-        serverMessageIsUnread(message))
-      const newestId = newest ? serverMessageId(newest) : ''
-      if (newestId) markGroupReadWhenVisible(user.id, newestId)
-    }
+    markChatSeen(user, page.source)
     void clearChatNotifications(chatTag(user.id))
   } catch (error) {
     if (isActiveChat(sessionId, user.id)) {

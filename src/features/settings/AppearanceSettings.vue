@@ -38,20 +38,22 @@
 
     <!-- Text size -->
     <section class="space-y-2">
-      <h3 class="setting-title">{{ $t('settings.textSize') }}</h3>
-      <div class="grid grid-cols-3 gap-2" role="radiogroup">
-        <button
-          v-for="size in sizes"
-          :key="size"
-          type="button"
-          role="radio"
-          :aria-checked="prefs.textSize === size"
-          class="choice py-2"
-          :class="prefs.textSize === size ? 'choice-on' : ''"
-          @click="prefs.textSize = size"
-        >
-          {{ $t(`settings.sizes.${size}`) }}
-        </button>
+      <div class="flex items-center justify-between">
+        <h3 class="setting-title">{{ $t('settings.textSize') }}</h3>
+        <span class="text-xs text-muted tabular-nums">{{ prefs.textSize }}px</span>
+      </div>
+      <div class="flex items-center gap-3" dir="ltr">
+        <span class="text-[12px] text-muted select-none">A</span>
+        <input
+          v-model.number="prefs.textSize"
+          type="range"
+          :min="TEXT_SIZE_MIN"
+          :max="TEXT_SIZE_MAX"
+          step="1"
+          class="flex-1 accent-[var(--color-accent)]"
+          :aria-label="$t('settings.textSize')"
+        />
+        <span class="text-[20px] leading-none text-muted select-none">A</span>
       </div>
     </section>
 
@@ -87,7 +89,7 @@
 <script setup lang="ts">
 import { CheckCheck, Monitor, Moon, Sun } from 'lucide-vue-next'
 import {
-  BUBBLE_RADIUS_MAX, BUBBLE_RADIUS_MIN, usePreferencesStore, type TextSize, type ThemePreference
+  BUBBLE_RADIUS_MAX, BUBBLE_RADIUS_MIN, TEXT_SIZE_MAX, TEXT_SIZE_MIN, usePreferencesStore, type ThemePreference
 } from '../../stores/preferences'
 import SettingToggle from './SettingToggle.vue'
 
@@ -98,7 +100,6 @@ const themes: Array<{ value: ThemePreference; icon: typeof Sun }> = [
   { value: 'light', icon: Sun },
   { value: 'dark', icon: Moon }
 ]
-const sizes: TextSize[] = ['small', 'medium', 'large']
 </script>
 
 <style scoped>

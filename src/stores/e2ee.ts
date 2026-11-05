@@ -26,7 +26,7 @@ import {
   safetyNumber,
   type IdentityKeyPair
 } from '../services/e2ee/primitives'
-import { getTrust, setTrust } from '../services/e2ee/trust'
+import { getTrust, isKnownKey, setTrust } from '../services/e2ee/trust'
 
 /**
  * - checking: looking up this device's key and the server's copy
@@ -39,7 +39,8 @@ export type E2eeStatus = 'idle' | 'checking' | 'setup' | 'restore' | 'ready' | '
 
 /** Result of opening a received message. */
 export type OpenedMessage =
-  | { state: 'ok'; envelope: MessageEnvelope }
+  /** `unknownKey`: the sender used a key the user never accepted for them. */
+  | { state: 'ok'; envelope: MessageEnvelope; unknownKey?: boolean }
   /** Sent before end-to-end encryption existed; its key was deleted. */
   | { state: 'legacy' }
   /** Encrypted for one of my earlier keys, which this account no longer has. */
@@ -380,6 +381,9 @@ export const useE2eeStore = defineStore('e2ee', () => {
     const peer = await getActivePeerKey(peerId, refresh)
     if (!peer) throw new E2eeError('recipient_no_key')
 
+    // The new key could be someone intercepting the chat: nothing goes out until the user accepts it.
+    if (peerId !== userId.value && keyChanged[peerId]) throw new E2eeError('peer_key_changed')
+
     return sealMessage(await conversationKey(peer), me.keyId, peer.keyId, envelope)
   }
 
@@ -424,7 +428,7 @@ export const useE2eeStore = defineStore('e2ee', () => {
     try {
       const peer = await getPeerKeyById(peerId, peerKeyId)
       const envelope = await openMessage(await conversationKey(peer), header)
-      return { state: 'ok', envelope }
+      return { state: 'ok', envelope, unknownKey: !sentByMe && !isKnownKey(userId.value, peerId, peerKeyId) }
     } catch (error) {
       console.warn('decrypt failed', error)
       return { state: 'failed' }
@@ -443,7 +447,8 @@ export const useE2eeStore = defineStore('e2ee', () => {
     try {
       const sender = await getPeerKeyById(senderId, header.senderKeyId)
       const envelope = await openGroupMessage(groupId, header, me.keyId, await wrapKey(sender))
-      return { state: 'ok', envelope }
+      const mine = senderId === userId.value
+      return { state: 'ok', envelope, unknownKey: !mine && !isKnownKey(userId.value, senderId, header.senderKeyId) }
     } catch (error) {
       console.warn('group decrypt failed', error)
       return { state: 'failed' }
@@ -468,7 +473,9 @@ export const useE2eeStore = defineStore('e2ee', () => {
   async function trustPeerKey(peerId: string, verified: boolean) {
     const peer = await getActivePeerKey(peerId)
     if (!peer) return
-    setTrust(userId.value, peerId, { keyId: peer.keyId, verified })
+    const previous = getTrust(userId.value, peerId)
+    const known = [...new Set([...(previous?.known ?? []), ...(previous ? [previous.keyId] : [])])].filter(id => id !== peer.keyId)
+    setTrust(userId.value, peerId, { keyId: peer.keyId, verified, known })
     delete keyChanged[peerId]
   }
 

@@ -4,10 +4,6 @@ import {
   type Ref
 } from 'vue'
 
-import {
-  sendMessage
-} from '../../../services/signalr'
-
 import type {
   ChatUser,
   UiMessage
@@ -21,6 +17,8 @@ import {
   type SealAndSend
 } from '../attachments'
 import type { useSecureFiles } from './useSecureFiles'
+import { MAX_ALBUM_ITEMS } from '../albumLayout'
+import type { AlbumMeta } from '../../../services/e2ee/messageCodec'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
@@ -33,6 +31,7 @@ type MediaOutgoingInput = {
   sentAt?: string
   replyToMessageId?: string | null
   groupId?: string | null
+  album?: AlbumMeta | null
 }
 
 type UseMessageMediaOptions = {
@@ -85,7 +84,8 @@ export function useMessageMedia({
   const showMediaModal = ref(false)
   const sendingMedia = ref(false)
   const mediaCaption = ref('')
-  const mediaGroupItems = ref(false)
+  /** Several items go out together as an album unless the user says otherwise. */
+  const mediaGroupItems = ref(true)
   const compressImages = ref(true)
 
   const previewUrls =
@@ -184,7 +184,7 @@ export function useMessageMedia({
     showMediaModal.value = false
     pendingMedia.value = []
     mediaCaption.value = ''
-    mediaGroupItems.value = false
+    mediaGroupItems.value = true
 
     if (resetCompression) {
       compressImages.value = true
@@ -350,147 +350,74 @@ export function useMessageMedia({
     sendingMedia.value = true
 
     try {
-      const hasCaption =
-        caption.length > 0
+      // Everything is prepared first, so the whole album appears at once and fills in as it uploads.
+      const prepared: Array<{ file: File; attachment: PreparedAttachment }> = []
 
-      let lastOutgoing:
-        UiMessage | null = null
+      for (const original of files) {
+        let file = original
 
-      if (
-        !groupItems &&
-        hasCaption
-      ) {
-        const captionMessage =
-          await appendOutgoingMessage(
-            partnerId,
-            {
-              plainText: caption,
-              fileUrl: null
-            }
-          )
-
-        await outbox.send(captionMessage.clientId, () =>
-          sealAndSend(
-            partnerId,
-            { text: caption },
-            body => sendMessage(
-              partnerId,
-              body,
-              null,
-              captionMessage.clientId ??
-                null
-            )
-          )
-        )
-
-        lastOutgoing =
-          captionMessage
-      }
-
-      const groupId =
-        groupItems
-          ? crypto.randomUUID()
-          : null
-
-      const sentAt =
-        new Date().toISOString()
-
-      for (
-        let index = 0;
-        index < files.length;
-        index++
-      ) {
-        let file = files[index]
-
-        if (
-          shouldCompress &&
-          isImageFile(file)
-        ) {
+        if (shouldCompress && isImageFile(file)) {
           try {
-            file =
-              await compressImageFile(
-                file
-              )
+            file = await compressImageFile(file)
           } catch {}
         }
 
-        let attachment: PreparedAttachment
-
         try {
-          attachment =
-            await prepareAttachment(file)
+          prepared.push({ file, attachment: await prepareAttachment(file) })
         } catch (error) {
           // Too large or unreadable: skip it and say why; the others still go.
           onMediaError(error)
-          continue
         }
-
-        const clientId =
-          crypto.randomUUID()
-
-        const plainText =
-          groupItems &&
-          index === 0
-            ? caption
-            : ''
-
-        secureFiles.registerLocal(
-          clientId,
-          file,
-          attachment.meta
-        )
-
-        const outgoing =
-          await appendOutgoingMessage(
-            partnerId,
-            {
-              clientId,
-              plainText,
-              fileUrl: '(pending)',
-              file: attachment.meta,
-              sentAt,
-              replyToMessageId:
-                replyId,
-              groupId
-            }
-          )
-
-        lastOutgoing = outgoing
-
-        // One failed item does not stop the others; it can be retried from its bubble.
-        await outbox.send(clientId, () =>
-          sendAttachment(
-            sealAndSend,
-            partnerId,
-            attachment,
-            {
-              caption: plainText,
-              clientId,
-              replyToMessageId: replyId
-            }
-          )
-        )
       }
 
-      if (lastOutgoing) {
-        updateConversationAfterSend(
-          partnerId,
-          lastOutgoing,
-          user.username
-        )
+      const sentAt = new Date().toISOString()
+      const jobs: Array<() => Promise<boolean>> = []
+      let firstOutgoing: UiMessage | null = null
+
+      for (let start = 0; start < prepared.length; start += groupItems ? MAX_ALBUM_ITEMS : 1) {
+        const chunk = groupItems ? prepared.slice(start, start + MAX_ALBUM_ITEMS) : [prepared[start]]
+        const albumId = chunk.length > 1 ? crypto.randomUUID() : null
+
+        for (let index = 0; index < chunk.length; index++) {
+          const { file, attachment } = chunk[index]
+          const clientId = crypto.randomUUID()
+          const first = !firstOutgoing
+          const plainText = first ? caption : ''
+          const album = albumId ? { id: albumId, index, count: chunk.length } : null
+          const replyToMessageId = first ? replyId : null
+
+          secureFiles.registerLocal(clientId, file, attachment.meta)
+
+          const outgoing = await appendOutgoingMessage(partnerId, {
+            clientId,
+            plainText,
+            fileUrl: '(pending)',
+            file: attachment.meta,
+            sentAt,
+            replyToMessageId,
+            album
+          })
+          firstOutgoing ??= outgoing
+
+          // One failed item does not stop the others; it can be retried from its place in the album.
+          jobs.push(() => outbox.send(clientId, () =>
+            sendAttachment(sealAndSend, partnerId, attachment, { caption: plainText, clientId, replyToMessageId, album })
+          ))
+        }
       }
 
-      // رفتار فعلی حفظ می‌شود:
-      // بعد از ارسال، مقدار compression
-      // برای ارسال بعدی باقی می‌ماند.
+      if (firstOutgoing) {
+        updateConversationAfterSend(partnerId, firstOutgoing, user.username)
+      }
+
+      // The compression choice stays for the next send.
       clearMediaState(false)
 
-      if (
-        selectedUser.value?.id ===
-        partnerId
-      ) {
+      if (selectedUser.value?.id === partnerId) {
         replyingTo.value = null
       }
+
+      for (const job of jobs) await job()
     } catch (error) {
       console.error(
         'send media failed',

@@ -7,7 +7,7 @@ import {
 } from 'vue'
 
 import { getUserById } from '../../../services/api'
-import type { FileMeta } from '../../../services/e2ee/messageCodec'
+import type { AlbumMeta, FileMeta } from '../../../services/e2ee/messageCodec'
 import { sendMessage } from '../../../services/signalr'
 
 import type {
@@ -33,6 +33,7 @@ type ForwardOutgoingInput = {
   file?: FileMeta | null
   forwardedFromMessageId?: string | null
   forwardedFromSenderId?: string | null
+  album?: AlbumMeta | null
 }
 
 type UseMessageForwardOptions = {
@@ -118,6 +119,15 @@ export function useMessageForward({
     forwardPicker.srcList = [
       ...selectedMessages.value
     ]
+  }
+
+  /** Forwards exactly these messages (an album, or a song from the player). */
+  function openForwardPickerFor(list: UiMessage[]) {
+    closeMenu()
+    forwardPicker.mode = 'multi'
+    forwardPicker.src = null
+    forwardPicker.srcList = [...list]
+    forwardPicker.visible = true
   }
 
   function openForwardPicker() {
@@ -281,7 +291,8 @@ export function useMessageForward({
   function sendForward(
     toPeerId: string,
     source: UiMessage,
-    clientId: string | null
+    clientId: string | null,
+    album: AlbumMeta | null
   ) {
     const input = forwardOf(source)
 
@@ -290,7 +301,8 @@ export function useMessageForward({
         toPeerId,
         {
           text: source.plainText || '',
-          ...(source.file ? { file: source.file } : {})
+          ...(source.file ? { file: source.file } : {}),
+          ...(album ? { album } : {})
         },
         body => sendMessage(
           toPeerId,
@@ -336,8 +348,29 @@ export function useMessageForward({
     let lastOutgoing:
       Pick<UiMessage, 'plainText' | 'fileUrl' | 'sentAt'> | null = null
 
+    // Items of one album stay together in the new chat, under a new album id.
+    const albumSizes = new Map<string, number>()
+    for (const source of sources) {
+      if (source.album) albumSizes.set(source.album.id, (albumSizes.get(source.album.id) ?? 0) + 1)
+    }
+    const newAlbums = new Map<string, { id: string; next: number }>()
+
+    function albumFor(source: UiMessage): AlbumMeta | null {
+      const count = source.album ? albumSizes.get(source.album.id) ?? 0 : 0
+      if (!source.album || count < 2) return null
+
+      let entry = newAlbums.get(source.album.id)
+      if (!entry) {
+        entry = { id: crypto.randomUUID(), next: 0 }
+        newAlbums.set(source.album.id, entry)
+      }
+      return { id: entry.id, index: entry.next++, count }
+    }
+
     try {
       for (const source of sources) {
+        const album = albumFor(source)
+
         // In the open chat the forward appears at once (with a retry button if it fails).
         const clientId =
           sameChat
@@ -350,7 +383,8 @@ export function useMessageForward({
               toPeerId,
               {
                 clientId,
-                ...forwardOf(source)
+                ...forwardOf(source),
+                album
               }
             )
         } else {
@@ -364,7 +398,8 @@ export function useMessageForward({
         await sendForward(
           toPeerId,
           source,
-          clientId
+          clientId,
+          album
         )
       }
 
@@ -416,6 +451,7 @@ export function useMessageForward({
     forwardPicker,
     openForwardPicker,
     openForwardPickerMulti,
+    openForwardPickerFor,
     doForward,
     cacheForwardName,
     resolveForwardLabel,

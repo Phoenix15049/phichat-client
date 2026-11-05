@@ -1,79 +1,89 @@
 <template>
-  <!-- overlay fade -->
-  <transition name="fade-overlay">
-    <div v-if="open" class="fixed inset-0 z-[55]" role="dialog" aria-modal="true">
-      <div class="absolute inset-0 bg-overlay" @click="emit('close')"></div>
+  <!-- A floating panel that opens from the avatar: the account on top, everything else as tiles. -->
+  <Transition name="panel">
+    <div v-if="open" class="fixed inset-0 z-[55]" role="dialog" aria-modal="true" @click="emit('close')">
+      <div class="absolute inset-0 bg-overlay/50 backdrop-blur-[7px]"></div>
 
-      <!-- drawer slides in from the start edge (left in LTR, right in RTL) -->
-      <transition name="drawer">
-        <aside class="absolute start-0 top-0 h-full w-[300px] max-w-[85vw] bg-surface shadow-2xl flex flex-col" @click.stop>
-          <!-- Me header -->
-          <div class="px-5 pt-6 pb-4 bg-accent-soft">
-            <div class="w-16 h-16 rounded-full overflow-hidden grid place-items-center shadow-sm">
-              <img v-if="me?.avatarUrl" :src="me.avatarUrl" class="w-full h-full object-cover" alt="" />
-              <div
-                v-else
-                class="w-full h-full grid place-items-center text-white text-xl font-semibold"
-                :style="{ backgroundColor: colorFromString(me?.displayName || me?.username || 'U') }"
-              >
-                {{ initialsOf(me?.displayName || me?.username || 'U') }}
-              </div>
-            </div>
-            <div class="mt-3 min-w-0">
-              <div class="font-semibold text-ink truncate" dir="auto">
-                <bdi>{{ me?.displayName || '@' + (me?.username || '') }}</bdi>
-              </div>
-              <div class="text-[13px] text-muted truncate">
-                <span dir="ltr">@{{ (me?.username || '').replace(/^@/, '') }}</span>
-              </div>
-            </div>
-          </div>
+      <aside class="panel glass-soft" @click.stop>
+        <button type="button" class="me" @click="emit('action', 'profile')" v-ripple>
+          <span class="w-14 h-14 shrink-0 rounded-[35%] overflow-hidden grid place-items-center shadow-sm">
+            <img v-if="me?.avatarUrl" :src="me.avatarUrl" class="w-full h-full object-cover" alt="" />
+            <span
+              v-else
+              class="w-full h-full grid place-items-center text-white text-lg font-semibold"
+              :style="{ backgroundColor: colorFromString(me?.displayName || me?.username || 'U') }"
+            >{{ initialsOf(me?.displayName || me?.username || 'U') }}</span>
+          </span>
+          <span class="flex-1 min-w-0 text-start">
+            <span class="block font-semibold text-ink truncate"><bdi>{{ me?.displayName || '@' + (me?.username || '') }}</bdi></span>
+            <span class="block text-[13px] text-muted truncate" dir="ltr">@{{ (me?.username || '').replace(/^@/, '') }}</span>
+          </span>
+          <ChevronRight class="w-4 h-4 text-muted rtl:-scale-x-100" />
+        </button>
 
-          <!-- Items -->
-          <nav class="flex-1 overflow-y-auto py-2">
-            <button class="menu-item" type="button" @click="emit('action', 'profile')" v-ripple>
-              <CircleUser class="w-5 h-5" /> <span>{{ $t('menu.myProfile') }}</span>
-            </button>
-            <button class="menu-item" type="button" @click="emit('action', 'newGroup')" v-ripple>
-              <UsersRound class="w-5 h-5" /> <span>{{ $t('groups.newGroup') }}</span>
-            </button>
-            <button class="menu-item" type="button" @click="emit('action', 'contacts')" v-ripple>
-              <Users class="w-5 h-5" /> <span>{{ $t('menu.contacts') }}</span>
-            </button>
-            <button class="menu-item" type="button" @click="emit('action', 'saved')" v-ripple>
-              <Bookmark class="w-5 h-5" /> <span>{{ $t('menu.savedMessages') }}</span>
-            </button>
-            <button class="menu-item" type="button" @click="emit('action', 'settings')" v-ripple>
-              <Settings class="w-5 h-5" /> <span>{{ $t('menu.settings') }}</span>
-            </button>
+        <nav class="grid grid-cols-2 gap-2 mt-3">
+          <button
+            v-for="item in items"
+            :key="item.action"
+            type="button"
+            class="tile"
+            @click="emit('action', item.action)"
+            v-ripple
+          >
+            <span class="tile-icon" :style="{ color: item.color, backgroundColor: `${item.color}22` }">
+              <component :is="item.icon" class="w-5 h-5" />
+            </span>
+            <span class="text-[13.5px] font-medium text-ink">{{ $t(item.label) }}</span>
+          </button>
+        </nav>
 
-            <button class="menu-item" type="button" role="switch" :aria-checked="isDark" @click="toggleDark">
-              <Moon class="w-5 h-5" />
-              <span class="flex-1">{{ $t('menu.nightMode') }}</span>
-              <span class="switch" :class="isDark ? 'switch-on' : ''"><span class="switch-knob"></span></span>
-            </button>
-          </nav>
-
-          <div class="px-5 py-3 text-[12px] text-muted border-t border-line">PhiChat</div>
-        </aside>
-      </transition>
+        <div class="theme" role="radiogroup" :aria-label="$t('menu.nightMode')">
+          <button
+            v-for="option in themes"
+            :key="option.value"
+            type="button"
+            role="radio"
+            class="theme-option"
+            :class="preferences.prefs.theme === option.value ? 'theme-option-on' : ''"
+            :aria-checked="preferences.prefs.theme === option.value"
+            :title="$t(`settings.themes.${option.value}`)"
+            @click="preferences.prefs.theme = option.value"
+          >
+            <component :is="option.icon" class="w-4 h-4" />
+            <span class="truncate">{{ $t(`settings.themes.${option.value}`) }}</span>
+          </button>
+        </div>
+      </aside>
     </div>
-  </transition>
+  </Transition>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { Bookmark, CircleUser, Moon, Settings, Users, UsersRound } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted } from 'vue'
+import { Bookmark, ChevronRight, MonitorCog, Moon, Settings, Sun, Users, UsersRound } from 'lucide-vue-next'
 import { colorFromString, initialsOf } from '../utils/avatar'
 import { usePreferencesStore } from '../stores/preferences'
 import type { ChatUser } from '../types/chat'
 
+type MenuAction = 'profile' | 'contacts' | 'saved' | 'settings' | 'newGroup'
+
 const props = defineProps<{ open: boolean, me?: Partial<ChatUser> | null }>()
-const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: 'profile' | 'contacts' | 'saved' | 'settings' | 'newGroup'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'action', a: MenuAction): void }>()
 
 const preferences = usePreferencesStore()
-const isDark = computed(() => preferences.isDark)
-const toggleDark = () => preferences.toggleDark()
+
+const items: Array<{ action: MenuAction; label: string; icon: typeof Users; color: string }> = [
+  { action: 'saved', label: 'menu.savedMessages', icon: Bookmark, color: '#11bfae' },
+  { action: 'newGroup', label: 'groups.newGroup', icon: UsersRound, color: '#6366f1' },
+  { action: 'contacts', label: 'menu.contacts', icon: Users, color: '#f59e0b' },
+  { action: 'settings', label: 'menu.settings', icon: Settings, color: '#ec4899' }
+]
+
+const themes = [
+  { value: 'light', icon: Sun },
+  { value: 'dark', icon: Moon },
+  { value: 'system', icon: MonitorCog }
+] as const
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.open) emit('close')
@@ -85,42 +95,38 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <style scoped>
 @reference "../assets/tailwind.css";
 
-.menu-item {
-  @apply relative overflow-hidden w-full flex items-center gap-4 text-start px-5 py-3 text-[15px] text-ink hover:bg-surface-2 transition;
+.panel {
+  @apply absolute top-2 start-2 w-[320px] max-w-[calc(100vw-1rem)] rounded-3xl p-3;
+  transform-origin: top left;
 }
-.menu-item > svg {
-  @apply text-muted shrink-0;
+:global([dir="rtl"]) .panel { transform-origin: top right; }
+
+.me {
+  @apply relative overflow-hidden w-full flex items-center gap-3 rounded-2xl p-2 hover:bg-ink/5 transition;
+}
+.tile {
+  @apply relative overflow-hidden flex flex-col items-start gap-2 rounded-2xl p-3 text-start bg-ink/[.04] hover:bg-ink/[.08] active:scale-[.98] transition;
+}
+.tile-icon {
+  @apply w-9 h-9 grid place-items-center rounded-[35%];
 }
 
-.switch {
-  @apply relative w-9 h-5 rounded-full bg-line transition-colors;
+.theme {
+  @apply mt-3 grid grid-cols-3 gap-1 rounded-2xl bg-ink/[.05] p-1;
 }
-.switch-on {
-  @apply bg-accent;
+.theme-option {
+  @apply flex items-center justify-center gap-1.5 rounded-xl px-1.5 py-1.5 text-[12.5px] text-muted hover:text-ink transition min-w-0;
 }
-.switch-knob {
-  @apply absolute top-0.5 start-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform;
-}
-.switch-on .switch-knob {
-  transform: translateX(16px);
-}
-:global([dir="rtl"] .switch-on .switch-knob) {
-  transform: translateX(-16px);
+.theme-option-on {
+  @apply bg-surface text-ink shadow-sm;
 }
 
-/* overlay fade */
-.fade-overlay-enter-from { opacity: 0; }
-.fade-overlay-enter-active,
-.fade-overlay-leave-active { transition: opacity .16s ease; }
-.fade-overlay-leave-to { opacity: 0; }
-
-/* drawer slide */
-.drawer-enter-from { transform: translateX(-100%); }
-.drawer-leave-to   { transform: translateX(-100%); }
-.drawer-enter-active,
-.drawer-leave-active { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
-/* RTL: the drawer sits on the right, so it slides in from the right.
-   The whole selector must be inside :global() - `:global(x) .y` compiles to just `x`. */
-:global([dir="rtl"] .drawer-enter-from),
-:global([dir="rtl"] .drawer-leave-to) { transform: translateX(100%); }
+.panel-enter-from, .panel-leave-to { opacity: 0; }
+.panel-enter-active, .panel-leave-active { transition: opacity .16s ease; }
+.panel-enter-active .panel { transition: transform .26s cubic-bezier(.2, 1.15, .35, 1); }
+.panel-leave-active .panel { transition: transform .14s ease; }
+.panel-enter-from .panel, .panel-leave-to .panel { transform: scale(.9) translateY(-6px); }
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter-active .panel, .panel-leave-active .panel { transition: none; }
+}
 </style>

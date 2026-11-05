@@ -10,7 +10,7 @@ const entries = reactive(new Map<string, Entry>())
 const loads = new Map<string, Promise<Blob>>()
 const blobs = new Map<string, Blob>()
 
-export type FileKind = 'image' | 'video' | 'voice' | 'file'
+export type FileKind = 'image' | 'video' | 'voice' | 'audio' | 'file'
 
 /**
  * Object URLs share the app's origin, so a sender-chosen type such as text/html or SVG could
@@ -31,6 +31,7 @@ export function fileKindOf(message: Pick<UiMessage, 'file' | 'fileUrl'>): FileKi
     const mime = safeMime(message.file.mime)
     if (mime.startsWith('image/')) return 'image'
     if (mime.startsWith('video/')) return 'video'
+    if (mime.startsWith('audio/')) return 'audio'
     return 'file'
   }
 
@@ -89,11 +90,25 @@ export function useSecureFiles() {
     return load
   }
 
-  /** Starts decrypting an image, video or voice message so it can be shown or played. */
+  /** A playable URL for an audio message: downloads and decrypts it the first time. */
+  async function audioUrlFor(message: UiMessage): Promise<string> {
+    if (!message.file) return message.fileUrl ?? ''
+
+    const ready = entryFor(message)
+    if (ready?.status === 'ready') return ready.url
+
+    const blob = await blobFor(message)
+    const url = URL.createObjectURL(blob)
+    if (message.fileUrl) entries.set(message.fileUrl, { status: 'ready', url })
+    return url
+  }
+
+  /** Starts decrypting an image or video so it can be shown (audio waits until it is played). */
   function ensureMedia(message: UiMessage) {
     const url = message.fileUrl
     if (!message.file || !url || url === '(pending)' || entryFor(message)) return
-    if (fileKindOf(message) === 'file') return
+    const kind = fileKindOf(message)
+    if (kind !== 'image' && kind !== 'video') return
 
     entries.set(url, { status: 'loading', url: '' })
     blobFor(message).then(
@@ -146,6 +161,7 @@ export function useSecureFiles() {
     mediaSrc,
     mediaState,
     ensureMedia,
+    audioUrlFor,
     blobFor,
     registerLocal,
     adoptServerUrl,

@@ -77,11 +77,20 @@
         </div>
       </div>
 
+      <SettingToggle
+        v-if="props.files.length > 1"
+        class="mt-3"
+        :model-value="props.groupItems"
+        :label="$t('chat.groupFiles')"
+        :description="$t('chat.groupFilesHint')"
+        @update:model-value="value => emit('update:groupItems', value)"
+      />
+
       <!-- Caption -->
       <label
         class="block text-sm text-muted mt-3 mb-1"
       >
-        {{ $t('chat.captionAll') }}
+        {{ props.groupItems && props.files.length > 1 ? $t('chat.captionShared') : $t('chat.captionAll') }}
       </label>
 
       <textarea
@@ -148,12 +157,14 @@ import {
 } from 'lucide-vue-next'
 
 import ModalSheet from '../../../components/ModalSheet.vue'
+import SettingToggle from '../../settings/SettingToggle.vue'
 
 const props = defineProps<{
   open: boolean
   files: File[]
   caption: string
   sending: boolean
+  groupItems: boolean
 
   humanFileSize:
     (bytes: number) => string
@@ -163,6 +174,11 @@ const emit = defineEmits<{
   (
     event: 'update:caption',
     value: string
+  ): void
+
+  (
+    event: 'update:groupItems',
+    value: boolean
   ): void
 
   (

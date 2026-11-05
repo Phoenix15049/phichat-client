@@ -20,7 +20,7 @@ const SESSION_KEYS = [ACCESS_TOKEN_KEY, 'phi.activeUserId']
 
 /**
  * Forget the signed-in session: the access token and cached chat keys (keys are not
- * namespaced per account). Drafts are kept; they are already namespaced per user.
+ * namespaced per account). Drafts are namespaced per user; signing out removes them (clearDrafts).
  */
 export function clearAuthLocal() {
   try {
@@ -28,6 +28,15 @@ export function clearAuthLocal() {
       if (SESSION_KEYS.includes(key) || SESSION_KEY_PREFIXES.some(prefix => key.startsWith(prefix))) {
         localStorage.removeItem(key)
       }
+    }
+  } catch {}
+}
+
+/** Unsent drafts are plain text, so they do not outlive the session (sign-out, not a new sign-in). */
+export function clearDrafts() {
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('phi.draft.')) localStorage.removeItem(key)
     }
   } catch {}
 }

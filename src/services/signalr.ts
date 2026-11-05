@@ -55,6 +55,13 @@ export type GroupEventPayload = {
   groupId: string
 }
 
+/** A private chat was read: by me on another device, or by the peer (`chatId` is the chat on my side). */
+export type ChatReadPayload = {
+  chatId: string
+  readerId: string
+  readUpToUtc: string
+}
+
 export type GroupReadPayload = {
   groupId: string
   readerId: string
@@ -77,6 +84,8 @@ let connectPromise: Promise<void> | null = null
 let activeToken: string | null = null
 let reconnectTimer: number | null = null
 let manualDisconnect = false
+/** This session was connected before, so a new connection means events may have been missed. */
+let hadConnection = false
 
 // Reconnect backoff after the connection is lost: 1.5s, 3s, 6s ... capped at 30s.
 let reconnectAttempt = 0
@@ -91,6 +100,9 @@ function nextReconnectDelay() {
 }
 
 const messageReceivedHandlers = new Set<Handler<[any]>>()
+const messageSentHandlers = new Set<Handler<[any]>>()
+const chatReadHandlers = new Set<Handler<[ChatReadPayload]>>()
+const reconnectedHandlers = new Set<Handler<[]>>()
 const deliveredHandlers = new Set<Handler<[any]>>()
 const messageReadHandlers = new Set<Handler<[any]>>()
 const onlineSnapshotHandlers = new Set<Handler<[string[]]>>()
@@ -262,6 +274,19 @@ function bindConnection(current: HubConnection) {
     dispatch(messageReceivedHandlers, payload)
   )
 
+  // Sent from another of my devices.
+  current.on('MessageSent', payload =>
+    dispatch(messageSentHandlers, payload)
+  )
+
+  current.on('ChatRead', payload =>
+    dispatch(chatReadHandlers, {
+      chatId: String(payload?.chatId ?? ''),
+      readerId: String(payload?.readerId ?? ''),
+      readUpToUtc: String(payload?.readUpToUtc ?? '')
+    })
+  )
+
   current.on('Delivered', payload =>
     dispatch(deliveredHandlers, payload)
   )
@@ -375,6 +400,7 @@ function bindConnection(current: HubConnection) {
       void refreshOnlineSnapshot(
         current
       )
+      dispatch(reconnectedHandlers)
     }
   })
 
@@ -397,6 +423,22 @@ export function createChatHubSubscriptionScope() {
     onMessageReceived: createScopeMethod(
       unsubscribers,
       messageReceivedHandlers
+    ),
+
+    onMessageSent: createScopeMethod(
+      unsubscribers,
+      messageSentHandlers
+    ),
+
+    onChatRead: createScopeMethod(
+      unsubscribers,
+      chatReadHandlers
+    ),
+
+    /** The connection is back after a loss: whatever happened meanwhile must be fetched. */
+    onReconnected: createScopeMethod(
+      unsubscribers,
+      reconnectedHandlers
     ),
 
     onDelivered: createScopeMethod(
@@ -565,6 +607,9 @@ export async function connectToChatHub(
       await refreshOnlineSnapshot(
         next
       )
+
+      if (hadConnection) dispatch(reconnectedHandlers)
+      hadConnection = true
     })
     .catch(error => {
       if (connection === next) {
@@ -626,14 +671,17 @@ export async function sendMessage(
   )
 }
 
-export async function markAsRead(
+/** Reads a private chat up to `messageId`, older unread messages included. */
+export async function markChatRead(
+  peerId: string,
   messageId: string
 ) {
   const current =
     await getConnectedHub()
 
   await current.invoke(
-    'MarkMessageAsRead',
+    'MarkChatRead',
+    peerId,
     messageId
   )
 }
@@ -692,6 +740,7 @@ export async function fetchOnlineUsers():
 
 export async function disconnectFromChatHub() {
   manualDisconnect = true
+  hadConnection = false
   activeToken = null
 
   clearReconnectTimer()

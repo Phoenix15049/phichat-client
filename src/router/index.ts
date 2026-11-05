@@ -5,7 +5,7 @@ import ChatView from '../views/ChatView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import ContactsView from '../views/ContactsView.vue'
 import { getToken, isJwtExpired } from '../services/auth'
-import { getValidAccessToken, onSessionExpired } from '../services/api'
+import { getValidAccessToken, onSessionExpired, refreshAccessToken } from '../services/api'
 
 const routes = [
   { path: '/', redirect: '/chat' },
@@ -27,14 +27,20 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.meta?.public) {
     const token = getToken()
-    if (token && !isJwtExpired(token)) return '/chat'
-    return true
+    if (!token) return true
+    if (!isJwtExpired(token)) return '/chat'
+
+    // The session may be fine and only the access token old; a rejected refresh clears it.
+    try {
+      return (await refreshAccessToken()) ? '/chat' : true
+    } catch {
+      return true
+    }
   }
 
-  // An expired access token is fine as long as the refresh cookie can renew it.
-  const token = await getValidAccessToken()
-  if (!token || isJwtExpired(token)) return '/login'
-  return true
+  // Null means the session is over. A token that is still expired here means the server could not
+  // be reached: the session is intact, so the app opens and catches up when the connection is back.
+  return (await getValidAccessToken()) ? true : '/login'
 })
 
 onSessionExpired(() => {

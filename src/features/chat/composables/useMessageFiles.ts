@@ -8,7 +8,7 @@ import type {
   ChatUser,
   UiMessage
 } from '../../../types/chat'
-import type { FileMeta, VoiceMeta } from '../../../services/e2ee/messageCodec'
+import type { AlbumMeta, FileMeta, VoiceMeta } from '../../../services/e2ee/messageCodec'
 import type { Outbox } from './useOutbox'
 import {
   prepareAttachment,
@@ -17,6 +17,7 @@ import {
   type SealAndSend
 } from '../attachments'
 import type { useSecureFiles } from './useSecureFiles'
+import { MAX_ALBUM_ITEMS } from '../albumLayout'
 
 type SelectedUser =
   Pick<ChatUser, 'id' | 'username'> | null
@@ -28,6 +29,7 @@ type FileOutgoingInput = {
   file?: FileMeta | null
   sentAt?: string
   replyToMessageId?: string | null
+  album?: AlbumMeta | null
 }
 
 type UseMessageFilesOptions = {
@@ -78,6 +80,8 @@ export function useMessageFiles({
     ref<File[]>([])
 
   const pendingCaption = ref('')
+  /** Several files go out as one message with a shared caption unless the user says otherwise. */
+  const groupFiles = ref(true)
   const showFileModal = ref(false)
   const sendingFile = ref(false)
 
@@ -122,6 +126,7 @@ export function useMessageFiles({
     showFileModal.value = false
     pendingFiles.value = []
     pendingCaption.value = ''
+    groupFiles.value = true
   }
 
   function addAnotherFile() {
@@ -287,82 +292,72 @@ export function useMessageFiles({
       const caption =
         pendingCaption.value.trim()
 
+      const grouped =
+        groupFiles.value &&
+        pendingFiles.value.length > 1
+
       const sentAt =
         new Date().toISOString()
 
-      let lastOutgoing:
-        UiMessage | null = null
+      // Everything is prepared first, so the whole group appears at once and fills in as it uploads.
+      const prepared: Array<{ file: File; attachment: PreparedAttachment }> = []
 
-      for (
-        const file of pendingFiles.value
-      ) {
-        let attachment: PreparedAttachment
-
+      for (const file of pendingFiles.value) {
         try {
-          attachment =
-            await prepareAttachment(file)
+          prepared.push({ file, attachment: await prepareAttachment(file) })
         } catch (error) {
           // Too large or unreadable: skip it and say why; the others still go.
           onFileError(error)
-          continue
         }
-
-        const clientId =
-          crypto.randomUUID()
-
-        secureFiles.registerLocal(
-          clientId,
-          file,
-          attachment.meta
-        )
-
-        const outgoing =
-          await appendOutgoingMessage(
-            partnerId,
-            {
-              clientId,
-              plainText: caption,
-              fileUrl: '(pending)',
-              file: attachment.meta,
-              sentAt,
-              replyToMessageId:
-                replyId
-            }
-          )
-
-        lastOutgoing = outgoing
-
-        // One failed file does not stop the others; it can be retried from its bubble.
-        await outbox.send(clientId, () =>
-          sendAttachment(
-            sealAndSend,
-            partnerId,
-            attachment,
-            {
-              caption,
-              clientId,
-              replyToMessageId: replyId
-            }
-          )
-        )
       }
 
-      if (lastOutgoing) {
-        updateConversationAfterSend(
-          partnerId,
-          lastOutgoing,
-          user.username
-        )
+      const jobs: Array<() => Promise<boolean>> = []
+      let firstOutgoing: UiMessage | null = null
+
+      for (let start = 0; start < prepared.length; start += grouped ? MAX_ALBUM_ITEMS : 1) {
+        const chunk = grouped ? prepared.slice(start, start + MAX_ALBUM_ITEMS) : [prepared[start]]
+        const albumId = chunk.length > 1 ? crypto.randomUUID() : null
+
+        for (let index = 0; index < chunk.length; index++) {
+          const { file, attachment } = chunk[index]
+          const clientId = crypto.randomUUID()
+          const first = !firstOutgoing
+          // A group shares one caption; separate files each carry it.
+          const plainText = !grouped || first ? caption : ''
+          const album = albumId ? { id: albumId, index, count: chunk.length } : null
+          const replyToMessageId = !grouped || first ? replyId : null
+
+          secureFiles.registerLocal(clientId, file, attachment.meta)
+
+          const outgoing = await appendOutgoingMessage(partnerId, {
+            clientId,
+            plainText,
+            fileUrl: '(pending)',
+            file: attachment.meta,
+            sentAt,
+            replyToMessageId,
+            album
+          })
+          firstOutgoing ??= outgoing
+
+          // One failed file does not stop the others; it can be retried from its row.
+          jobs.push(() => outbox.send(clientId, () =>
+            sendAttachment(sealAndSend, partnerId, attachment, { caption: plainText, clientId, replyToMessageId, album })
+          ))
+        }
+      }
+
+      if (firstOutgoing) {
+        updateConversationAfterSend(partnerId, firstOutgoing, user.username)
       }
 
       cancelFileSend()
 
-      if (
-        selectedUser.value?.id ===
-        partnerId
-      ) {
+      if (selectedUser.value?.id === partnerId) {
         replyingTo.value = null
       }
+
+      for (const job of jobs) await job()
     } catch (error) {
       console.error(
         'send file failed',
@@ -385,7 +380,7 @@ export function useMessageFiles({
 
     let attachment: PreparedAttachment
     try {
-      attachment = await prepareAttachment(file)
+      attachment = await prepareAttachment(file, { voice: true })
     } catch (error) {
       onFileError(error)
       return
@@ -417,6 +412,7 @@ export function useMessageFiles({
     fileInput,
     pendingFiles,
     pendingCaption,
+    groupFiles,
     showFileModal,
     sendingFile,
 

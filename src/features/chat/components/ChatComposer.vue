@@ -1,6 +1,7 @@
 <template>
-  <div v-if="props.visible" class="composer shrink-0 bg-surface border-t border-line">
-    <div class="w-full px-2 sm:px-4">
+  <div v-if="props.visible" class="composer shrink-0 px-2 sm:px-4 pb-2 sm:pb-3">
+    <!-- The glass makes this its own layer; it stays above the messages so its popovers do too. -->
+    <div class="glass-soft relative z-30 w-full rounded-[28px] px-1 sm:px-2">
       <!-- Reply / edit banner -->
       <Transition name="banner">
         <div v-if="props.replying || props.editing" class="flex items-center gap-3 pt-2 ps-2">
@@ -42,24 +43,37 @@
         </div>
       </Transition>
 
-      <form class="flex items-end gap-1 py-2" @submit.prevent="submit">
-        <!-- Emoji -->
-        <div class="relative shrink-0">
+      <form class="flex items-end gap-1 py-1" @submit.prevent="submit">
+        <!-- Attach -->
+        <div ref="attachRoot" v-show="!recorder.recording.value" class="relative shrink-0">
           <button
             type="button"
-            class="icon-btn"
-            :class="emojiOpen ? 'text-accent' : ''"
-            :title="$t('emoji.title')"
-            :aria-label="$t('emoji.title')"
-            @mousedown.prevent
-            @click="emojiOpen = !emojiOpen"
+            class="composer-btn"
+            :class="attachOpen ? 'text-accent' : ''"
+            :title="$t('chat.attach')"
+            :aria-label="$t('chat.attach')"
+            :aria-expanded="attachOpen"
+            @click="attachOpen = !attachOpen"
           >
-            <Smile class="w-6 h-6" />
+            <Paperclip class="w-6 h-6" />
           </button>
 
-          <Transition name="pop">
-            <div v-if="emojiOpen" class="absolute bottom-full start-0 mb-2 z-50">
-              <EmojiPicker @select="insertEmoji" />
+          <Transition name="attach">
+            <div v-if="attachOpen" class="attach-menu" role="menu">
+              <button type="button" role="menuitem" class="attach-item" style="--i: 0" @click="pickAttachment('open-media')">
+                <span class="attach-icon bg-accent/15 text-accent"><ImageIcon class="w-5 h-5" /></span>
+                <span class="min-w-0">
+                  <span class="block text-[14px] font-medium text-ink">{{ $t('chat.attachMedia') }}</span>
+                  <span class="block text-[12px] text-muted truncate">{{ $t('chat.attachMediaHint') }}</span>
+                </span>
+              </button>
+              <button type="button" role="menuitem" class="attach-item" style="--i: 1" @click="pickAttachment('open-file')">
+                <span class="attach-icon bg-[#6366f1]/15 text-[#6366f1]"><FileIcon class="w-5 h-5" /></span>
+                <span class="min-w-0">
+                  <span class="block text-[14px] font-medium text-ink">{{ $t('chat.attachFile') }}</span>
+                  <span class="block text-[12px] text-muted truncate">{{ $t('chat.attachFileHint') }}</span>
+                </span>
+              </button>
             </div>
           </Transition>
         </div>
@@ -75,7 +89,7 @@
         </div>
 
         <!-- Message -->
-        <div v-show="!recorder.recording.value" class="flex-1 min-w-0 rounded-[22px] bg-surface-2 ring-accent/40 focus-within:ring-2 transition">
+        <div v-show="!recorder.recording.value" class="flex-1 min-w-0 rounded-[22px]">
           <textarea
             :ref="bindMessageInput"
             :value="props.modelValue"
@@ -90,30 +104,23 @@
           />
         </div>
 
-        <!-- Attach -->
-        <div v-show="!recorder.recording.value" class="relative shrink-0">
+        <!-- Emoji -->
+        <div ref="emojiRoot" v-show="!recorder.recording.value" class="relative shrink-0">
           <button
             type="button"
-            class="icon-btn"
-            :class="attachOpen ? 'text-accent' : ''"
-            :title="$t('chat.attach')"
-            :aria-label="$t('chat.attach')"
-            @click="attachOpen = !attachOpen"
+            class="composer-btn"
+            :class="emojiOpen ? 'text-accent' : ''"
+            :title="$t('emoji.title')"
+            :aria-label="$t('emoji.title')"
+            @mousedown.prevent
+            @click="emojiOpen = !emojiOpen"
           >
-            <Paperclip class="w-6 h-6" />
+            <Smile class="w-6 h-6" />
           </button>
 
           <Transition name="pop">
-            <div
-              v-if="attachOpen"
-              class="absolute bottom-full end-0 mb-2 w-52 py-1 rounded-2xl bg-surface shadow-xl ring-1 ring-line z-50"
-            >
-              <button type="button" class="attach-item" @click="pickAttachment('open-media')">
-                <ImageIcon class="w-5 h-5 text-accent" /> {{ $t('chat.attachMedia') }}
-              </button>
-              <button type="button" class="attach-item" @click="pickAttachment('open-file')">
-                <FileIcon class="w-5 h-5 text-accent" /> {{ $t('chat.attachFile') }}
-              </button>
+            <div v-if="emojiOpen" class="absolute bottom-full end-0 mb-2 z-50">
+              <EmojiPicker @select="insertEmoji" />
             </div>
           </Transition>
         </div>
@@ -131,7 +138,7 @@
         <button
           v-else-if="showMic"
           type="button"
-          class="shrink-0 w-11 h-11 rounded-full grid place-items-center text-muted hover:text-accent hover:bg-surface-2 transition active:scale-95"
+          class="composer-btn shrink-0 hover:text-accent active:scale-95"
           :title="$t('chat.recordVoice')"
           :aria-label="$t('chat.recordVoice')"
           @click="startRecording"
@@ -166,14 +173,11 @@
         />
       </form>
     </div>
-
-    <!-- Click outside closes the popovers. -->
-    <div v-if="emojiOpen || attachOpen" class="fixed inset-0 z-40" @click="emojiOpen = attachOpen = false"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
 import {
   Check, File as FileIcon, Image as ImageIcon, Link2, Mic, Paperclip, Pencil, Reply, SendHorizontal, Smile, X
 } from 'lucide-vue-next'
@@ -239,6 +243,31 @@ function formatSeconds(seconds: number) {
 const preferences = usePreferencesStore()
 const emojiOpen = ref(false)
 const attachOpen = ref(false)
+const emojiRoot = ref<HTMLElement | null>(null)
+const attachRoot = ref<HTMLElement | null>(null)
+
+/** A press anywhere outside closes a popover, without covering the page or the popover itself. */
+function onPressOutside(event: PointerEvent) {
+  const target = event.target as Node
+  if (!emojiRoot.value?.contains(target)) emojiOpen.value = false
+  if (!attachRoot.value?.contains(target)) attachOpen.value = false
+}
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  emojiOpen.value = false
+  attachOpen.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onPressOutside, true)
+  document.addEventListener('keydown', onEscape)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPressOutside, true)
+  document.removeEventListener('keydown', onEscape)
+})
 let textarea: HTMLTextAreaElement | null = null
 
 function handleInput(event: Event) {
@@ -322,8 +351,38 @@ function bindMediaInput(element: Element | ComponentPublicInstance | null) {
           mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,1) 8px);
 }
 
+/* Every control of the bar shares one size, so they line up with each other and the text box. */
+.composer-btn {
+  @apply inline-grid place-items-center w-11 h-11 rounded-full text-muted hover:text-ink hover:bg-ink/5 transition;
+}
+
+.attach-menu {
+  @apply absolute bottom-full start-0 mb-2 w-64 p-1.5 rounded-2xl bg-surface shadow-xl ring-1 ring-line z-50;
+  transform-origin: bottom left;
+}
+:global([dir="rtl"]) .attach-menu { transform-origin: bottom right; }
 .attach-item {
-  @apply w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-ink hover:bg-surface-2 transition text-start;
+  @apply w-full flex items-center gap-3 rounded-xl p-2 text-start hover:bg-surface-2 transition-colors;
+}
+.attach-icon {
+  @apply w-10 h-10 shrink-0 grid place-items-center rounded-[35%];
+}
+
+/* The menu grows from the button and its rows follow one after the other. */
+.attach-enter-from { opacity: 0; transform: translateY(10px) scale(.86); }
+.attach-enter-active { transition: opacity .14s ease, transform .28s cubic-bezier(.2, 1.3, .35, 1); }
+.attach-leave-to { opacity: 0; transform: translateY(6px) scale(.94); }
+.attach-leave-active { transition: opacity .1s ease, transform .1s ease; }
+.attach-enter-active .attach-item {
+  animation: attach-row .3s cubic-bezier(.2, 1.1, .35, 1) both;
+  animation-delay: calc(var(--i) * 45ms + 40ms);
+}
+@keyframes attach-row {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .attach-enter-active, .attach-leave-active { transition: none; }
+  .attach-enter-active .attach-item { animation: none; }
 }
 
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }

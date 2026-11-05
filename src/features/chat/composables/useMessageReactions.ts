@@ -48,7 +48,7 @@ export function useMessageReactions({
 
   let suppressHoverUntil = 0
 
-  const HOVER_REACT_DELAY = 1000
+  const HOVER_REACT_DELAY = 180
 
   function normalizeEmoji(
     emoji: string

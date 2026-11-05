@@ -66,6 +66,8 @@ export function useConversations({
 
   /** Replaces the list with the server's conversations, newest first, and decrypts previews. */
   function setConversations(data: ConversationSummary[]) {
+    const previous = new Map(conversations.value.map(item => [item.peerId, item]))
+
     conversations.value = data.map(c => ({
       peerId: c.peerId,
       isGroup: !!c.isGroup,
@@ -76,9 +78,13 @@ export function useConversations({
       unreadCount: c.unreadCount ?? 0,
       lastSentAt: c.lastSentAt || null,
       lastFileUrl: c.lastFileUrl || null,
+      lastCipher: c.lastEncryptedContent || null,
       lastPreview: c.isGroup && c.lastSystemEvent && groupLabels
         ? groupLabels.systemText(c.peerId, c.lastSenderId || '', c.lastSystemEvent)
-        : null
+        // Refreshing the list must not blank a preview that is still right.
+        : c.lastEncryptedContent && previous.get(c.peerId)?.lastCipher === c.lastEncryptedContent
+          ? previous.get(c.peerId)?.lastPreview ?? null
+          : null
     }))
 
     for (const c of conversations.value) {

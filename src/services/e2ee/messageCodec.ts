@@ -14,6 +14,16 @@ export type VoiceMeta = {
   waveform: number[]
 }
 
+/** Tags of a music file, read by the sender. */
+export type AudioMeta = {
+  title?: string
+  performer?: string
+  /** Seconds. */
+  duration?: number
+  /** Small JPEG cover as a data: URL. */
+  cover?: string
+}
+
 export type FileMeta = {
   /** base64 AES-256-GCM key of the uploaded ciphertext. */
   key: string
@@ -21,8 +31,20 @@ export type FileMeta = {
   name: string
   mime: string
   size: number
+  /** Pixel size of an image or video, so an album can be laid out before it is decrypted. */
+  width?: number
+  height?: number
   /** Present for voice messages. */
   voice?: VoiceMeta
+  /** Present for music files. */
+  audio?: AudioMeta
+}
+
+/** Marks a message as one item of an album: the items are shown together as one message. */
+export type AlbumMeta = {
+  id: string
+  index: number
+  count: number
 }
 
 /** Made by the sender's client; the recipient never contacts the linked site. */
@@ -39,6 +61,7 @@ export type MessageEnvelope = {
   text: string
   file?: FileMeta
   preview?: LinkPreviewMeta
+  album?: AlbumMeta
 }
 
 export type MessageHeader = {
@@ -120,16 +143,49 @@ export function parseEnvelope(json: string): MessageEnvelope {
         waveform: voice.waveform.slice(0, 128).map((v: unknown) => Math.min(31, Math.max(0, Math.round(Number(v) || 0))))
       }
     }
+
+    const pixels = (n: unknown) => (Number.isFinite(n) && (n as number) > 0 && (n as number) <= 40_000 ? Math.round(n as number) : undefined)
+    const width = pixels(file.width)
+    const height = pixels(file.height)
+    if (width && height) {
+      envelope.file.width = width
+      envelope.file.height = height
+    }
+
+    const audio = parseAudio(file.audio)
+    if (audio) envelope.file.audio = audio
   }
 
   const preview = parsePreview(value.preview)
   if (preview) envelope.preview = preview
+
+  const album = parseAlbum(value.album)
+  if (album) envelope.album = album
 
   return envelope
 }
 
 const text = (value: unknown, max: number) =>
   typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined
+
+const INLINE_IMAGE = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/
+
+/** Untrusted input from the other side, like everything else in the envelope. */
+function parseAudio(value: any): AudioMeta | undefined {
+  if (!value || typeof value !== 'object') return undefined
+
+  const audio: AudioMeta = { title: text(value.title, 200), performer: text(value.performer, 200) }
+  if (Number.isFinite(value.duration) && value.duration > 0) audio.duration = Math.min(86_400, Number(value.duration))
+  if (typeof value.cover === 'string' && value.cover.length < 60_000 && INLINE_IMAGE.test(value.cover)) audio.cover = value.cover
+  return audio
+}
+
+function parseAlbum(value: any): AlbumMeta | undefined {
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(value.id)) return undefined
+  if (!Number.isInteger(value.index) || !Number.isInteger(value.count)) return undefined
+  if (value.count < 1 || value.count > 100 || value.index < 0 || value.index >= value.count) return undefined
+  return { id: value.id, index: value.index, count: value.count }
+}
 
 /** Untrusted input from the other side: only http(s) links and small inline JPEG/PNG thumbnails. */
 function parsePreview(value: any): LinkPreviewMeta | undefined {
@@ -142,7 +198,7 @@ function parsePreview(value: any): LinkPreviewMeta | undefined {
     title: text(value.title, 200),
     description: text(value.description, 300)
   }
-  if (typeof value.image === 'string' && value.image.length < 200_000 && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(value.image)) {
+  if (typeof value.image === 'string' && value.image.length < 200_000 && INLINE_IMAGE.test(value.image)) {
     preview.image = value.image
   }
   return preview.title || preview.description ? preview : undefined

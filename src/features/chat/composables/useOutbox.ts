@@ -16,6 +16,8 @@ type UseOutboxOptions = {
  */
 export function useOutbox({ messages, onError }: UseOutboxOptions) {
   const attempts = new Map<string, Attempt>()
+  /** Messages not yet accepted by the server, per chat: they survive opening another chat. */
+  const tracked = new Map<string, { chatId: string; message: UiMessage }>()
 
   function setStatus(clientId: string, status: UiMessage['status']) {
     // Look the message up in the reactive list so the change re-renders.
@@ -29,10 +31,13 @@ export function useOutbox({ messages, onError }: UseOutboxOptions) {
     try {
       await attempt()
       attempts.delete(clientId)
+      tracked.delete(clientId)
       return true
     } catch (error) {
       console.warn('send failed', error)
       attempts.set(clientId, attempt)
+      const entry = tracked.get(clientId)
+      if (entry) entry.message.status = 'failed'
       setStatus(clientId, 'failed')
       onError?.(error)
       return false
@@ -65,6 +70,7 @@ export function useOutbox({ messages, onError }: UseOutboxOptions) {
     if (!message.clientId) return
 
     attempts.delete(message.clientId)
+    tracked.delete(message.clientId)
     const index = messages.value.findIndex(item => item.clientId === message.clientId)
     if (index >= 0) messages.value.splice(index, 1)
   }
@@ -73,11 +79,29 @@ export function useOutbox({ messages, onError }: UseOutboxOptions) {
     return !!message.clientId && attempts.has(message.clientId)
   }
 
-  function reset() {
-    attempts.clear()
+  /** Registers an outgoing message of `chatId` before it is sent. */
+  function track(chatId: string, message: UiMessage) {
+    if (message.clientId) tracked.set(message.clientId, { chatId, message })
   }
 
-  return { send, retry, discard, canRetry, reset }
+  /** Failed messages of a chat, to show again when it is opened. */
+  function failedFor(chatId: string): UiMessage[] {
+    return [...tracked.values()]
+      .filter(entry => entry.chatId === chatId && entry.message.status === 'failed')
+      .map(entry => entry.message)
+  }
+
+  /** Whether this device is sending (or failed to send) the message. */
+  function owns(clientId: string) {
+    return tracked.has(clientId)
+  }
+
+  function reset() {
+    attempts.clear()
+    tracked.clear()
+  }
+
+  return { send, retry, discard, canRetry, track, failedFor, owns, reset }
 }
 
 export type Outbox = ReturnType<typeof useOutbox>

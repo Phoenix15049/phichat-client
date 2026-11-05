@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="props.selectedUser || props.selectionMode"
-    class="h-14 shrink-0 bg-surface border-b border-line px-2 sm:px-3 flex items-center select-none"
+    class="h-14 shrink-0 bg-surface/80 backdrop-blur-xl border-b border-line px-2 sm:px-3 flex items-center select-none"
   >
     <Transition name="slide-down" mode="out-in">
       <!-- Selection header -->
@@ -71,10 +71,10 @@
           @click.stop="emit('open-profile')"
         >
           <div class="relative shrink-0">
-            <div v-if="props.saved" class="w-10 h-10 rounded-full grid place-items-center bg-accent text-white">
+            <div v-if="props.saved" class="w-10 h-10 rounded-[35%] grid place-items-center bg-accent text-white">
               <Bookmark class="w-5 h-5" />
             </div>
-            <div v-else class="w-10 h-10 rounded-full overflow-hidden grid place-items-center">
+            <div v-else class="w-10 h-10 rounded-[35%] overflow-hidden grid place-items-center">
               <img v-if="props.avatarUrl" :src="props.avatarUrl" class="w-full h-full object-cover" alt="" />
               <div
                 v-else
@@ -86,7 +86,7 @@
             </div>
             <span
               v-if="props.isPeerOnline"
-              class="absolute bottom-0 end-0 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
+              class="absolute -bottom-0.5 -end-0.5 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
             ></span>
           </div>
 

@@ -4,8 +4,13 @@
     :class="props.isNarrow ? 'w-full' : 'w-80 lg:w-[380px] border-e'"
   >
     <div class="h-14 shrink-0 px-2 flex items-center gap-1">
-      <button type="button" class="icon-btn shrink-0" :aria-label="$t('menu.open')" @click="emit('open-menu')">
-        <Menu class="w-5 h-5" />
+      <button type="button" class="relative shrink-0 w-10 h-10 rounded-[35%] overflow-hidden grid place-items-center ring-2 ring-accent/30 hover:ring-accent/70 transition active:scale-95" :aria-label="$t('menu.open')" @click="emit('open-menu')">
+        <img v-if="props.me?.avatarUrl" :src="props.me.avatarUrl" class="w-full h-full object-cover" alt="" />
+        <span
+          v-else
+          class="w-full h-full grid place-items-center text-white text-[13px] font-semibold"
+          :style="{ backgroundColor: colorFromString(props.me?.displayName || props.me?.username || 'U') }"
+        >{{ initialsOf(props.me?.displayName || props.me?.username || 'U') }}</span>
       </button>
 
       <div class="relative flex-1">
@@ -25,17 +30,17 @@
         :key="conversation.peerId"
         v-ripple
         type="button"
-        class="relative overflow-hidden w-full px-2.5 py-2 rounded-xl flex gap-3 items-center text-start transition-colors"
-        :class="props.selectedUserId === conversation.peerId ? 'bg-accent-soft' : 'hover:bg-surface-2'"
+        class="chat-row relative overflow-hidden w-full px-2.5 py-2 rounded-2xl flex gap-3 items-center text-start transition-colors"
+        :class="props.selectedUserId === conversation.peerId ? 'chat-row-on' : 'hover:bg-surface-2'"
         @click.stop="emit('select', conversation)"
       >
         <div class="relative shrink-0">
-          <div v-if="isSaved(conversation)" class="w-12 h-12 rounded-full grid place-items-center bg-accent text-white">
+          <div v-if="isSaved(conversation)" class="w-12 h-12 rounded-[35%] grid place-items-center bg-accent text-white">
             <Bookmark class="w-5 h-5" />
           </div>
           <div
             v-else
-            class="w-12 h-12 rounded-full overflow-hidden grid place-items-center"
+            class="w-12 h-12 rounded-[35%] overflow-hidden grid place-items-center"
             :style="!props.avatarById[conversation.peerId] ? { backgroundColor: colorFromString(nameOf(conversation)) } : {}"
           >
             <img
@@ -48,7 +53,7 @@
           </div>
           <span
             v-if="props.onlineIds.has(conversation.peerId) && !isSaved(conversation)"
-            class="absolute bottom-0.5 end-0.5 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
+            class="absolute -bottom-0.5 -end-0.5 w-3 h-3 rounded-full bg-accent ring-2 ring-surface"
           ></span>
         </div>
 
@@ -78,7 +83,7 @@
             </div>
             <span
               v-if="conversation.unreadCount > 0"
-              class="shrink-0 inline-flex items-center justify-center rounded-full text-white text-[12px] font-semibold min-w-[22px] h-[22px] px-1.5"
+              class="shrink-0 inline-flex items-center justify-center rounded-lg text-white text-[12px] font-semibold min-w-[22px] h-[22px] px-1.5"
               :class="props.mutedIds?.has(conversation.peerId) ? 'bg-muted' : 'bg-accent'"
             >
               {{ conversation.unreadCount > 99 ? '99+' : conversation.unreadCount }}
@@ -98,10 +103,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { colorFromString, initialsOf } from '../../../utils/avatar'
-import { BellOff, Bookmark, Menu, MessagesSquare, Paperclip, Search, Users } from 'lucide-vue-next'
+import { BellOff, Bookmark, MessagesSquare, Paperclip, Search, Users } from 'lucide-vue-next'
 import { t } from '../../../i18n'
 import { formatListTime } from '../../../utils/time'
-import type { UiConversation } from '../../../types/chat'
+import type { ChatUser, UiConversation } from '../../../types/chat'
 
 const props = defineProps<{
   conversations: UiConversation[]
@@ -110,6 +115,7 @@ const props = defineProps<{
   onlineIds: Set<string>
   /** The signed-in user: the chat with oneself is Saved Messages. */
   myId?: string
+  me?: Partial<ChatUser> | null
   /** Muted chats: a bell-off icon and a grey unread badge. */
   mutedIds?: Set<string>
   avatarById: Record<string, string | null>
@@ -141,3 +147,19 @@ const filtered = computed(() => {
   )
 })
 </script>
+
+<style scoped>
+@reference "../../../assets/tailwind.css";
+
+/* The open chat: a soft glow with a bar on its leading edge. */
+.chat-row-on {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 22%, transparent), color-mix(in srgb, var(--color-accent) 7%, transparent));
+}
+:global([dir="rtl"]) .chat-row-on {
+  background: linear-gradient(270deg, color-mix(in srgb, var(--color-accent) 22%, transparent), color-mix(in srgb, var(--color-accent) 7%, transparent));
+}
+.chat-row-on::before {
+  content: '';
+  @apply absolute inset-y-3 start-0 w-1 rounded-e-full bg-accent;
+}
+</style>

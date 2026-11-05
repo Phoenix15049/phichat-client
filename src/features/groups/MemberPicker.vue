@@ -5,7 +5,7 @@
       <input
         v-model="query"
         type="search"
-        class="input w-full ps-9"
+        class="input w-full !ps-9"
         dir="auto"
         :placeholder="$t('groups.searchPeople')"
       />

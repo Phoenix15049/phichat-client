@@ -1,5 +1,5 @@
 <template>
-  <div :ref="bindScroll" class="chat-scroll flex-1 overflow-y-auto bg-canvas" @scroll="actions.onScroll">
+  <div :ref="bindScroll" class="chat-scroll flex-1 overflow-y-auto" @scroll="onListScroll">
     <div class="w-full px-3 sm:px-5 py-3">
       <div v-if="loadingOlder" class="sticky top-2 z-10 flex justify-center">
         <div class="flex items-center gap-2 rounded-full bg-surface/90 backdrop-blur px-3 py-1 shadow-sm ring-1 ring-line">
@@ -8,13 +8,14 @@
         </div>
       </div>
 
-      <TransitionGroup name="bubble" tag="div">
+      <!-- Keyed by chat: opening another chat swaps the list at once instead of animating every row out. -->
+      <TransitionGroup :key="chatKey" name="bubble" tag="div">
         <div
-          v-for="(msg,index) in messages"
+          v-for="{msg,index,endIndex,album} in rows"
           :key="messageKey(msg,index)"
-          class="relative"
-          :class="[mine(msg)?'text-end':'text-start',isGroupStart(index)?'mt-2.5':'mt-0.5',selectionMode?'cursor-pointer ps-7':'',hoverReactFor===(msg.id||msg.clientId)?'':'msg-row-lazy']"
-          @click.stop="!msg.systemEvent&&actions.onRowClick($event,msg)"
+          class="msg-row-lazy relative -mx-3 sm:-mx-5"
+          :class="[mine(msg)?'text-end':'text-start',selectionMode?'cursor-pointer':'']"
+          @click.stop="!msg.systemEvent&&onRowClick($event,msg,album)"
           @contextmenu.prevent="!selectionMode&&chatActive&&!msg.systemEvent?actions.openMenu($event,msg):undefined"
           @mousedown.left="!msg.systemEvent&&actions.onRowMouseDown($event,msg)"
           @mouseenter="actions.onRowMouseEnter(msg)"
@@ -26,26 +27,35 @@
           </div>
 
           <!-- Group service message: "Ali added Sara" -->
-          <div v-if="msg.systemEvent" class="flex justify-center my-1.5 px-6">
+          <div v-if="msg.systemEvent" class="flex justify-center mt-3 mb-1.5 px-6">
             <span class="system-chip"><bdi>{{ group?.systemText(msg) }}</bdi></span>
           </div>
 
-          <template v-else>
+          <!-- The full-width line of a message: tinted when it is selected or jumped to -->
           <div
-            v-if="selectionMode"
-            class="absolute bottom-2 start-0 z-10"
-            @click.stop="actions.toggleSelect(msg)"
+            v-else
+            class="msg-line relative ps-3 sm:ps-5 transition-colors duration-150"
+            :class="[
+              isGroupStart(index)?'pt-2.5':'pt-0.5',
+              selectionMode?'pe-11 sm:pe-14':'pe-3 sm:pe-5',
+              selectionMode&&rowSelected(msg,album)?'msg-line-on':''
+            ]"
           >
-            <span
-              class="w-5 h-5 grid place-items-center rounded-full border-2 transition"
-              :class="actions.isSelected(msg)?'bg-accent border-accent text-white':'border-muted/50 bg-surface/70'"
-              :title="actions.isSelected(msg)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
-            ><Check v-if="actions.isSelected(msg)" class="w-3 h-3" :stroke-width="3"/></span>
-          </div>
+          <button
+            v-if="selectionMode"
+            type="button"
+            class="sel-check"
+            :class="rowSelected(msg,album)?'sel-check-on':''"
+            :title="rowSelected(msg,album)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
+            :aria-label="rowSelected(msg,album)?$t('chat.unselectMessage'):$t('chat.selectMessage')"
+            :aria-pressed="rowSelected(msg,album)"
+            @click.stop="toggleRow(msg,album)"
+          ><Check v-if="rowSelected(msg,album)" class="w-3.5 h-3.5" :stroke-width="3.2"/></button>
 
           <div
             :ref="bindMessageElement((msg.id||msg.clientId)!)"
-            :class="bubbleClasses(msg,index)"
+            :data-bubble="msg.id||msg.clientId"
+            :class="bubbleClasses(msg,endIndex,album)"
             @dblclick="actions.onBubbleDblClick($event,msg)"
             @contextmenu.stop.prevent="!selectionMode&&chatActive?actions.openMenu($event,msg):undefined"
             @mouseenter="actions.onBubbleHoverStart(msg)"
@@ -54,11 +64,11 @@
             <div
               v-if="group&&!mine(msg)&&isGroupStart(index)"
               class="mb-0.5 text-[13px] font-semibold truncate"
-              :class="isMediaOnly(msg)?'px-1 pb-1':''"
+              :class="isMediaOnly(msg,album)?'px-1 pb-1':''"
               :style="{ color: group.senderColor(msg.senderId) }"
             ><bdi>{{ group.senderName(msg.senderId) }}</bdi></div>
 
-            <div v-if="msg.forwardedFromSenderId" class="mb-0.5 text-[12.5px] font-medium text-accent" :class="isMediaOnly(msg)?'px-1 pb-1':''">
+            <div v-if="msg.forwardedFromSenderId" class="mb-0.5 text-[12.5px] font-medium text-accent" :class="isMediaOnly(msg,album)?'px-1 pb-1':''">
               {{ $t('chat.forwardedFrom') }}
               <button
                 type="button"
@@ -130,7 +140,19 @@
               <span>{{ unreadableNotice(msg) }}</span>
             </div>
 
-            <div v-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
+            <div v-if="album" :class="isMediaOnly(msg,album)||isFileAlbum(album)?'':'mt-1 -mx-1.5'">
+              <ChatAlbum
+                :items="album"
+                :selection-mode="selectionMode"
+                :downloaded="downloaded"
+                :downloading="downloading"
+                :bind-message-element="bindMessageElement"
+                :actions="actions"
+                @context="(event,item)=>!selectionMode&&chatActive?actions.openMenu(event,item):undefined"
+              />
+            </div>
+
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
               <img
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
@@ -160,7 +182,19 @@
             </div>
 
             <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='voice'" class="mt-0.5">
-              <VoiceMessage :src="actions.mediaSrc(msg)" :voice="msg.file!.voice!" :state="actions.mediaState(msg)"/>
+              <VoiceMessage :track-key="(msg.id||msg.clientId)!" :voice="msg.file!.voice!" @play="actions.playAudio(msg)"/>
+            </div>
+
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='audio'&&msg.file" class="mt-0.5">
+              <MusicMessage
+                :track-key="(msg.id||msg.clientId)!"
+                :file="msg.file"
+                :human-file-size="actions.humanFileSize"
+                :downloading="downloading[actions.fileKey(msg)]"
+                :downloaded="downloaded[actions.fileKey(msg)]"
+                @play="actions.playAudio(msg)"
+                @download="actions.downloadFile(msg)"
+              />
             </div>
 
             <div v-else-if="hasViewableFile(msg)" class="mt-0.5">
@@ -188,48 +222,49 @@
             </div>
 
             <div
-              v-if="msg.fileUrl&&msg.plainText"
+              v-if="msg.fileUrl&&captionOf(msg,album)"
               dir="auto"
               class="msg-text mt-1 whitespace-pre-wrap break-words select-text text-start auto-dir"
               data-text-selectable
-            >{{ msg.plainText }}</div>
+            >{{ captionOf(msg,album) }}</div>
 
             <div
               v-if="msg.reactions?.length"
               class="mt-1 flex flex-wrap gap-1"
-              :class="isMediaOnly(msg)?'px-1 pb-1':''"
+              :class="isMediaOnly(msg,album)?'px-1 pb-1':''"
             >
               <button
                 v-for="reaction in msg.reactions"
                 :key="reaction.emoji"
                 type="button"
-                class="h-7 inline-flex items-center gap-1 rounded-full px-2 text-[13px] font-medium transition active:scale-95"
+                class="reaction-chip"
                 :class="reaction.mine?'bg-accent text-white':'bg-accent/15 text-accent-strong hover:bg-accent/25'"
                 @click.stop="actions.applyReaction(msg,reaction.emoji)"
               >
-                <span class="emoji-font text-[15px] leading-none">{{ reaction.emoji }}</span>
+                <span class="emoji-font leading-none text-[1.15em]">{{ reaction.emoji }}</span>
                 <span>{{ reaction.count }}</span>
               </button>
             </div>
 
             <div
               class="meta"
-              :class="isMediaOnly(msg)?'meta-overlay':'meta-inline'"
+              :class="isMediaOnly(msg,album)?'meta-overlay':'meta-inline'"
               :title="tooltipForMessage(msg)"
             >
+              <ShieldAlert v-if="msg.unknownKey" class="w-3.5 h-3.5 text-danger" :aria-label="$t('chat.unknownKeyWarning')"><title>{{ $t('chat.unknownKeyWarning') }}</title></ShieldAlert>
               <span v-if="msg.updatedAtUtc">{{ $t('chat.edited') }}</span>
               <span>{{ formatTime(msg.sentAt) }}</span>
 
               <span v-if="mine(msg)" class="inline-flex">
-                <CheckCheck v-if="!hideReadState&&msg.status==='read'" class="w-4 h-4" :class="isMediaOnly(msg)?'':'text-accent'"/>
-                <Check v-else-if="!hideReadState&&msg.status==='delivered'" class="w-4 h-4"/>
-                <AlertCircle v-else-if="msg.status==='failed'" class="w-4 h-4 text-danger" :aria-label="$t('chat.notSent')"/>
-                <Clock3 v-else-if="msg.status!=='read'&&msg.status!=='delivered'" class="w-3.5 h-3.5"/>
+                <CheckCheck v-if="!hideReadState&&statusOf(msg,album)==='read'" class="w-4 h-4" :class="isMediaOnly(msg,album)?'':'text-accent'"/>
+                <Check v-else-if="!hideReadState&&statusOf(msg,album)==='delivered'" class="w-4 h-4"/>
+                <AlertCircle v-else-if="statusOf(msg,album)==='failed'" class="w-4 h-4 text-danger" :aria-label="$t('chat.notSent')"/>
+                <Clock3 v-else-if="statusOf(msg,album)!=='read'&&statusOf(msg,album)!=='delivered'" class="w-3.5 h-3.5"/>
               </span>
             </div>
 
             <div
-              v-if="mine(msg)&&msg.status==='failed'"
+              v-if="mine(msg)&&!album&&msg.status==='failed'"
               class="mt-1 flex items-center justify-end gap-2 text-[12px]"
               :class="isMediaOnly(msg)?'px-1 pb-1':''"
             >
@@ -249,43 +284,50 @@
               >{{ $t('common.remove') }}</button>
             </div>
 
-            <Transition name="fade-scale">
-              <div
-                v-if="hoverReactFor===(msg.id||msg.clientId)&&!selectionMode&&!contextMenu.visible&&!picker"
-                :ref="element=>bindHoverBar(element,mine(msg))"
-                class="absolute z-20 pointer-events-auto select-none"
-                :class="hoverBarAbove
-                  ?(mine(msg)?'bottom-full end-0 mb-1':'bottom-full start-0 mb-1')
-                  :mine(msg)
-                    ?'bottom-0 start-0 -translate-x-full rtl:translate-x-full -translate-y-1/6 -ms-1'
-                    :'bottom-0 end-0 translate-x-full rtl:-translate-x-full -translate-y-1/6 -me-1'"
-                @mouseenter="actions.keepHoverBar"
-                @mouseleave="actions.hideHoverBarSoon"
-              >
-                <div class="reaction-pill">
-                  <button
-                    v-for="emoji in quickEmojis"
-                    :key="emoji"
-                    type="button"
-                    class="reaction-btn emoji-font"
-                    @click.stop="actions.applyReaction(msg,emoji)"
-                  >{{ emoji }}</button>
-                  <button
-                    type="button"
-                    class="reaction-more"
-                    :title="$t('emoji.more')"
-                    :aria-label="$t('emoji.more')"
-                    @click.stop="openPicker($event,msg)"
-                  ><ChevronDown class="w-4 h-4"/></button>
-                </div>
-              </div>
-            </Transition>
           </div>
-          </template>
+          </div>
         </div>
       </TransitionGroup>
     </div>
   </div>
+
+  <!--
+    One small reaction beside the bubble; pointing at it unfolds the quick list. It lives outside the
+    list, in screen coordinates: nothing about it can move a message or scroll the chat.
+  -->
+  <Teleport to="body">
+    <Transition name="dock">
+      <div
+        v-if="dock&&!selectionMode&&!contextMenu.visible&&!picker"
+        class="react-dock"
+        :style="dockStyle"
+        @mouseenter="dockOpen=true;actions.keepHoverBar()"
+        @mouseleave="dockOpen=false;actions.hideHoverBarSoon()"
+      >
+        <div
+          class="react-stack glass-panel"
+          :class="[dock.down?'flex-col':'flex-col-reverse',dockOpen?'react-stack-open':'']"
+          :style="{ '--count':quickEmojis.length+1 }"
+        >
+          <button
+            v-for="emoji in quickEmojis"
+            :key="emoji"
+            type="button"
+            class="react-item emoji-font"
+            :class="isMyReaction(dock.msg,emoji)?'react-item-on':''"
+            @click.stop="actions.applyReaction(dock.msg,emoji)"
+          >{{ emoji }}</button>
+          <button
+            type="button"
+            class="react-item text-muted hover:text-ink"
+            :title="$t('emoji.more')"
+            :aria-label="$t('emoji.more')"
+            @click.stop="openPicker($event,dock.msg)"
+          ><Plus class="w-4 h-4"/></button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
   <!-- The user's reaction list -->
   <Teleport to="body">
@@ -307,7 +349,7 @@
         <div
           :ref="bindMenu"
           role="menu"
-          class="absolute z-50 min-w-[190px] text-start rounded-2xl bg-surface/95 backdrop-blur-md shadow-xl ring-1 ring-line"
+          class="glass-panel absolute z-50 min-w-[190px] text-start rounded-2xl"
           :style="{
             top:`${contextMenu.y}px`,
             left:`${contextMenu.x}px`,
@@ -323,13 +365,13 @@
               ?'right-0'
               :contextMenu.pillAlign==='left'?'left-0':'left-1/2 -translate-x-1/2'"
           >
-            <div class="reaction-pill">
+            <div class="reaction-pill glass-panel">
               <button
                 v-for="emoji in quickEmojis"
                 :key="emoji"
                 type="button"
                 class="reaction-btn emoji-font"
-                @click.stop="contextMenu.msg&&actions.applyReaction(contextMenu.msg,emoji)"
+                @click.stop="contextMenu.msg&&actions.applyReaction(reactionTarget(contextMenu.msg),emoji)"
               >{{ emoji }}</button>
 
               <button
@@ -337,7 +379,7 @@
                 class="reaction-more"
                 :title="$t('emoji.more')"
                 :aria-label="$t('emoji.more')"
-                @click.stop="contextMenu.msg&&openPicker($event,contextMenu.msg)"
+                @click.stop="contextMenu.msg&&openPicker($event,reactionTarget(contextMenu.msg))"
               >
                 <ChevronDown class="w-4 h-4"/>
               </button>
@@ -371,6 +413,9 @@
           <button class="menu-item" type="button" @click="actions.openForwardPicker">
             <Forward class="w-4 h-4 rtl:-scale-x-100"/> {{ $t('chat.forwardMenu') }}
           </button>
+          <button v-if="albumOf(contextMenu.msg)" class="menu-item" type="button" @click="actions.forwardMany(albumOf(contextMenu.msg)!)">
+            <Images class="w-4 h-4"/> {{ $t('chat.forwardAlbum') }}
+          </button>
           <button
             class="menu-item"
             type="button"
@@ -382,6 +427,12 @@
             type="button"
             @click="contextMenu.msg&&actions.deleteMessage(contextMenu.msg)"
           ><Trash2 class="w-4 h-4"/> {{ $t('common.delete') }}</button>
+          <button
+            v-if="albumOf(contextMenu.msg)"
+            class="menu-item !text-danger"
+            type="button"
+            @click="actions.deleteMany(albumOf(contextMenu.msg)!)"
+          ><Trash2 class="w-4 h-4"/> {{ $t('chat.deleteAlbum') }}</button>
           </div>
         </div>
       </Transition>
@@ -390,16 +441,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import {
-  AlertCircle, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, FileDown, Forward,
-  ImageOff, Loader2, Lock, Pencil, Pin, PinOff, Reply, RotateCw, Trash2, VideoOff
+  AlertCircle, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, FileDown, Forward, Images,
+  ImageOff, Loader2, Lock, Pencil, Pin, PinOff, Plus, Reply, RotateCw, ShieldAlert, Trash2, VideoOff
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../../utils/time'
 import type { UiMessage } from '../../../types/chat'
 import ReactionPicker from '../../emoji/ReactionPicker.vue'
+import ChatAlbum from './ChatAlbum.vue'
+import MusicMessage from './MusicMessage.vue'
 import VoiceMessage from './VoiceMessage.vue'
 
 type MaybePromise=void|Promise<void>
@@ -432,7 +485,10 @@ type MessageActions={
   fileNameFromUrl:(url:string)=>string
   humanFileSize:(bytes:number)=>string
   downloadFile:(message:UiMessage)=>MaybePromise
-  fileKind:(message:UiMessage)=>'image'|'video'|'voice'|'file'
+  fileKind:(message:UiMessage)=>'image'|'video'|'voice'|'audio'|'file'
+  playAudio:(message:UiMessage)=>void
+  forwardMany:(messages:UiMessage[])=>void
+  deleteMany:(messages:UiMessage[])=>void
   mediaSrc:(message:UiMessage)=>string|null
   mediaState:(message:UiMessage)=>'idle'|'loading'|'ready'|'error'
   applyReaction:(message:UiMessage,emoji:string)=>MaybePromise
@@ -460,6 +516,8 @@ const { t }=useI18n()
 
 const props=defineProps<{
   messages:UiMessage[]
+  /** The open chat. */
+  chatKey:string
   myId:string
   loadingOlder:boolean
   selectionMode:boolean
@@ -492,25 +550,178 @@ function bindScroll(element:Element|ComponentPublicInstance|null){
   props.setScrollElement(scrollElement)
 }
 
-/** The quick-reaction bar sits beside its bubble, or above it when the side has no room. */
-const hoverBarAbove=ref(false)
+function onListScroll(){
+  void props.actions.onScroll()
+  if(dock.value) placeDock()
+}
 
-function bindHoverBar(element:Element|ComponentPublicInstance|null,isMine:boolean){
-  if(!(element instanceof HTMLElement)||!scrollElement)return
-  const bubble=element.parentElement
-  if(!bubble)return
+// ---------- reaction dock ----------
 
-  const bubbleRect=bubble.getBoundingClientRect()
-  const listRect=scrollElement.getBoundingClientRect()
+const DOCK_GAP=6
+
+type Dock={ msg:UiMessage; x:number; y:number; size:number; down:boolean }
+
+const dock=ref<Dock|null>(null)
+const dockOpen=ref(false)
+
+/**
+ * Puts the dock beside the bubble at its lowest point still on screen, so a message taller than the
+ * chat has it in the same place as a short one. Without room at the side it sits on the bubble's edge.
+ */
+function placeDock(){
+  const key=props.hoverReactFor
+  const bubble=key&&scrollElement?scrollElement.querySelector(`[data-bubble="${CSS.escape(key)}"]`):null
+  const row=key?rows.value.find(item=>keyOf(item.msg)===key):null
+
+  if(!bubble||!row||!scrollElement||!window.matchMedia('(hover: hover)').matches){
+    dock.value=null
+    return
+  }
+
+  const fontSize=Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chat-font-size'))||15
+  const item=fontSize*1.7
+  const size=item+4
+  const box=bubble.getBoundingClientRect()
+  const list=scrollElement.getBoundingClientRect()
+  const top=list.top+DOCK_GAP
+  const bottom=list.bottom-DOCK_GAP
+
+  if(box.bottom<top+size||box.top>bottom-size){
+    dock.value=null
+    return
+  }
+
   const scrollbar=scrollElement.offsetWidth-scrollElement.clientWidth
   const rtl=getComputedStyle(scrollElement).direction==='rtl'
-  const onLeft=isMine!==rtl
-  const room=onLeft
-    ?bubbleRect.left-listRect.left-(rtl?scrollbar:0)
-    :listRect.right-bubbleRect.right-(rtl?0:scrollbar)
+  const onLeft=mine(row.msg)!==rtl
+  const room=onLeft?box.left-list.left-(rtl?scrollbar:0):list.right-box.right-(rtl?0:scrollbar)
+  const outside=room>=size+2*DOCK_GAP
 
-  hoverBarAbove.value=room<element.offsetWidth+8
+  const x=onLeft
+    ?(outside?box.left-size-DOCK_GAP:box.left+DOCK_GAP)
+    :(outside?box.right+DOCK_GAP:box.right-size-DOCK_GAP)
+  const y=Math.max(top,Math.min(box.bottom,bottom)-size)
+  const fullHeight=item*(props.quickEmojis.length+1)+4
+
+  dock.value={ msg:row.msg,x,y,size,down:y+size-fullHeight<top }
 }
+
+const dockStyle=computed(()=>{
+  const value=dock.value
+  if(!value) return {}
+  // Anchored at the trigger, so the list unfolds away from it.
+  return value.down
+    ?{ left:`${value.x}px`,top:`${value.y}px` }
+    :{ left:`${value.x}px`,bottom:`${window.innerHeight-value.y-value.size}px` }
+})
+
+watch(()=>props.hoverReactFor,async()=>{
+  dockOpen.value=false
+  await nextTick()
+  placeDock()
+})
+
+function isMyReaction(message:UiMessage,emoji:string){
+  return !!message.reactions?.some(reaction=>reaction.mine&&reaction.emoji===emoji)
+}
+
+// ---------- selection ----------
+
+function rowSelected(message:UiMessage,album:UiMessage[]|null){
+  return album?album.every(props.actions.isSelected):props.actions.isSelected(message)
+}
+
+/** An album is selected as a whole from its row (each tile can still be picked on its own). */
+function toggleRow(message:UiMessage,album:UiMessage[]|null){
+  if(!album){
+    props.actions.toggleSelect(message)
+    return
+  }
+  const target=!rowSelected(message,album)
+  for(const item of album){
+    if(props.actions.isSelected(item)!==target) props.actions.toggleSelect(item)
+  }
+}
+
+function onRowClick(event:MouseEvent,message:UiMessage,album:UiMessage[]|null){
+  if(props.selectionMode&&album) toggleRow(message,album)
+  else props.actions.onRowClick(event,message)
+}
+
+// ---------- rows ----------
+
+type Row={ msg:UiMessage; index:number; endIndex:number; album:UiMessage[]|null }
+
+/** The list as shown: consecutive items of one album are a single row, led by its first item. */
+const rows=computed<Row[]>(()=>{
+  const list=props.messages
+  const result:Row[]=[]
+
+  for(let index=0;index<list.length;index++){
+    const message=list[index]
+    let endIndex=index
+    if(message.album){
+      while(
+        list[endIndex+1]?.album?.id===message.album.id&&
+        list[endIndex+1].senderId===message.senderId
+      ) endIndex++
+    }
+
+    if(endIndex===index){
+      result.push({ msg:message,index,endIndex,album:null })
+      continue
+    }
+
+    const album=list.slice(index,endIndex+1).sort((a,b)=>(a.album?.index??0)-(b.album?.index??0))
+    result.push({ msg:album[0],index,endIndex,album })
+    index=endIndex
+  }
+
+  return result
+})
+
+const keyOf=(message?:UiMessage|null)=>message?(message.id||message.clientId):undefined
+
+/** The other items of the album a message belongs to, when it is shown as one. */
+function albumOf(message?:UiMessage|null){
+  if(!message?.album) return null
+  const key=keyOf(message)
+  return rows.value.find(row=>row.album?.some(item=>keyOf(item)===key))?.album??null
+}
+
+/** Reactions belong to an album as a whole: they go on its first item. */
+function reactionTarget(message:UiMessage){
+  return albumOf(message)?.[0]??message
+}
+
+const isFileAlbum=(album:UiMessage[])=>album.some(item=>!['image','video'].includes(props.actions.fileKind(item)))
+
+/** The caption is sent with the first item, but that one may have been deleted since. */
+function captionOf(message:UiMessage,album:UiMessage[]|null){
+  return album?album.find(item=>item.plainText)?.plainText??'':message.plainText
+}
+
+/** An album shows the state of its least advanced item. */
+function statusOf(message:UiMessage,album:UiMessage[]|null){
+  if(!album) return message.status
+  for(const status of ['failed','sending','delivered'] as const){
+    if(album.some(item=>item.status===status)) return status
+  }
+  return message.status
+}
+
+// ---------- new-message animation ----------
+
+/** Rows that just arrived; only they animate, never a chat being opened or older messages loading. */
+const freshKeys=ref(new Set<string>())
+
+watch(()=>keyOf(props.messages[props.messages.length-1]),(key,previous)=>{
+  if(!key||!previous||key===previous) return
+  const lead=albumOf(props.messages[props.messages.length-1])?.[0]
+  const animated=keyOf(lead)??key
+  freshKeys.value.add(animated)
+  window.setTimeout(()=>freshKeys.value.delete(animated),600)
+},{ flush:'sync' })
 
 function bindMenu(element:Element|ComponentPublicInstance|null){
   props.setMenuElement(element instanceof HTMLElement?element:null)
@@ -518,16 +729,15 @@ function bindMenu(element:Element|ComponentPublicInstance|null){
 
 // ---------- reaction list ----------
 
-// 8 columns of 32px cells; at most 4 rows (32 reactions).
-const PICKER_WIDTH=8*34+16
-const PICKER_HEIGHT=4*34+16
 const picker=ref<{ msg:UiMessage; x:number; y:number }|null>(null)
 
 function openPicker(event:MouseEvent,message:UiMessage){
   const anchor=(event.currentTarget as HTMLElement).getBoundingClientRect()
   const margin=8
-  const width=Math.min(PICKER_WIDTH,window.innerWidth-2*margin)
-  const height=Math.min(PICKER_HEIGHT,window.innerHeight*0.6)
+  // 8 columns and at most 4 rows (32 reactions); the cells follow the message text size.
+  const cell=(Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chat-font-size'))||15)*2.1+2
+  const width=Math.min(8*cell+16,window.innerWidth-2*margin)
+  const height=Math.min(4*cell+16,window.innerHeight*0.6)
   const x=Math.min(Math.max(margin,anchor.right-width),window.innerWidth-width-margin)
   const below=anchor.bottom+6
   const y=below+height+margin<=window.innerHeight?below:Math.max(margin,anchor.top-height-6)
@@ -579,7 +789,8 @@ function hasViewableFile(message:UiMessage){
   return !!message.fileUrl&&message.cipher!=='old-key'&&message.cipher!=='failed'
 }
 
-function isMediaOnly(message:UiMessage){
+function isMediaOnly(message:UiMessage,album?:UiMessage[]|null){
+  if(album) return !isFileAlbum(album)&&!captionOf(message,album)
   if(!hasViewableFile(message)||message.plainText) return false
   const kind=props.actions.fileKind(message)
   return kind==='image'||kind==='video'
@@ -607,12 +818,14 @@ function unreadableNotice(message:UiMessage){
   }
 }
 
-function bubbleClasses(message:UiMessage,index:number){
+function bubbleClasses(message:UiMessage,endIndex:number,album:UiMessage[]|null){
   const isMine=mine(message)
-  const classes=['bubble','relative','inline-block','text-start','align-top','max-w-[min(85%,560px)]','transition-[box-shadow]']
-  const selected=props.selectionMode&&props.actions.isSelected(message)
+  const classes=['bubble','relative','inline-block','text-start','align-top','max-w-[min(85%,560px)]','transition-colors','duration-150']
+  const selected=props.selectionMode&&rowSelected(message,album)
 
-  if(isMediaOnly(message)){
+  if(freshKeys.value.has(keyOf(message)!)) classes.push(isMine?'bubble-sent':'bubble-received')
+
+  if(isMediaOnly(message,album)){
     classes.push('rounded-[var(--bubble-radius)]','overflow-hidden','bg-transparent')
   }else{
     classes.push(
@@ -621,10 +834,10 @@ function bubbleClasses(message:UiMessage,index:number){
       isMine?'bg-bubble-out text-bubble-out-ink border-accent/35':'bg-bubble-in text-bubble-in-ink border-line'
     )
     // The last bubble of a group gets the "tail" corner on the sender's side.
-    if(isGroupEnd(index)) classes.push(isMine?'rounded-ee-[var(--bubble-tail-radius)]':'rounded-es-[var(--bubble-tail-radius)]')
+    if(isGroupEnd(endIndex)) classes.push(isMine?'rounded-ee-[var(--bubble-tail-radius)]':'rounded-es-[var(--bubble-tail-radius)]')
   }
 
-  if(selected) classes.push('ring-2','ring-accent')
+  if(selected&&!isMediaOnly(message,album)) classes.push('bubble-picked')
   return classes
 }
 
@@ -725,13 +938,32 @@ function showDayHeader(index:number){
   @apply grid place-items-center rounded-xl bg-black/5 text-muted w-[240px] h-[180px] max-w-[75vw];
 }
 
-/* New messages rise in from below their side; transform/opacity only, so nothing else waits. */
-.bubble-enter-from{opacity:0;transform:translateY(14px)}
-.bubble-enter-active{transition:opacity .2s ease,transform .24s cubic-bezier(.2,.9,.3,1.15)}
-.bubble-leave-active{transition:opacity .12s ease,transform .12s ease}
-.bubble-leave-to{opacity:0;transform:translateY(-4px) scale(.98)}
+/* A sent message lifts off the composer and settles with a soft spring; a received one pops up on its
+   own side. Only transform and opacity change, on the compositor, so typing never waits for them. */
+.bubble-sent{
+  animation:bubble-sent .46s cubic-bezier(.2,1.18,.32,1) both;
+  transform-origin:100% 100%;
+}
+.bubble-received{
+  animation:bubble-received .38s cubic-bezier(.2,1.2,.32,1) both;
+  transform-origin:0 100%;
+}
+:global([dir="rtl"] .bubble-sent){transform-origin:0 100%}
+:global([dir="rtl"] .bubble-received){transform-origin:100% 100%}
+@keyframes bubble-sent{
+  from{opacity:0;transform:translateY(38px) scale(.78)}
+  45%{opacity:1}
+  to{opacity:1;transform:none}
+}
+@keyframes bubble-received{
+  from{opacity:0;transform:translateY(12px) scale(.86)}
+  to{opacity:1;transform:none}
+}
+.bubble-leave-active{transition:opacity .16s ease,transform .16s ease}
+.bubble-leave-to{opacity:0;transform:scale(.92)}
 @media (prefers-reduced-motion: reduce){
-  .bubble-enter-active,.bubble-leave-active{transition:none}
+  .bubble-sent,.bubble-received{animation:none}
+  .bubble-leave-active{transition:none}
 }
 
 .fade-enter-from,.fade-scale-enter-from{opacity:0;transform:translateY(4px) scale(.98)}
@@ -747,16 +979,80 @@ function showDayHeader(index:number){
 .ctx-pop-leave-to{opacity:0;transform:translateY(2px) scale(.98)}
 
 .reaction-pill{
-  @apply bg-surface/95 backdrop-blur rounded-full px-1 py-0.5 shadow-lg ring-1 ring-line flex items-center gap-0.5;
+  @apply rounded-full px-1 py-0.5 flex items-center gap-0.5;
 }
+/* Everything about reactions is measured from the message text size, so it scales with it. */
 .reaction-btn{
-  @apply w-8 h-8 grid place-items-center rounded-full text-[19px] leading-none hover:bg-surface-2 hover:scale-110 active:scale-95 transition;
+  @apply grid place-items-center rounded-full leading-none hover:bg-ink/10 hover:scale-110 active:scale-95 transition;
+  width:calc(var(--chat-font-size) * 2);
+  height:calc(var(--chat-font-size) * 2);
+  font-size:calc(var(--chat-font-size) * 1.2);
 }
 .reaction-more{
-  @apply w-7 h-7 grid place-items-center rounded-full text-muted hover:text-ink hover:bg-surface-2 transition;
+  @apply grid place-items-center rounded-full text-muted hover:text-ink hover:bg-ink/10 transition;
+  width:calc(var(--chat-font-size) * 1.7);
+  height:calc(var(--chat-font-size) * 1.7);
+}
+.reaction-chip{
+  @apply inline-flex items-center rounded-full font-medium transition-colors active:scale-95;
+  font-size:calc(var(--chat-font-size) * .8);
+  height:1.9em;
+  padding-inline:.5em .6em;
+  gap:.3em;
+}
+.react-dock{
+  @apply fixed z-[35] select-none;
+  --item:calc(var(--chat-font-size) * 1.7);
+}
+/* Starts as one reaction and opens over the others; only its height animates. */
+.react-stack{
+  @apply flex items-center rounded-full overflow-hidden;
+  width:calc(var(--item) + 4px);
+  height:calc(var(--item) + 4px);
+  padding:2px;
+  transition:height .22s cubic-bezier(.2,1.05,.35,1);
+}
+.react-stack-open{
+  height:calc(var(--item) * var(--count) + 4px);
+}
+.react-item{
+  @apply grid place-items-center shrink-0 rounded-full leading-none transition-transform duration-150 hover:scale-125 active:scale-95;
+  width:var(--item);
+  height:var(--item);
+  font-size:calc(var(--chat-font-size) * 1.1);
+}
+.react-item-on{
+  @apply bg-accent/25;
+}
+.dock-enter-from,.dock-leave-to{opacity:0;transform:scale(.7)}
+.dock-enter-active{transition:opacity .12s ease,transform .2s cubic-bezier(.2,1.3,.4,1)}
+.dock-leave-active{transition:opacity .1s ease,transform .1s ease}
+
+/* Selection: the line and the bubble take the accent; the checks stand in one column at the far side. */
+.msg-line-on{
+  background-color:color-mix(in srgb,var(--color-accent) 13%,transparent);
+}
+.bubble-picked{
+  background-color:color-mix(in srgb,var(--color-accent) 36%,var(--color-surface))!important;
+  border-color:transparent!important;
+}
+.sel-check{
+  @apply absolute bottom-1 end-3 sm:end-4 w-[22px] h-[22px] grid place-items-center rounded-full text-white transition-colors;
+  box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--color-ink) 32%,transparent);
+}
+.sel-check:hover{
+  box-shadow:inset 0 0 0 2px var(--color-accent);
+}
+.sel-check-on{
+  @apply bg-accent;
+  box-shadow:none;
+  animation:sel-pop .22s cubic-bezier(.2,1.5,.4,1);
+}
+@keyframes sel-pop{
+  from{transform:scale(.6)}
 }
 .menu-item{
-  @apply w-full flex items-center gap-3 text-start px-4 py-2 text-[14px] text-ink hover:bg-surface-2 transition outline-none focus-visible:bg-surface-2;
+  @apply w-full flex items-center gap-3 text-start px-4 py-2 text-[14px] text-ink hover:bg-ink/5 transition outline-none focus-visible:bg-ink/5;
 }
 .menu-item svg{
   @apply text-muted shrink-0;
