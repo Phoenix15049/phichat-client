@@ -440,6 +440,18 @@ export default {
   time: {
     justNow: 'هم‌اکنون'
   },
+  viewer: {
+    copy: 'کپی تصویر',
+    copied: 'تصویر کپی شد',
+    copyFailed: 'کپی تصویر انجام نشد',
+    zoomIn: 'بزرگ‌نمایی',
+    zoomOut: 'کوچک‌نمایی',
+    fit: 'اندازه‌ی صفحه',
+    rotate: 'چرخش',
+    loop: 'تکرار',
+    pip: 'تصویر در تصویر',
+    fullscreen: 'تمام‌صفحه'
+  },
   player: {
     previous: 'قبلی',
     next: 'بعدی',

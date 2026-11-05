@@ -440,6 +440,18 @@ export default {
   time: {
     justNow: 'just now'
   },
+  viewer: {
+    copy: 'Copy image',
+    copied: 'Image copied',
+    copyFailed: 'Could not copy the image',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    fit: 'Fit to screen',
+    rotate: 'Rotate',
+    loop: 'Loop',
+    pip: 'Picture in picture',
+    fullscreen: 'Full screen'
+  },
   player: {
     previous: 'Previous',
     next: 'Next',

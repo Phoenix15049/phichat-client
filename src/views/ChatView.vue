@@ -319,13 +319,18 @@
     @send="confirmSendMedia"
   />
 
-  <MediaImageViewer v-if="showImageViewer"
-                  :src="viewerImageSrc" :caption="viewerCaption"
-                  :gallery="viewerGallery" :start-index="viewerIndex"
-                  @close="showImageViewer=false" />
-  <MediaVideoPlayer v-if="showVideoPlayer"
-                  :src="playerVideoSrc" :caption="playerCaption"
-                  @close="showVideoPlayer=false" />
+  <MediaViewer
+    v-if="viewer"
+    :items="viewerItems"
+    :start-key="viewer.key"
+    :origin="viewer.origin"
+    @close="viewer = null; viewerFloating = false"
+    @floating="value => (viewerFloating = value)"
+    @download="item => downloadFile(item.message)"
+    @forward="onViewerForward"
+    @goto="onViewerGoTo"
+    @delete="onViewerDelete"
+  />
 
 
   <PeerProfileModal
@@ -398,8 +403,8 @@ import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
 import PeerProfileModal from '../components/PeerProfileModal.vue'
-import MediaImageViewer from '../components/MediaImageViewer.vue'
-import MediaVideoPlayer from '../components/MediaVideoPlayer.vue'
+import MediaViewer from '../features/media/MediaViewer.vue'
+import type { MediaItem } from '../features/media/types'
 import ContactsView from './ContactsView.vue'
 import SettingsView from './SettingsView.vue'
 
@@ -708,14 +713,10 @@ const peerStatus = computed(() => {
   return ls ? t('chat.lastSeen', { when: formatRelative(ls) }) : t('chat.lastSeenUnknown')
 })
 
-const showImageViewer = ref(false)
-const viewerImageSrc = ref<string>('');
-const viewerCaption = ref<string>('')
-const viewerGallery = ref<Array<{ src: string; caption?: string }> | undefined>(undefined)
-const viewerIndex = ref(0)
-const showVideoPlayer = ref(false)
-const playerVideoSrc = ref<string>('');
-const playerCaption = ref<string>('')
+/** The media viewer, open on a message; `origin` is where its thumbnail sits in the chat. */
+const viewer = ref<{ key: string; origin: DOMRect | null } | null>(null)
+/** Its video is in a picture-in-picture window, so the chat underneath is in use. */
+const viewerFloating = ref(false)
 
 
 const signalR = createChatHubSubscriptionScope()
@@ -860,27 +861,86 @@ function onConvDblClick(conv: UiConversation) {
 
 
 
+/** Every photo and video of the open chat that is ready to show, oldest first. */
+const viewerItems = computed<MediaItem[]>(() => {
+  if (!viewer.value) return []
+
+  const chat = selectedUser.value
+  const items: MediaItem[] = []
+
+  for (const message of messages.value) {
+    const kind = fileKindOf(message)
+    const src = secureFiles.mediaSrc(message)
+    const key = message.id || message.clientId
+    if ((kind !== 'image' && kind !== 'video') || !src || !key || message.isDeleted) continue
+    if (message.cipher === 'old-key' || message.cipher === 'failed') continue
+
+    const mine = message.senderId === myId.value
+    items.push({
+      key,
+      kind,
+      src,
+      name: message.file?.name ?? '',
+      caption: message.plainText || albumCaption(message),
+      message,
+      chat: chat ?? { id: '', username: '' },
+      senderName: mine
+        ? meProfile.value?.displayName || '@' + (meProfile.value?.username ?? '')
+        : chat?.isGroup ? memberLabel(chat.id, message.senderId) : selectedLabel.value,
+      senderAvatar: (mine ? meProfile.value?.avatarUrl : avatarById[message.senderId]) ?? null,
+      date: formatVoiceDate(message.sentAt)
+    })
+  }
+
+  return items
+})
+
+/** The caption of an album is sent with one item and belongs to all of them. */
+function albumCaption(message: UiMessage) {
+  const id = message.album?.id
+  return id ? messages.value.find(item => item.album?.id === id && item.plainText)?.plainText ?? '' : ''
+}
+
+function openViewer(message: UiMessage) {
+  const key = message.id || message.clientId
+  if (!key) return
+
+  // A video and a song do not play over each other.
+  if (player.state.playing) void player.toggle()
+
+  // Another video may be floating; only one viewer is open at a time.
+  viewerFloating.value = false
+  viewer.value = null
+  void nextTick(() => {
+    viewer.value = { key, origin: messageEls.get(key)?.getBoundingClientRect() ?? null }
+  })
+}
+
 function openImage(msg: UiMessage){
-  viewerImageSrc.value = secureFiles.mediaSrc(msg) || ''
-  viewerCaption.value = msg.plainText || ''
-
-  // The photos of an album are browsed together.
-  const album = msg.album
-    ? messages.value
-        .filter(item => item.album?.id === msg.album?.id && fileKindOf(item) === 'image' && secureFiles.mediaSrc(item))
-        .sort((a, b) => (a.album?.index ?? 0) - (b.album?.index ?? 0))
-    : []
-  viewerGallery.value = album.length > 1
-    ? album.map(item => ({ src: secureFiles.mediaSrc(item)!, caption: item.plainText || '' }))
-    : undefined
-  viewerIndex.value = Math.max(0, album.findIndex(item => item === msg || (!!item.id && item.id === msg.id)))
-
-  showImageViewer.value = true
+  openViewer(msg)
 }
 function openVideo(msg: UiMessage){
-  playerVideoSrc.value = secureFiles.mediaSrc(msg) || ''
-  playerCaption.value = msg.plainText || ''
-  showVideoPlayer.value = true
+  openViewer(msg)
+}
+
+function onViewerForward(item: MediaItem) {
+  viewer.value = null
+  viewerFloating.value = false
+  openForwardPickerFor([item.message])
+}
+
+function onViewerDelete(item: MediaItem) {
+  viewer.value = null
+  viewerFloating.value = false
+  openDeleteConfirmSingle(item.message)
+}
+
+async function onViewerGoTo(item: MediaItem) {
+  viewer.value = null
+  viewerFloating.value = false
+  if (item.chat.id && selectedUser.value?.id !== item.chat.id) await openChat(item.chat, { resetStack: true })
+  await nextTick()
+  if (item.message.id) await jumpToReplied(item.message.id, 60)
 }
 
 
@@ -1090,6 +1150,7 @@ async function openChat(user: ChatTarget, options: OpenChatOptions = {}) {
 
 async function closeChat(syncRoute = true) {
   chatSessionId++
+  if (!viewerFloating.value) viewer.value = null
   chatNavStack.value = []
   selectedUser.value = null
   messages.value = []

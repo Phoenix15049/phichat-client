@@ -12,14 +12,12 @@
     >
       <template v-if="actions.mediaSrc(item)">
         <img v-if="actions.fileKind(item) === 'image'" :src="actions.mediaSrc(item)!" :alt="item.file?.name || ''" class="tile-media" draggable="false" />
-        <video v-else :src="`${actions.mediaSrc(item)}#t=0.1`" class="tile-media" preload="metadata" muted playsinline></video>
+        <ChatVideoThumb v-else fill :src="actions.mediaSrc(item)!" @open="onTileClick(item)" />
       </template>
       <div v-else class="absolute inset-0 grid place-items-center bg-black/10 text-muted">
         <ImageOff v-if="actions.mediaState(item) === 'error'" class="w-6 h-6" />
         <Loader2 v-else class="w-6 h-6 animate-spin" />
       </div>
-
-      <span v-if="actions.fileKind(item) === 'video' && actions.mediaSrc(item)" class="badge"><Play class="w-5 h-5 translate-x-[1px]" fill="currentColor" /></span>
 
       <!-- Still uploading, or failed -->
       <span v-if="item.status === 'sending'" class="absolute inset-0 grid place-items-center bg-black/25 text-white">
@@ -90,9 +88,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { Check, FileDown, ImageOff, Loader2, Play, RotateCw } from 'lucide-vue-next'
+import { Check, FileDown, ImageOff, Loader2, RotateCw } from 'lucide-vue-next'
 import type { UiMessage } from '../../../types/chat'
 import { albumLayout } from '../albumLayout'
+import ChatVideoThumb from './ChatVideoThumb.vue'
 import MusicMessage from './MusicMessage.vue'
 
 const props = defineProps<{
@@ -166,8 +165,5 @@ function onTileClick(item: UiMessage) {
 }
 .tile:hover .tile-media {
   transform: scale(1.025);
-}
-.badge {
-  @apply absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 rtl:translate-x-1/2 w-10 h-10 grid place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm pointer-events-none;
 }
 </style>

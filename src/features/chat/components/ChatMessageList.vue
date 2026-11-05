@@ -158,7 +158,7 @@
                 :src="actions.mediaSrc(msg)!"
                 :alt="msg.file?.name||''"
                 class="block rounded-xl cursor-zoom-in max-h-[60vh] max-w-full sm:min-w-[180px] min-w-[140px] h-auto w-auto object-contain"
-                @click="actions.openImage(msg)"
+                @click.stop="selectionMode?actions.toggleSelect(msg):actions.openImage(msg)"
               />
               <div v-else class="media-placeholder">
                 <ImageOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
@@ -167,14 +167,11 @@
             </div>
 
             <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="isMediaOnly(msg)?'':'mt-1 -mx-1.5'">
-              <video
+              <ChatVideoThumb
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
-                controls
-                playsinline
-                class="block rounded-xl bg-black cursor-pointer max-h-[60vh] max-w-full sm:min-w-[220px] min-w-[160px] h-auto w-auto"
-                @dblclick.prevent="actions.openVideo(msg)"
-              ></video>
+                @open="selectionMode?actions.toggleSelect(msg):actions.openVideo(msg)"
+              />
               <div v-else class="media-placeholder bg-black/80 text-white/80">
                 <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
                 <Loader2 v-else class="w-6 h-6 animate-spin"/>
@@ -452,6 +449,7 @@ import { formatAbsolute, formatDayLabel, formatTime, toDateSafe } from '../../..
 import type { UiMessage } from '../../../types/chat'
 import ReactionPicker from '../../emoji/ReactionPicker.vue'
 import ChatAlbum from './ChatAlbum.vue'
+import ChatVideoThumb from './ChatVideoThumb.vue'
 import MusicMessage from './MusicMessage.vue'
 import VoiceMessage from './VoiceMessage.vue'
 
