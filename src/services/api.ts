@@ -401,6 +401,16 @@ export async function editMessage(id: string, encryptedText: string) {
   return data;
 }
 
+/** Replaces a message's attachment; `encryptedText` holds the new file's key and the caption. */
+export async function replaceMessageFile(id: string, encryptedText: string, file: Blob): Promise<{ fileUrl: string; updatedAtUtc: string }> {
+  const form = new FormData()
+  form.append('encryptedText', encryptedText)
+  // A neutral name: the real one is only inside the encrypted message.
+  form.append('file', file, 'attachment.bin')
+  const { data } = await API.put(`/messages/${id}/file`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return data
+}
+
 export async function deleteMessage(id: string, scope: 'me'|'all'='me') {
   await API.delete(`/messages/${id}`, { params: { scope } });
 }
@@ -605,7 +615,21 @@ export type GroupMemberItem = {
   joinedAtUtc: string
 }
 
+/** What ordinary members may do; admins may always do all of it. */
+export type GroupPermissions = {
+  sendMessages: boolean
+  sendMedia: boolean
+  pinMessages: boolean
+  addMembers: boolean
+  changeInfo: boolean
+}
+
 export type GroupDetails = {
+  permissions: GroupPermissions
+  slowModeSeconds: number
+  /** Only for those who may invite people; absent when the group has no link. */
+  inviteCode?: string | null
+  bannedCount: number
   id: string
   title: string
   description?: string | null
@@ -618,6 +642,9 @@ export type GroupDetails = {
 function withAbsoluteGroup(group: GroupDetails): GroupDetails {
   return {
     ...group,
+    permissions: group.permissions ?? { sendMessages: true, sendMedia: true, pinMessages: true, addMembers: false, changeInfo: false },
+    slowModeSeconds: group.slowModeSeconds ?? 0,
+    bannedCount: group.bannedCount ?? 0,
     avatarUrl: group.avatarUrl ? toAbsoluteServerUrl(group.avatarUrl) : null,
     members: group.members.map(m => (m.avatarUrl ? { ...m, avatarUrl: toAbsoluteServerUrl(m.avatarUrl) } : m))
   }
@@ -664,6 +691,64 @@ export async function leaveGroup(groupId: string) {
 
 export async function deleteGroup(groupId: string) {
   await API.delete(`/groups/${groupId}`)
+}
+
+export async function updateGroupSettings(groupId: string, payload: { permissions: GroupPermissions; slowModeSeconds: number }) {
+  await API.put(`/groups/${groupId}/settings`, payload)
+}
+
+export async function transferGroup(groupId: string, userId: string) {
+  await API.post(`/groups/${groupId}/transfer`, { userId })
+}
+
+export async function resetGroupInvite(groupId: string) {
+  await API.post(`/groups/${groupId}/invite`)
+}
+
+export async function revokeGroupInvite(groupId: string) {
+  await API.delete(`/groups/${groupId}/invite`)
+}
+
+export type GroupInvitePreview = {
+  groupId: string
+  title: string
+  description?: string | null
+  avatarUrl?: string | null
+  memberCount: number
+  isMember: boolean
+}
+
+export async function getGroupInvite(code: string): Promise<GroupInvitePreview> {
+  const { data } = await API.get<GroupInvitePreview>(`/groups/invite/${encodeURIComponent(code)}`)
+  return { ...data, avatarUrl: data.avatarUrl ? toAbsoluteServerUrl(data.avatarUrl) : null }
+}
+
+export async function joinGroupInvite(code: string): Promise<GroupDetails> {
+  return withAbsoluteGroup((await API.post<GroupDetails>(`/groups/invite/${encodeURIComponent(code)}/join`)).data)
+}
+
+export type GroupBanItem = {
+  userId: string
+  username: string
+  displayName?: string | null
+  avatarUrl?: string | null
+  bannedAtUtc: string
+}
+
+export async function getGroupBans(groupId: string): Promise<GroupBanItem[]> {
+  const { data } = await API.get<GroupBanItem[]>(`/groups/${groupId}/bans`)
+  return data.map(ban => (ban.avatarUrl ? { ...ban, avatarUrl: toAbsoluteServerUrl(ban.avatarUrl) } : ban))
+}
+
+export async function unbanGroupMember(groupId: string, userId: string) {
+  await API.delete(`/groups/${groupId}/bans/${userId}`)
+}
+
+export type CommonGroup = { id: string; title: string; avatarUrl?: string | null; memberCount: number }
+
+export async function getCommonGroups(userId: string): Promise<CommonGroup[]> {
+  const { data } = await API.get<CommonGroup[]>(`/groups/common/${userId}`)
+  return data.map(group => (group.avatarUrl ? { ...group, avatarUrl: toAbsoluteServerUrl(group.avatarUrl) } : group))
 }
 
 export type GroupMemberKey = { userId: string; keyId: string; publicKey: string }

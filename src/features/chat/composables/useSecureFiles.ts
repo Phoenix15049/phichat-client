@@ -135,6 +135,20 @@ export function useSecureFiles() {
     if (blob && !blobs.has(fileUrl)) blobs.set(fileUrl, blob)
   }
 
+  /** The message now has another attachment: what was kept for it while sending no longer applies. */
+  function forgetLocal(clientId: string) {
+    entries.delete(`local:${clientId}`)
+    blobs.delete(`local:${clientId}`)
+  }
+
+  /** A replacement made here is shown from its local copy, without downloading it back. */
+  function adoptReplaced(message: UiMessage, file: Blob, meta: FileMeta, fileUrl: string) {
+    if (message.clientId) forgetLocal(message.clientId)
+    const blob = new Blob([file], { type: safeMime(meta.mime) })
+    blobs.set(fileUrl, blob)
+    entries.set(fileUrl, { status: 'ready', url: URL.createObjectURL(blob) })
+  }
+
   /** Saves a decrypted attachment under its original name. */
   async function downloadDecrypted(message: UiMessage) {
     const blob = await blobFor(message)
@@ -165,6 +179,8 @@ export function useSecureFiles() {
     blobFor,
     registerLocal,
     adoptServerUrl,
+    forgetLocal,
+    adoptReplaced,
     downloadDecrypted,
     releaseAll
   }

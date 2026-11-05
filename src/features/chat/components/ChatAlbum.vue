@@ -1,6 +1,6 @@
 <template>
   <!-- Photos and videos: a mosaic -->
-  <div v-if="isMedia" class="album" :style="{ aspectRatio: `1 / ${layout.height}` }">
+  <div v-if="isMedia" class="album" :class="flush ? 'album-flush' : ''" :style="{ aspectRatio: `1 / ${layout.height}` }">
     <div
       v-for="(item, i) in items"
       :key="key(item)"
@@ -96,6 +96,8 @@ import MusicMessage from './MusicMessage.vue'
 
 const props = defineProps<{
   items: UiMessage[]
+  /** Fills a bubble to its edges: square corners, the bubble's own color between the tiles. */
+  flush?: boolean
   selectionMode: boolean
   downloaded: Record<string, boolean>
   downloading: Record<string, boolean>
@@ -152,6 +154,15 @@ function onTileClick(item: UiMessage) {
 .album {
   @apply relative overflow-hidden rounded-[var(--bubble-radius)];
   width: min(25rem, 72vw);
+}
+.album-flush {
+  @apply rounded-none;
+  /* The tiles' outer edge lies outside the bubble, so only the gaps between them show. */
+  width: calc(min(25rem, 72vw) + 2px);
+  margin: -1px;
+}
+.album-flush .tile-media {
+  border-radius: 0;
 }
 /* The gap between tiles comes from the tiles themselves, so the mosaic has no outer margin. */
 .tile {

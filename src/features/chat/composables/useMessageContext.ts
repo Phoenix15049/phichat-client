@@ -274,12 +274,16 @@ export function useMessageContext({
   function canEdit(
     message?: UiMessage | null
   ) {
-    return (
-      isMine(message) &&
-      !message?.fileUrl &&
-      !message?.isDeleted &&
-      (!message?.cipher || message.cipher === 'ok')
-    )
+    if (
+      !isMine(message) ||
+      message?.isDeleted ||
+      (message?.cipher && message.cipher !== 'ok')
+    ) {
+      return false
+    }
+
+    // Attachments: only sent ones, encrypted, and not someone else's forwarded file.
+    return !message?.fileUrl || (!!message.id && !!message.file && !message.forwardedFromMessageId)
   }
 
   function resetMessageContext() {

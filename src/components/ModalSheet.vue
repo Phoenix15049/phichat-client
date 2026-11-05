@@ -10,6 +10,8 @@
                  bg-surface rounded-2xl shadow-xl ring-1 ring-line max-w-[95vw]"
           :class="wide
             ? 'w-[880px] h-[min(680px,90dvh)] overflow-hidden max-sm:w-screen max-sm:max-w-none max-sm:h-[100dvh] max-sm:rounded-none'
+            : panel
+            ? 'w-[440px] h-[min(780px,92dvh)] overflow-hidden max-sm:w-screen max-sm:max-w-none max-sm:h-[100dvh] max-sm:rounded-none'
             : narrow ? 'w-[400px] max-h-[90vh] overflow-auto' : 'w-[520px] max-h-[90vh] overflow-auto'"
         >
           <slot/>
@@ -22,7 +24,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
 
-defineProps<{ open: boolean; wide?: boolean; narrow?: boolean }>()
+defineProps<{ open: boolean; wide?: boolean; narrow?: boolean; /** A tall sheet that scrolls inside: profiles and groups. */ panel?: boolean }>()
 const emit = defineEmits<{ (e:'close'):void }>()
 
 function onKey(e: KeyboardEvent) {

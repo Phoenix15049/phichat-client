@@ -3,7 +3,8 @@
     class="flex flex-col bg-surface border-line"
     :class="props.isNarrow ? 'w-full' : 'w-80 lg:w-[380px] border-e'"
   >
-    <div class="h-14 shrink-0 px-2 flex items-center gap-1">
+    <!-- The avatar stands over the chat list's avatars; the line continues the chat header's. -->
+    <div class="h-14 shrink-0 ps-[22px] pe-3 flex items-center gap-3.5 border-b border-line">
       <button type="button" class="relative shrink-0 w-10 h-10 rounded-[35%] overflow-hidden grid place-items-center ring-2 ring-accent/30 hover:ring-accent/70 transition active:scale-95" :aria-label="$t('menu.open')" @click="emit('open-menu')">
         <img v-if="props.me?.avatarUrl" :src="props.me.avatarUrl" class="w-full h-full object-cover" alt="" />
         <span
@@ -24,7 +25,7 @@
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-2 pb-2">
+    <div class="flex-1 overflow-y-auto px-2 pt-1.5 pb-2">
       <button
         v-for="conversation in filtered"
         :key="conversation.peerId"

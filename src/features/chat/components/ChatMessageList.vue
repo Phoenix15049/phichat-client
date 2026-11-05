@@ -140,9 +140,10 @@
               <span>{{ unreadableNotice(msg) }}</span>
             </div>
 
-            <div v-if="album" :class="isMediaOnly(msg,album)||isFileAlbum(album)?'':'mt-1 -mx-2'">
+            <div v-if="album" :class="isFileAlbum(album)?'':flushClass(msg,album,index)">
               <ChatAlbum
                 :items="album"
+                :flush="isFlush(msg,album)"
                 :selection-mode="selectionMode"
                 :downloaded="downloaded"
                 :downloading="downloading"
@@ -152,27 +153,29 @@
               />
             </div>
 
-            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="isMediaOnly(msg)?'':'mt-1 -mx-2'">
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='image'" :class="flushClass(msg,null,index)">
               <img
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
                 :alt="msg.file?.name||''"
-                class="block rounded-xl cursor-zoom-in max-h-[60vh] max-w-full sm:min-w-[180px] min-w-[140px] h-auto w-auto object-contain"
+                class="block cursor-zoom-in max-h-[60vh] max-w-full sm:min-w-[220px] min-w-[180px] h-auto w-auto object-contain"
+                :class="isFlush(msg,null)?'':'rounded-xl'"
                 @click.stop="selectionMode?actions.toggleSelect(msg):actions.openImage(msg)"
               />
-              <div v-else class="media-placeholder">
+              <div v-else class="media-placeholder" :class="isFlush(msg,null)?'rounded-none':''">
                 <ImageOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
                 <Loader2 v-else class="w-6 h-6 animate-spin"/>
               </div>
             </div>
 
-            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="isMediaOnly(msg)?'':'mt-1 -mx-2'">
+            <div v-else-if="hasViewableFile(msg)&&actions.fileKind(msg)==='video'" :class="flushClass(msg,null,index)">
               <ChatVideoThumb
                 v-if="actions.mediaSrc(msg)"
                 :src="actions.mediaSrc(msg)!"
+                :flat="isFlush(msg,null)"
                 @open="selectionMode?actions.toggleSelect(msg):actions.openVideo(msg)"
               />
-              <div v-else class="media-placeholder bg-black/80 text-white/80">
+              <div v-else class="media-placeholder bg-black/80 text-white/80" :class="isFlush(msg,null)?'rounded-none':''">
                 <VideoOff v-if="actions.mediaState(msg)==='error'" class="w-6 h-6"/>
                 <Loader2 v-else class="w-6 h-6 animate-spin"/>
               </div>
@@ -218,16 +221,19 @@
               </div>
             </div>
 
+            <!-- Under media the caption is as wide as the media, and a short one has the time beside it. -->
+            <div :class="isFlush(msg,album)?'caption-row':''">
             <div
               v-if="msg.fileUrl&&captionOf(msg,album)"
               dir="auto"
-              class="msg-text mt-1 whitespace-pre-wrap break-words select-text text-start auto-dir"
+              class="msg-text whitespace-pre-wrap break-words select-text text-start auto-dir"
+              :class="isFlush(msg,album)?'caption-text':'mt-1'"
               data-text-selectable
             >{{ captionOf(msg,album) }}</div>
 
             <div
               v-if="msg.reactions?.length"
-              class="mt-1 flex flex-wrap gap-1"
+              class="mt-1 flex flex-wrap gap-1 basis-full"
               :class="isMediaOnly(msg,album)?'px-1 pb-1':''"
             >
               <button
@@ -249,7 +255,7 @@
               :title="tooltipForMessage(msg)"
             >
               <ShieldAlert v-if="msg.unknownKey" class="w-3.5 h-3.5 text-danger" :aria-label="$t('chat.unknownKeyWarning')"><title>{{ $t('chat.unknownKeyWarning') }}</title></ShieldAlert>
-              <span v-if="msg.updatedAtUtc">{{ $t('chat.edited') }}</span>
+              <span v-if="(album??[msg]).some(item=>item.updatedAtUtc)">{{ $t('chat.edited') }}</span>
               <span>{{ formatTime(msg.sentAt) }}</span>
 
               <span v-if="mine(msg)" class="inline-flex">
@@ -258,6 +264,7 @@
                 <AlertCircle v-else-if="statusOf(msg,album)==='failed'" class="w-4 h-4 text-danger" :aria-label="$t('chat.notSent')"/>
                 <Clock3 v-else-if="statusOf(msg,album)!=='read'&&statusOf(msg,album)!=='delivered'" class="w-3.5 h-3.5"/>
               </span>
+            </div>
             </div>
 
             <div
@@ -398,7 +405,7 @@
             @click="actions.edit"
           ><Pencil class="w-4 h-4"/> {{ $t('chat.edit') }}</button>
           <button
-            v-if="contextMenu.msg?.id"
+            v-if="contextMenu.msg?.id&&actions.canPin()"
             class="menu-item"
             type="button"
             @click="contextMenu.msg&&actions.togglePin(contextMenu.msg)"
@@ -501,6 +508,8 @@ type MessageActions={
   reply:()=>void
   edit:()=>void
   canEdit:(message:UiMessage|null)=>boolean
+  /** A group can keep pinning for its admins. */
+  canPin:()=>boolean
   deleteMessage:(message:UiMessage)=>void
   retrySend:(message:UiMessage)=>void
   discardFailed:(message:UiMessage)=>void
@@ -787,6 +796,21 @@ function hasViewableFile(message:UiMessage){
   return !!message.fileUrl&&message.cipher!=='old-key'&&message.cipher!=='failed'
 }
 
+/** Photos and videos with a caption fill the bubble to its edges, the caption sits below them. */
+function isFlush(message:UiMessage,album:UiMessage[]|null){
+  if(album) return !isFileAlbum(album)&&!!captionOf(message,album)
+  if(!hasViewableFile(message)||!message.plainText) return false
+  const kind=props.actions.fileKind(message)
+  return kind==='image'||kind==='video'
+}
+
+/** Cancels the bubble's padding; at the top only when nothing is written above the media. */
+function flushClass(message:UiMessage,album:UiMessage[]|null,index:number){
+  if(!isFlush(message,album)) return ''
+  const headed=(props.group&&!mine(message)&&isGroupStart(index))||message.forwardedFromSenderId||message.replyToMessageId
+  return headed?'mt-1.5 -mx-3.5':'-mt-2 -mx-3.5'
+}
+
 function isMediaOnly(message:UiMessage,album?:UiMessage[]|null){
   if(album) return !isFileAlbum(album)&&!captionOf(message,album)
   if(!hasViewableFile(message)||message.plainText) return false
@@ -822,6 +846,8 @@ function bubbleClasses(message:UiMessage,endIndex:number,album:UiMessage[]|null)
   const selected=props.selectionMode&&rowSelected(message,album)
 
   if(freshKeys.value.has(keyOf(message)!)) classes.push(isMine?'bubble-sent':'bubble-received')
+
+  if(isFlush(message,album)) classes.push('overflow-hidden')
 
   if(isMediaOnly(message,album)){
     classes.push('rounded-[var(--bubble-radius)]','overflow-hidden','bg-transparent')
@@ -912,6 +938,18 @@ function showDayHeader(index:number){
 }
 .meta-inline{
   @apply mt-1 text-meta;
+}
+.caption-row{
+  @apply flex flex-wrap items-end gap-x-3;
+  /* Adds nothing to the bubble's width: it takes the width the media gave it. */
+  width:0;
+  min-width:100%;
+}
+.caption-row .meta{
+  @apply ms-auto;
+}
+.caption-text{
+  @apply mt-1.5 min-w-0 max-w-full;
 }
 .meta-overlay{
   @apply absolute bottom-1.5 end-1.5 rounded-full bg-black/45 px-2 py-1 text-white;

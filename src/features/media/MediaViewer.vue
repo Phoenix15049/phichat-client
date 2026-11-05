@@ -83,14 +83,15 @@
             @close="emit('close')"
             @fullscreen="toggleFullscreen"
           />
-
-          <button v-if="shown.length > 1" type="button" class="nav left-3" :class="showChrome ? '' : 'opacity-0'" :aria-label="$t('player.previous')" @click="go(-1)">
-            <ChevronLeft class="w-6 h-6" />
-          </button>
-          <button v-if="shown.length > 1" type="button" class="nav right-3" :class="showChrome ? '' : 'opacity-0'" :aria-label="$t('player.next')" @click="go(1)">
-            <ChevronRight class="w-6 h-6" />
-          </button>
         </div>
+
+        <!-- Measured from the screen, not the stage: a caption or the zoom bar cannot move them -->
+        <button v-if="shown.length > 1" type="button" class="nav left-3" :class="showChrome ? '' : 'opacity-0'" :aria-label="$t('player.previous')" @click="go(-1)">
+          <ChevronLeft class="w-6 h-6" />
+        </button>
+        <button v-if="shown.length > 1" type="button" class="nav right-3" :class="showChrome ? '' : 'opacity-0'" :aria-label="$t('player.next')" @click="go(1)">
+          <ChevronRight class="w-6 h-6" />
+        </button>
 
         <!-- Zoom and turn: below the picture, never over it -->
         <div v-if="current.kind === 'image'" class="relative z-10 shrink-0 flex justify-center pt-2">
@@ -166,7 +167,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'floating', value: boolean): void
-  (e: 'download' | 'forward' | 'goto' | 'delete', item: MediaItem): void
+  (e: 'download' | 'forward' | 'goto' | 'delete' | 'shown', item: MediaItem): void
 }>()
 
 const { t } = useI18n()
@@ -221,6 +222,7 @@ watch(() => props.items, items => {
 
 watch(current, async item => {
   shownKey = item?.key ?? shownKey
+  if (item) emit('shown', item)
   await nextTick()
   strip.value?.querySelector('.thumb-on')?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
 }, { immediate: true })
@@ -427,12 +429,8 @@ onBeforeUnmount(() => {
   @apply flex items-center gap-0.5 rounded-2xl p-1 bg-white/[.07] ring-1 ring-white/10 backdrop-blur-xl;
 }
 .nav {
-  @apply absolute top-1/2 -translate-y-1/2 hidden sm:grid place-items-center w-11 h-11 rounded-[35%] bg-white/[.08] ring-1 ring-white/10 text-white/85 hover:bg-accent hover:text-white hover:ring-accent backdrop-blur-xl transition;
+  @apply absolute z-20 top-1/2 -translate-y-1/2 hidden sm:grid place-items-center w-11 h-11 rounded-[35%] bg-white/[.08] ring-1 ring-white/10 text-white/85 hover:bg-accent hover:text-white hover:ring-accent backdrop-blur-xl transition;
 }
-.nav.left-3 { left: -3.5rem; }
-.nav.right-3 { right: -3.5rem; }
-.stage-full .nav.left-3 { left: .75rem; }
-.stage-full .nav.right-3 { right: .75rem; }
 
 .bottom {
   @apply relative z-10 shrink-0 flex flex-col items-center gap-2 px-3 pt-2 pb-3 transition duration-200;

@@ -182,12 +182,19 @@
         </button>
       </div>
 
+      <!-- A group that only admins can write in -->
+      <div v-if="selectedUser && !canWriteHere" class="shrink-0 px-2 sm:px-4 pb-2 sm:pb-3">
+        <div class="glass-soft rounded-[28px] h-[52px] grid place-items-center text-sm text-muted">{{ $t('groups.readOnly') }}</div>
+      </div>
+
       <ChatComposer
         v-model="text"
 
-        :visible="!!selectedUser && !peerBlocked"
-        :can-send="canSend"
-        :can-record="!!selectedUser && !peerBlocked && !e2ee.peerMissingKey[selectedUser.id]"
+        :visible="!!selectedUser && !peerBlocked && canWriteHere"
+        :can-send="canSend && !slowBlocked"
+        :can-record="!!selectedUser && !peerBlocked && !e2ee.peerMissingKey[selectedUser.id] && canAttachHere"
+        :can-attach="canAttachHere"
+        :slow-left="slowLeft"
         :link-preview="linkPreview.preview.value"
         :link-preview-loading="linkPreview.loading.value"
         @dismiss-preview="linkPreview.dismiss()"
@@ -217,7 +224,7 @@
           setComposerMediaInput
         "
 
-        @send="send"
+        @send="onComposerSend"
 
         @composer-input="
           onComposerInput
@@ -350,6 +357,36 @@
     @forward="onViewerForward"
     @goto="onViewerGoTo"
     @delete="onViewerDelete"
+    @shown="onViewerShown"
+  />
+
+  <ChatEditModal
+    :items="editor.target.value"
+    :saving="editor.saving.value"
+    :progress="editor.progress.value"
+    :error="editor.error.value"
+    :file-kind="fileKindOf"
+    :media-src="secureFiles.mediaSrc"
+    :human-file-size="humanFileSize"
+    @close="editor.close()"
+    @save="change => editor.save(change)"
+  />
+
+  <SavedInfoModal
+    :open="showSavedInfo"
+    :index="chatIndex"
+    :actions="infoActions"
+    :sender-label="resolveForwardLabel"
+    :sender-avatar="id => avatarById[id] ?? null"
+    @close="closeInfo"
+    @search="searchFromInfo"
+  />
+
+  <GroupInviteModal
+    :code="inviteCode"
+    @close="closeInvite"
+    @joined="onJoinedGroup"
+    @open="openInvitedGroup"
   />
 
 
@@ -358,9 +395,17 @@
   :user="peerProfile"
   :isContact="isPeerInContacts"
   :is-blocked="blocks.isBlocked(peerProfile?.id)"
+  :online="!!peerProfile && onlineIds.has(peerProfile.id)"
+  :muted="mutes.isMuted(peerProfile?.id)"
+  :can-search="selectedUser?.id === peerProfile?.id"
+  :index="chatIndex"
+  :actions="infoActions"
   @block="askBlock"
   @unblock="onUnblock"
-  @close="showPeerProfile=false"
+  @close="closeInfo"
+  @search="searchFromInfo"
+  @toggle-mute="id => toggleMuteOf(id)"
+  @open-group="openGroupFromProfile"
   @send-message="onPeerSendMessage"
   @add-contact="onPeerAddContact"
   @remove-contact="onPeerRemoveContact"
@@ -392,8 +437,11 @@
     :online-ids="onlineIds"
     :people="groupCandidates"
     :muted="mutes.isMuted(selectedUser?.id)"
-    @close="showGroupInfo = false"
+    :index="chatIndex"
+    :actions="infoActions"
+    @close="closeInfo"
     @toggle-mute="toggleMute"
+    @search="searchFromInfo"
     @open-user="username => { showGroupInfo = false; void openUserProfile(username) }"
     @left="onLeftGroup"
   />
@@ -419,6 +467,9 @@ import ChatFileSendModal from '../features/chat/components/ChatFileSendModal.vue
 import ChatMediaSendModal from '../features/chat/components/ChatMediaSendModal.vue'
 import ChatForwardPicker from '../features/chat/components/ChatForwardPicker.vue'
 import ChatDeleteConfirmDialog from '../features/chat/components/ChatDeleteConfirmDialog.vue'
+import ChatEditModal from '../features/chat/components/ChatEditModal.vue'
+import SavedInfoModal from '../features/info/SavedInfoModal.vue'
+import type { InfoActions } from '../features/info/types'
 import SideMenu from '../components/SideMenu.vue'
 import ModalSheet from '../components/ModalSheet.vue'
 import ProfileModal from '../components/ProfileModal.vue'
@@ -469,6 +520,7 @@ import { describeSystemEvent } from '../utils/groupEvents'
 import { colorFromString } from '../utils/avatar'
 import NewGroupModal from '../features/groups/NewGroupModal.vue'
 import GroupInfoModal from '../features/groups/GroupInfoModal.vue'
+import GroupInviteModal from '../features/groups/GroupInviteModal.vue'
 import type { PickablePerson } from '../features/groups/MemberPicker.vue'
 import type { GroupDetails } from '../services/api'
 import { previewText } from '../features/chat/composables/useConversations'
@@ -506,6 +558,8 @@ import { useMessageReactions } from '../features/chat/composables/useMessageReac
 import { useMessageForward } from '../features/chat/composables/useMessageForward'
 import { useMessageFiles } from '../features/chat/composables/useMessageFiles'
 import { useMessageMedia } from '../features/chat/composables/useMessageMedia'
+import { useMessageEditor } from '../features/chat/composables/useMessageEditor'
+import { useChatIndex } from '../features/chat/composables/useChatIndex'
 
 const showContacts = ref(false)
 
@@ -734,7 +788,8 @@ const peerStatus = computed(() => {
 })
 
 /** The media viewer, open on a message; `origin` is where its thumbnail sits in the chat. */
-const viewer = ref<{ key: string; origin: DOMRect | null } | null>(null)
+/** `list` and `chat` are set when it opens from a profile, which knows more media than the loaded messages. */
+const viewer = ref<{ key: string; origin: DOMRect | null; list?: UiMessage[]; chat?: ChatTarget } | null>(null)
 /** Its video is in a picture-in-picture window, so the chat underneath is in use. */
 const viewerFloating = ref(false)
 
@@ -886,10 +941,10 @@ function onConvDblClick(conv: UiConversation) {
 const viewerItems = computed<MediaItem[]>(() => {
   if (!viewer.value) return []
 
-  const chat = selectedUser.value
+  const chat = viewer.value.chat ?? selectedUser.value
   const items: MediaItem[] = []
 
-  for (const message of messages.value) {
+  for (const message of viewer.value.list ?? messages.value) {
     const kind = fileKindOf(message)
     const src = secureFiles.mediaSrc(message)
     const key = message.id || message.clientId
@@ -907,7 +962,7 @@ const viewerItems = computed<MediaItem[]>(() => {
       chat: chat ?? { id: '', username: '' },
       senderName: mine
         ? meProfile.value?.displayName || '@' + (meProfile.value?.username ?? '')
-        : chat?.isGroup ? memberLabel(chat.id, message.senderId) : selectedLabel.value,
+        : chat?.isGroup ? memberLabel(chat.id, message.senderId) : peerLabel(chat),
       senderAvatar: (mine ? meProfile.value?.avatarUrl : avatarById[message.senderId]) ?? null,
       date: formatVoiceDate(message.sentAt)
     })
@@ -915,6 +970,12 @@ const viewerItems = computed<MediaItem[]>(() => {
 
   return items
 })
+
+/** A profile can show the media of a chat other than the open one. */
+function peerLabel(chat?: ChatTarget | null) {
+  if (!chat || chat.id === selectedUser.value?.id) return selectedLabel.value
+  return displayById[chat.id] || '@' + chat.username.replace(/^@/, '')
+}
 
 /** The caption of an album is sent with one item and belongs to all of them. */
 function albumCaption(message: UiMessage) {
@@ -947,18 +1008,29 @@ function openVideo(msg: UiMessage){
 function onViewerForward(item: MediaItem) {
   viewer.value = null
   viewerFloating.value = false
+  closeInfo()
   openForwardPickerFor([item.message])
 }
 
 function onViewerDelete(item: MediaItem) {
   viewer.value = null
   viewerFloating.value = false
+  closeInfo()
   openDeleteConfirmSingle(item.message)
+}
+
+/** Opened from a profile, the pictures near the shown one are decrypted as the user moves. */
+function onViewerShown(item: MediaItem) {
+  const list = viewer.value?.list
+  if (!list) return
+  const at = list.findIndex(message => message.id === item.message.id)
+  for (const message of list.slice(Math.max(0, at - VIEWER_REACH), at + VIEWER_REACH + 1)) secureFiles.ensureMedia(message)
 }
 
 async function onViewerGoTo(item: MediaItem) {
   viewer.value = null
   viewerFloating.value = false
+  closeInfo()
   if (item.chat.id && selectedUser.value?.id !== item.chat.id) await openChat(item.chat, { resetStack: true })
   await nextTick()
   if (item.message.id) await jumpToReplied(item.message.id, 60)
@@ -1049,13 +1121,74 @@ async function openPeerProfile() {
 
   if (selectedUser.value.isGroup) {
     showGroupInfo.value = true
+    void chatIndex.start(selectedUser.value.id)
     return
   }
 
-  // Saved Messages has no profile to show.
-  if (isSavedChat.value) return
+  if (isSavedChat.value) {
+    showSavedInfo.value = true
+    void chatIndex.start(selectedUser.value.id)
+    return
+  }
 
   await openUserProfile(selectedUser.value.username)
+}
+
+// ---------------- Profiles and shared media ----------------
+
+const VIEWER_REACH = 6
+
+const showSavedInfo = ref(false)
+
+const chatIndex = useChatIndex({
+  myId: () => myId.value,
+  open: (raw, senderId, chatId) => openMessage(raw, senderId, chatId)
+})
+
+/** The chat the panel shows, which may not be the open one (a group member's profile). */
+function infoChat(): ChatTarget | null {
+  if (showPeerProfile.value && peerProfile.value) return { id: peerProfile.value.id, username: peerProfile.value.username }
+  return selectedUser.value
+}
+
+function closeInfo() {
+  // Escape reaches the sheet under the viewer too; only the viewer closes then.
+  if (viewer.value && !viewerFloating.value) return
+  showPeerProfile.value = false
+  showGroupInfo.value = false
+  showSavedInfo.value = false
+  chatIndex.stop()
+}
+
+function searchFromInfo() {
+  closeInfo()
+  search.show()
+}
+
+async function goToMessageFromInfo(message: UiMessage) {
+  const chat = infoChat()
+  viewer.value = null
+  closeInfo()
+  if (!chat) return
+  if (selectedUser.value?.id !== chat.id) await openChat(chat, { resetStack: true })
+  await nextTick()
+  if (message.id) await jumpToReplied(message.id, 60)
+}
+
+async function toggleMuteOf(id: string) {
+  try {
+    await mutes.toggle(id)
+  } catch (error) {
+    showSendError(error)
+  }
+}
+
+async function openGroupFromProfile(groupId: string) {
+  closeInfo()
+  const group = await groups.load(groupId)
+  if (!group) return
+  ensureGroupConversation(group)
+  await openChat({ id: group.id, username: '', isGroup: true }, { resetStack: true })
 }
 
 /** The profile of any user (a peer, or a group member). */
@@ -1074,6 +1207,7 @@ async function openUserProfile(username?: string | null) {
   } catch {}
 
   showPeerProfile.value = true
+  void chatIndex.start(user.id)
 }
 
 const isPeerInContacts = computed(() => {
@@ -1541,6 +1675,7 @@ const {
 
   isImageFile,
   objUrl,
+  compressImageFile,
   disposeMedia
 } = useMessageMedia({
   selectedUser,
@@ -1644,6 +1779,56 @@ const {
   outbox
 })
 
+const infoActions: InfoActions = {
+  fileKind: fileKindOf,
+  mediaSrc: secureFiles.mediaSrc,
+  mediaState: secureFiles.mediaState,
+  ensureMedia: secureFiles.ensureMedia,
+  openMedia(message) {
+    if (!secureFiles.mediaSrc(message) || !message.id) return
+    // Oldest first, as in the chat.
+    const list = [...chatIndex.media.value].reverse()
+    const chat = infoChat() ?? undefined
+    if (player.state.playing) void player.toggle()
+    viewerFloating.value = false
+    viewer.value = { key: message.id, origin: null, list, chat }
+  },
+  playAudio(message, list) {
+    const chat = infoChat()
+    if (!chat || !message.file) return
+    const track = trackOf(message, chat)
+    void player.play(track, list.filter(item => item.file).map(item => trackOf(item, chat)).filter(item => item.kind === track.kind))
+  },
+  download: message => downloadFile(message),
+  goTo: message => void goToMessageFromInfo(message),
+  humanFileSize,
+  fileKey,
+  downloading,
+  downloaded
+}
+
+const editor = useMessageEditor({
+  selectedChatId: () => selectedUser.value?.id ?? null,
+  messages,
+  sealAndSend: e2ee.sealAndSend,
+  secureFiles,
+  compressImage: file => compressImageFile(file),
+  toAbsoluteUrl: url => toAbsoluteFileUrl(url),
+  describeError: error => getErrorMessage(error),
+  onSaved: () => scheduleSync({ messages: false })
+})
+
+/** Attachment messages are edited in their own sheet, text ones in the composer. */
+function editFromMenu() {
+  const message = contextMenu.value.msg
+  if (!message?.fileUrl) {
+    doEdit()
+    return
+  }
+  closeMenu()
+  editor.open(message)
+}
+
 const messageListActions={
   onScroll:onScrollLoadMore,
   onRowClick,
@@ -1684,8 +1869,9 @@ const messageListActions={
   startSelection:startSelectionFrom,
   openForwardPicker,
   reply:doReply,
-  edit:doEdit,
+  edit:editFromMenu,
   canEdit,
+  canPin:()=>!selectedGroupId.value||groups.can(selectedGroupId.value,'pinMessages'),
   deleteMessage:(message:UiMessage)=>{
     closeMenu()
     openDeleteConfirmSingle(message)
@@ -1722,7 +1908,7 @@ function trackOf(message: UiMessage, chat: ChatTarget): AudioTrack {
   if (file.voice) {
     const sender = message.senderId === myId.value
       ? meProfile.value?.displayName || '@' + (meProfile.value?.username ?? '')
-      : chat.isGroup ? memberLabel(chat.id, message.senderId) : selectedLabel.value
+      : chat.isGroup ? memberLabel(chat.id, message.senderId) : peerLabel(chat)
     return {
       key,
       message,
@@ -2178,6 +2364,11 @@ async function onScrollLoadMore() {
 
 
 
+watch(
+  () => route.params.code,
+  code => { if (routeSyncReady && typeof code === 'string') inviteCode.value = code }
+)
+
 async function initializeChatPage() {
   routeSyncReady = false
   routeSyncRequestId++
@@ -2249,7 +2440,8 @@ async function initializeChatPage() {
     }
   if (!pageAlive) return
   routeSyncReady = true
-  if (route.params.groupId) await syncGroupFromRoute(route.params.groupId)
+  if (typeof route.params.code === 'string') inviteCode.value = route.params.code
+  else if (route.params.groupId) await syncGroupFromRoute(route.params.groupId)
   else await syncChatFromRoute(route.params.username)
 
 }
@@ -2287,6 +2479,8 @@ onBeforeUnmount(() => {
   // The decrypted audio goes with the page.
   player.close()
   secureFiles.releaseAll()
+  chatIndex.reset()
+  if (slowTimer !== null) window.clearInterval(slowTimer)
   contentObserver?.disconnect()
 
   unregisterPageListeners()
@@ -2484,6 +2678,8 @@ function wireSignalR() {
         const edited = opened.envelope.text
         m.plainText = edited && edited !== EMPTY_MSG_MARKER ? edited : ''
         m.cipher = 'ok'
+        if (opened.envelope.file) m.file = opened.envelope.file
+        applyEditedFile(m, p.fileUrl)
       } else {
         m.plainText = ''
         m.cipher = opened.state
@@ -2498,6 +2694,7 @@ function wireSignalR() {
   signalR.onMessageDeleted((p) => {
     pins.forget(p.messageId)
     player.forget(p.messageId)
+    chatIndex.forget(p.messageId)
     // The chat list may be showing it, or counting it as unread.
     scheduleSync({ messages: false })
     const i = messages.value.findIndex(x => x.id === p.messageId)
@@ -2529,6 +2726,15 @@ function wireSignalR() {
     handleReactionUpdated
   )
   }
+
+/** The message got another attachment (edited here, on another device, or by its sender). */
+function applyEditedFile(message: UiMessage, fileUrl?: string | null) {
+  const url = toAbsoluteFileUrl(fileUrl ?? null)
+  if (!url || url === message.fileUrl) return
+  if (message.clientId) secureFiles.forgetLocal(message.clientId)
+  message.fileUrl = url
+  player.forget(message.id ?? '')
+}
 
 /** My messages in the open chat up to this time were read by the other side. */
 function markMineReadUpTo(readUpToUtc: string) {
@@ -2641,6 +2847,8 @@ async function mergeNewestPage(chat: ChatTarget, sessionId: number) {
       if (known) {
         known.plainText = fresh.plainText
         known.updatedAtUtc = fresh.updatedAtUtc
+        if (fresh.file) known.file = fresh.file
+        if (fresh.fileUrl) applyEditedFile(known, fresh.fileUrl)
         known.reactions = fresh.reactions
         if (fresh.status) known.status = fresh.status
         continue
@@ -2915,6 +3123,72 @@ async function onGroupGone(groupId: string) {
     showGroupInfo.value = false
     await closeChat()
   }
+}
+
+// ---------------- Group rules and invite links ----------------
+
+const selectedGroupId = computed(() => (selectedUser.value?.isGroup ? selectedUser.value.id : null))
+const canWriteHere = computed(() => !selectedGroupId.value || !groups.details[selectedGroupId.value] || groups.can(selectedGroupId.value, 'sendMessages'))
+const canAttachHere = computed(() => !selectedGroupId.value || !groups.details[selectedGroupId.value] || groups.can(selectedGroupId.value, 'sendMedia'))
+
+const slowNow = ref(Date.now())
+let slowTimer: number | null = null
+
+/** How long the user has to wait before writing in a group with slow mode. */
+const slowLeft = computed(() => {
+  const id = selectedGroupId.value
+  const seconds = id ? groups.details[id]?.slowModeSeconds ?? 0 : 0
+  if (!id || !seconds || groups.canManage(id)) return 0
+
+  const list = messages.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const message = list[i]
+    if (message.senderId !== myId.value || message.systemEvent) continue
+    const sent = toDateSafe(message.sentAt)?.getTime() ?? 0
+    return Math.max(0, Math.ceil((sent + seconds * 1000 - slowNow.value) / 1000))
+  }
+  return 0
+})
+
+const slowBlocked = computed(() => slowLeft.value > 0 && !editingMessage.value)
+
+watch(slowLeft, left => {
+  if (left > 0 && slowTimer === null) {
+    slowTimer = window.setInterval(() => { slowNow.value = Date.now() }, 1000)
+  } else if (left <= 0 && slowTimer !== null) {
+    window.clearInterval(slowTimer)
+    slowTimer = null
+  }
+})
+
+// A message just sent starts the wait; the clock has to be current to see it.
+watch(() => messages.value.length, () => { slowNow.value = Date.now() })
+
+/** Enter does not go through the send button: the wait counts here too, and the text stays in the box. */
+function onComposerSend() {
+  if (!slowBlocked.value) void send()
+}
+
+const inviteCode = ref<string | null>(null)
+
+async function closeInvite() {
+  inviteCode.value = null
+  if (route.params.code) await router.replace('/chat')
+}
+
+async function onJoinedGroup(group: GroupDetails) {
+  inviteCode.value = null
+  groups.set(group)
+  ensureGroupConversation(group)
+  await openChat({ id: group.id, username: '', isGroup: true }, { resetStack: true })
+}
+
+async function openInvitedGroup(groupId: string) {
+  inviteCode.value = null
+  const group = await groups.load(groupId)
+  if (!group) return
+  ensureGroupConversation(group)
+  await openChat({ id: group.id, username: '', isGroup: true }, { resetStack: true })
 }
 
 async function onLeftGroup(groupId: string) {

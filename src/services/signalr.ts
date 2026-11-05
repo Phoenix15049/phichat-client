@@ -19,6 +19,8 @@ type TypingPayload = {
 }
 
 type EditedPayload = {
+  /** Set when the attachment was replaced. */
+  fileUrl?: string | null
   messageId: string
   encryptedContent: string
   updatedAtUtc?: string

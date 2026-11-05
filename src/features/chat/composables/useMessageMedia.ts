@@ -451,6 +451,7 @@ export function useMessageMedia({
 
     isImageFile,
     objUrl,
+    compressImageFile,
     disposeMedia
   }
 }

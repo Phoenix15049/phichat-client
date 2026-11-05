@@ -5,6 +5,7 @@ export type GroupSystemEvent = {
   type: 'created' | 'added' | 'removed' | 'left' | 'title' | 'photo' | 'photoRemoved' | string
   title?: string
   users?: string[]
+  seconds?: number
 }
 
 export function parseSystemEvent(json: string | null | undefined): GroupSystemEvent | null {
@@ -15,11 +16,19 @@ export function parseSystemEvent(json: string | null | undefined): GroupSystemEv
     return {
       type: value.type,
       title: typeof value.title === 'string' ? value.title : undefined,
-      users: Array.isArray(value.users) ? value.users.map(String) : undefined
+      users: Array.isArray(value.users) ? value.users.map(String) : undefined,
+      seconds: Number.isFinite(value.seconds) ? Number(value.seconds) : undefined
     }
   } catch {
     return null
   }
+}
+
+/** "30s", "5m", "1h": the delays a group's slow mode can have. */
+export function formatDelay(seconds: number): string {
+  if (seconds >= 3600) return t('groups.delayHours', { n: Math.round(seconds / 3600) })
+  if (seconds >= 60) return t('groups.delayMinutes', { n: Math.round(seconds / 60) })
+  return t('groups.delaySeconds', { n: seconds })
 }
 
 function joinNames(names: string[]): string {
@@ -49,6 +58,10 @@ export function describeSystemEvent(json: string | null | undefined, actorId: st
     case 'title': return t('groups.event.title', { name, title: event.title ?? '' })
     case 'photo': return t('groups.event.photo', { name })
     case 'photoRemoved': return t('groups.event.photoRemoved', { name })
+    case 'joined': return t('groups.event.joined', { name })
+    case 'owner': return t('groups.event.owner', { name, users })
+    case 'permissions': return t('groups.event.permissions', { name })
+    case 'slowMode': return event.seconds ? t('groups.event.slowModeOn', { name, delay: formatDelay(event.seconds) }) : t('groups.event.slowModeOff', { name })
     default: return t('groups.event.unknown')
   }
 }

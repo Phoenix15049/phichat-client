@@ -45,7 +45,7 @@
 
       <form class="flex items-end gap-1 py-1" @submit.prevent="submit">
         <!-- Attach -->
-        <div ref="attachRoot" v-show="!recorder.recording.value" class="relative shrink-0">
+        <div ref="attachRoot" v-show="!recorder.recording.value && props.canAttach" class="relative shrink-0">
           <button
             type="button"
             class="composer-btn"
@@ -95,7 +95,7 @@
             :value="props.modelValue"
             rows="1"
             dir="auto"
-            :placeholder="$t('chat.writeMessage')"
+            :placeholder="props.slowLeft ? $t('groups.slowModeWait', { n: props.slowLeft }) : $t('chat.writeMessage')"
             class="tg-text tg-fade block w-full bg-transparent border-0 px-4 py-2.5 leading-6 resize-none overflow-y-auto box-border will-change-[height] outline-none text-ink placeholder:text-muted"
             style="transition: height .14s ease; font-size: var(--chat-font-size);"
             @keydown.enter="onEnter"
@@ -156,6 +156,7 @@
           @mousedown.prevent
         >
           <Check v-if="props.editing" class="w-5 h-5" />
+          <span v-else-if="props.slowLeft" key="slow" class="text-[13px] font-semibold tabular-nums">{{ props.slowLeft }}</span>
           <span v-else :key="sendPulse" class="grid place-items-center" :class="sendPulse ? 'send-fly' : ''">
             <SendHorizontal class="w-5 h-5 rtl:-scale-x-100" />
           </span>
@@ -195,6 +196,10 @@ const props = defineProps<{
   editing: boolean
   /** Whether a voice message could be sent now (the peer can receive messages). */
   canRecord: boolean
+  /** Whether attachments are allowed in this chat (a group can keep them for admins). */
+  canAttach: boolean
+  /** Seconds until slow mode lets the user write again; 0 when it does not hold them back. */
+  slowLeft: number
   linkPreview: LinkPreviewMeta | null
   linkPreviewLoading: boolean
   setMessageInput: (element: HTMLTextAreaElement | null) => void

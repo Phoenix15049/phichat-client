@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { reactive } from 'vue'
-import { getGroup, type GroupDetails, type GroupMemberItem } from '../services/api'
+import { getGroup, type GroupDetails, type GroupMemberItem, type GroupPermissions } from '../services/api'
 import { clearGroupChats, forgetGroupChat, markGroupChat } from '../services/chatKinds'
 
 /** Details (name, photo, members and roles) of the groups the user belongs to. */
@@ -58,6 +58,11 @@ export const useGroupsStore = defineStore('groups', () => {
     return role === 'owner' || role === 'admin'
   }
 
+  /** Whether the signed-in user may do something: admins always, members when the group allows it. */
+  function can(groupId: string | null | undefined, permission: keyof GroupPermissions): boolean {
+    return canManage(groupId) || !!(groupId && details[groupId]?.permissions[permission])
+  }
+
   function forget(groupId: string) {
     delete details[groupId]
     forgetGroupChat(groupId)
@@ -70,5 +75,5 @@ export const useGroupsStore = defineStore('groups', () => {
     clearGroupChats()
   }
 
-  return { details, load, set, member, known, canManage, forget, reset }
+  return { details, load, set, member, known, canManage, can, forget, reset }
 })

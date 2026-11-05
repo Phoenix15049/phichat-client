@@ -16,7 +16,9 @@ const routes = [
   { path: '/contacts', component: ContactsView },
   // ChatView reads the username from route.params itself.
   { path: '/u/:username', component: ChatView },
-  { path: '/g/:groupId', component: ChatView }
+  { path: '/g/:groupId', component: ChatView },
+  // An invite link: ChatView shows the group and offers to join.
+  { path: '/join/:code', component: ChatView }
 ]
 
 const router = createRouter({

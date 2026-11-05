@@ -3,7 +3,7 @@
     <video
       :src="`${src}#t=0.1`"
       class="block"
-      :class="fill ? 'w-full h-full object-cover' : 'rounded-xl bg-black max-h-[60vh] max-w-full sm:min-w-[220px] min-w-[160px] h-auto w-auto'"
+      :class="fill ? 'w-full h-full object-cover' : ['bg-black max-h-[60vh] max-w-full sm:min-w-[220px] min-w-[160px] h-auto w-auto', flat ? '' : 'rounded-xl']"
       preload="metadata"
       muted
       playsinline
@@ -22,8 +22,8 @@ import { ref } from 'vue'
 import { Play } from 'lucide-vue-next'
 import { formatClock } from '../../audio/format'
 
-/** A still of a video; it plays in the media viewer. `fill` covers an album tile. */
-defineProps<{ src: string; fill?: boolean }>()
+/** A still of a video; it plays in the media viewer. `fill` covers an album tile, `flat` fills a bubble. */
+defineProps<{ src: string; fill?: boolean; flat?: boolean }>()
 const emit = defineEmits<{ (e: 'open'): void }>()
 
 const duration = ref(0)
